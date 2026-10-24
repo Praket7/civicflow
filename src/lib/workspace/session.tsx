@@ -17,6 +17,7 @@ import type {
 } from "../../types/domain";
 import { demoWorkspace } from "./dataset";
 import { getWorkspaceRepository } from "./repository";
+import { setDisplayTimeZone } from "./selectors";
 
 const repository = getWorkspaceRepository();
 
@@ -174,10 +175,13 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     [apply, run],
   );
 
-  const value = useMemo<WorkspaceSessionValue | null>(
-    () => (session ? { workspace: demoWorkspace, session, backups, actions } : null),
-    [session, backups, actions],
-  );
+  const value = useMemo<WorkspaceSessionValue | null>(() => {
+    if (!session) return null;
+    // Apply the timezone before children format their first timestamp, so a
+    // settings change never leaves a stale clock in the tree.
+    setDisplayTimeZone(session.settings.timezone);
+    return { workspace: demoWorkspace, session, backups, actions };
+  }, [session, backups, actions]);
 
   if (!value) {
     return (

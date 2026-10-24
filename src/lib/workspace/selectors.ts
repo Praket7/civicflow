@@ -88,81 +88,108 @@ export function formatHours(hours: number): string {
  */
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
-function dateFormatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+/*
+ * Shift and audit timestamps are absolute instants. They must read the same on
+ * a laptop in Buffalo and a build runner in UTC, so they are formatted in the
+ * organization's timezone. Plain dates ("2026-10-17") and Date objects built
+ * for calendar grids are civil values and stay in the local calendar, where
+ * converting them could move a day or an hour.
+ */
+let activeTimeZone = demoWorkspace.organization.timezone;
+
+/** Follow the organization timezone from workspace settings. */
+export function setDisplayTimeZone(timeZone: string): void {
+  const next = timeZone.trim();
+  if (next) activeTimeZone = next;
+}
+
+function isTimestamp(value: string | Date): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value);
+}
+
+function dateFormatter(options: Intl.DateTimeFormatOptions, zoned = false): Intl.DateTimeFormat {
   const locale = activeLocaleCode();
-  const key = `${locale}:${options.weekday ?? ""}:${options.month ?? ""}:${options.day ?? ""}:${options.year ?? ""}:${options.hour ?? ""}:${options.minute ?? ""}`;
+  const zone = zoned ? activeTimeZone : "local";
+  const key = `${locale}:${zone}:${options.weekday ?? ""}:${options.month ?? ""}:${options.day ?? ""}:${options.year ?? ""}:${options.hour ?? ""}:${options.minute ?? ""}`;
   const cached = dateFormatters.get(key);
   if (cached) return cached;
-  const formatter = new Intl.DateTimeFormat(locale, options);
+  const formatter = new Intl.DateTimeFormat(
+    locale,
+    zoned ? { ...options, timeZone: activeTimeZone } : options,
+  );
   dateFormatters.set(key, formatter);
   return formatter;
 }
 
+function formatterFor(
+  value: string | Date,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  return dateFormatter(options, isTimestamp(value));
+}
+
+function toDate(value: string | Date): Date {
+  return typeof value === "string" ? parseISO(value) : value;
+}
+
 export function formatTime(value: string | Date): string {
-  return dateFormatter({ hour: "numeric", minute: "2-digit" }).format(
-    typeof value === "string" ? parseISO(value) : value,
-  );
+  return formatterFor(value, { hour: "numeric", minute: "2-digit" }).format(toDate(value));
 }
 
 export function formatDate(value: string | Date): string {
-  return dateFormatter({ weekday: "short", month: "short", day: "numeric" }).format(
-    typeof value === "string" ? parseISO(value) : value,
+  return formatterFor(value, { weekday: "short", month: "short", day: "numeric" }).format(
+    toDate(value),
   );
 }
 
 export function formatLongDate(value: string | Date): string {
-  return dateFormatter({ weekday: "long", month: "long", day: "numeric" }).format(
-    typeof value === "string" ? parseISO(value) : value,
+  return formatterFor(value, { weekday: "long", month: "long", day: "numeric" }).format(
+    toDate(value),
   );
 }
 
 export function formatDateWithYear(value: string | Date): string {
-  return dateFormatter({
+  return formatterFor(value, {
     weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric",
-  }).format(typeof value === "string" ? parseISO(value) : value);
+  }).format(toDate(value));
 }
 
 export function formatDateTime(value: string | Date): string {
-  const date = typeof value === "string" ? parseISO(value) : value;
-  return `${dateFormatter({ month: "short", day: "numeric" }).format(date)} · ${formatTime(date)}`;
+  const date = toDate(value);
+  return `${formatterFor(value, { month: "short", day: "numeric" }).format(date)} · ${formatterFor(
+    value,
+    { hour: "numeric", minute: "2-digit" },
+  ).format(date)}`;
 }
 
 export function formatMonthYear(value: string | Date): string {
-  return dateFormatter({ month: "long", year: "numeric" }).format(
-    typeof value === "string" ? parseISO(value) : value,
-  );
+  return formatterFor(value, { month: "long", year: "numeric" }).format(toDate(value));
 }
 
 export function formatMonthDay(value: string | Date, long = false): string {
-  return dateFormatter({ month: long ? "long" : "short", day: "numeric" }).format(
-    typeof value === "string" ? parseISO(value) : value,
+  return formatterFor(value, { month: long ? "long" : "short", day: "numeric" }).format(
+    toDate(value),
   );
 }
 
 export function formatDateRange(start: string | Date, end: string | Date, long = false): string {
-  const formatter = dateFormatter({
-    month: long ? "long" : "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const from = typeof start === "string" ? parseISO(start) : start;
-  const to = typeof end === "string" ? parseISO(end) : end;
-  return formatter.formatRange(from, to);
+  const zoned = isTimestamp(start) || isTimestamp(end);
+  const formatter = dateFormatter(
+    { month: long ? "long" : "short", day: "numeric", year: "numeric" },
+    zoned,
+  );
+  return formatter.formatRange(toDate(start), toDate(end));
 }
 
 export function formatWeekday(value: string | Date, long = false): string {
-  return dateFormatter({ weekday: long ? "long" : "short" }).format(
-    typeof value === "string" ? parseISO(value) : value,
-  );
+  return formatterFor(value, { weekday: long ? "long" : "short" }).format(toDate(value));
 }
 
 export function formatWeekdayNarrow(value: string | Date): string {
-  return dateFormatter({ weekday: "narrow" }).format(
-    typeof value === "string" ? parseISO(value) : value,
-  );
+  return formatterFor(value, { weekday: "narrow" }).format(toDate(value));
 }
 
 export function formatHour(value: Date): string {
@@ -170,9 +197,7 @@ export function formatHour(value: Date): string {
 }
 
 export function formatDayNumber(value: string | Date): string {
-  return dateFormatter({ day: "numeric" }).format(
-    typeof value === "string" ? parseISO(value) : value,
-  );
+  return formatterFor(value, { day: "numeric" }).format(toDate(value));
 }
 
 export function timeRange(startsAt: string, endsAt: string): string {

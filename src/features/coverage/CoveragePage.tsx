@@ -1,13 +1,6 @@
 import { useMemo, useState } from "react";
 import { addDays, parseISO } from "date-fns";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  CalendarClock,
-  CircleAlert,
-  Gauge,
-  Users,
-} from "lucide-react";
+import { ArrowRight, ArrowUpRight, CalendarClock, CircleAlert, Gauge, Users } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Badge,
@@ -134,9 +127,7 @@ export function CoveragePage() {
     return data.reduce<{ label: string; value: number; color: string; offset: number }[]>(
       (accumulator, item) => {
         const previous = accumulator[accumulator.length - 1];
-        const offset = previous
-          ? previous.offset + (previous.value / sum) * circumference
-          : 0;
+        const offset = previous ? previous.offset + (previous.value / sum) * circumference : 0;
         return [...accumulator, { ...item, offset }];
       },
       [],
@@ -176,9 +167,14 @@ export function CoveragePage() {
         ))}
         <span className={styles.rangeMeta}>
           <CalendarClock size={13} aria-hidden="true" />
-          {t(total === 1 ? "{count} upcoming shift in this window" : "{count} upcoming shifts in this window", {
-            count: total,
-          })}
+          {t(
+            total === 1
+              ? "{count} upcoming shift in this window"
+              : "{count} upcoming shifts in this window",
+            {
+              count: total,
+            },
+          )}
         </span>
       </div>
 
@@ -198,14 +194,11 @@ export function CoveragePage() {
             <div
               className={styles.healthBar}
               role="img"
-              aria-label={t(
-                "{critical} critical, {risk} at risk, {healthy} healthy shifts",
-                {
-                  critical: counts.critical,
-                  risk: counts["at-risk"],
-                  healthy: counts.healthy,
-                },
-              )}
+              aria-label={t("{critical} critical, {risk} at risk, {healthy} healthy shifts", {
+                critical: counts.critical,
+                risk: counts["at-risk"],
+                healthy: counts.healthy,
+              })}
             >
               {donutSegments.map((segment) => (
                 <span
@@ -224,7 +217,10 @@ export function CoveragePage() {
                 <span>{t("critical")}</span>
               </li>
               <li>
-                <span className={styles.legendDot} style={{ background: STATUS_COLOR["at-risk"] }} />
+                <span
+                  className={styles.legendDot}
+                  style={{ background: STATUS_COLOR["at-risk"] }}
+                />
                 <strong>{counts["at-risk"]}</strong>
                 <span>{t("at risk")}</span>
               </li>
@@ -237,8 +233,7 @@ export function CoveragePage() {
           </div>
           <p className={styles.healthFoot}>
             Critical means a required role is empty and seat fill is under 70%. At risk means an
-            open role or seat fill under 86%.{" "}
-            <Link to="/coordinator/reports">Coverage method</Link>
+            open role or seat fill under 86%. <Link to="/coordinator/reports">Coverage method</Link>
           </p>
         </Card>
 
@@ -253,8 +248,8 @@ export function CoveragePage() {
                   <p className={styles.shiftDate}>{formatDate(selectedShift.startsAt)}</p>
                   <h2 className={styles.shiftTitle}>{selected.row.opportunity.title}</h2>
                   <p className={styles.shiftMeta}>
-                    {timeRange(selectedShift.startsAt, selectedShift.endsAt)} ·{' '}
-                    {selected.row.opportunity.address} ·{' '}
+                    {timeRange(selectedShift.startsAt, selectedShift.endsAt)} ·{" "}
+                    {selected.row.opportunity.address} ·{" "}
                     {t("{filled} of {capacity} seats filled", {
                       filled: roster.length,
                       capacity: selectedShift.capacity,
@@ -278,7 +273,10 @@ export function CoveragePage() {
 
               <ul className={styles.roleList} aria-label="Required roles for the selected shift">
                 {liveRoles.map((role) => {
-                  const percent = Math.min(100, Math.round((role.filled / Math.max(1, role.required)) * 100));
+                  const percent = Math.min(
+                    100,
+                    Math.round((role.filled / Math.max(1, role.required)) * 100),
+                  );
                   const missing = role.required - role.filled;
                   return (
                     <li key={role.name} className={styles.roleRow}>
@@ -300,7 +298,13 @@ export function CoveragePage() {
                           filled: role.filled,
                           required: role.required,
                         })}
-                        tone={missing === 0 ? "var(--color-green)" : percent > 0 ? "var(--color-orange)" : "var(--color-red)"}
+                        tone={
+                          missing === 0
+                            ? "var(--color-green)"
+                            : percent > 0
+                              ? "var(--color-orange)"
+                              : "var(--color-red)"
+                        }
                       />
                       <span className={styles.roleCount}>
                         {role.filled} / {role.required}
@@ -319,10 +323,15 @@ export function CoveragePage() {
                   ) : (
                     <>
                       <strong>
-                        {t(openRoles === 1 ? "{count} required role still open." : "{count} required roles still open.", {
-                          count: openRoles,
-                        })}
-                      </strong>{' '}
+                        {t(
+                          openRoles === 1
+                            ? "{count} required role still open."
+                            : "{count} required roles still open.",
+                          {
+                            count: openRoles,
+                          },
+                        )}
+                      </strong>{" "}
                       {gapLabel(selectedShift.id)}. Seat fill is {selectedFill}%.
                     </>
                   )}
@@ -383,7 +392,8 @@ export function CoveragePage() {
                           <span className={styles.rowCopy}>
                             <span className={styles.rowTitle}>{row.opportunity.title}</span>
                             <span className={styles.rowMeta}>
-                              {formatDate(row.shift.startsAt)} · {timeRange(row.shift.startsAt, row.shift.endsAt)} ·{' '}
+                              {formatDate(row.shift.startsAt)} ·{" "}
+                              {timeRange(row.shift.startsAt, row.shift.endsAt)} ·{" "}
                               {row.shift.roles.length} roles
                             </span>
                           </span>
@@ -412,7 +422,12 @@ export function CoveragePage() {
                 })}
               </ul>
               {timedRows.length > 5 ? (
-                <Button variant="ghost" size="small" className={styles.showAll} onClick={() => setExpanded(!expanded)}>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  className={styles.showAll}
+                  onClick={() => setExpanded(!expanded)}
+                >
                   {expanded
                     ? t("Show fewer shifts")
                     : t("Show all {count} shifts", { count: timedRows.length })}
@@ -456,8 +471,8 @@ export function CoveragePage() {
           <div className={styles.riskFoot}>
             <Users size={14} aria-hidden="true" />
             <p>
-              Role risk counts required slots on upcoming shifts. A volunteer can hold one seat
-              per shift; AutoRoster skips anyone already booked.
+              Role risk counts required slots on upcoming shifts. A volunteer can hold one seat per
+              shift; AutoRoster skips anyone already booked.
             </p>
           </div>
         </Card>

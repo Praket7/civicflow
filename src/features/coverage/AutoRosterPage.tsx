@@ -223,7 +223,8 @@ export function AutoRosterPage() {
           const end = parseISO(row.shift.endsAt).getTime();
           const overlaps = start < shiftEnd && end > shiftStart;
           return (
-            overlaps && rosters.get(row.shift.id)?.some((entry) => entry.volunteer.id === volunteer.id)
+            overlaps &&
+            rosters.get(row.shift.id)?.some((entry) => entry.volunteer.id === volunteer.id)
           );
         });
 
@@ -234,10 +235,7 @@ export function AutoRosterPage() {
         for (const role of eligibleRoles) {
           const language =
             role.toLowerCase().includes("spanish") || (options.preferSpanish && spanish) ? 10 : 0;
-          scores[role] = Math.min(
-            100,
-            40 + availabilityScore + interest + reliability + language,
-          );
+          scores[role] = Math.min(100, 40 + availabilityScore + interest + reliability + language);
         }
         const primaryRole = eligibleRoles.reduce((best, role) =>
           (scores[role] ?? 0) > (scores[best] ?? 0) ? role : best,
@@ -282,7 +280,8 @@ export function AutoRosterPage() {
     const normalized = query.trim().toLowerCase();
     const rows = data.candidates.filter((candidate) => {
       if (skillFilter !== "all" && !candidate.eligibleRoles.includes(skillFilter)) return false;
-      if (availabilityFilter !== "all" && candidate.availability !== availabilityFilter) return false;
+      if (availabilityFilter !== "all" && candidate.availability !== availabilityFilter)
+        return false;
       if (!normalized) return true;
       return `${candidate.volunteer.name} ${candidate.volunteer.skills.join(" ")} ${candidate.eligibleRoles.join(" ")}`
         .toLowerCase()
@@ -322,38 +321,36 @@ export function AutoRosterPage() {
   const activePlan = useMemo<PlanRow[]>(() => {
     if (!plan) return [];
     return plan.assignments.map((assignment) => {
-      const gap =
-        data.gaps.find((row) => row.name === assignment.role) ?? {
-          name: assignment.role,
-          required: 1,
-          filled: 0,
-          missing: 1,
-        };
+      const gap = data.gaps.find((row) => row.name === assignment.role) ?? {
+        name: assignment.role,
+        required: 1,
+        filled: 0,
+        missing: 1,
+      };
       const known = data.candidates.find(
         (candidate) => candidate.volunteer.id === assignment.candidateId,
       );
-      const candidate: Candidate =
-        known ?? {
-          volunteer:
-            workspace.volunteers.find((row) => row.id === assignment.candidateId) ??
-            workspace.volunteers[0],
-          primaryRole: assignment.role,
-          eligibleRoles: assignment.eligibleRoles,
-          score: assignment.score,
-          scores: { [assignment.role]: assignment.score },
-          breakdown: [
-            { label: "Skill and credential fit", value: assignment.breakdown.skill, max: 40 },
-            { label: "Availability fit", value: assignment.breakdown.availability, max: 20 },
-            { label: "Interest in this cause", value: assignment.breakdown.interest, max: 15 },
-            { label: "Attendance reliability", value: assignment.breakdown.reliability, max: 15 },
-            { label: "Language and fairness", value: assignment.breakdown.fairness, max: 20 },
-          ],
-          reasons: assignment.reasons,
-          availability: "available",
-          weeklyShifts: 0,
-          conflict: null,
-          waitlisted: assignment.promoteWaitlist,
-        };
+      const candidate: Candidate = known ?? {
+        volunteer:
+          workspace.volunteers.find((row) => row.id === assignment.candidateId) ??
+          workspace.volunteers[0],
+        primaryRole: assignment.role,
+        eligibleRoles: assignment.eligibleRoles,
+        score: assignment.score,
+        scores: { [assignment.role]: assignment.score },
+        breakdown: [
+          { label: "Skill and credential fit", value: assignment.breakdown.skill, max: 40 },
+          { label: "Availability fit", value: assignment.breakdown.availability, max: 20 },
+          { label: "Interest in this cause", value: assignment.breakdown.interest, max: 15 },
+          { label: "Attendance reliability", value: assignment.breakdown.reliability, max: 15 },
+          { label: "Language and fairness", value: assignment.breakdown.fairness, max: 20 },
+        ],
+        reasons: assignment.reasons,
+        availability: "available",
+        weeklyShifts: 0,
+        conflict: null,
+        waitlisted: assignment.promoteWaitlist,
+      };
       return { gap, candidate, backend: assignment };
     });
   }, [data.candidates, data.gaps, plan, workspace.volunteers]);
@@ -381,7 +378,8 @@ export function AutoRosterPage() {
       ? 100
       : Math.round(((filledSlots + plannedCandidates.length) / requiredSlots) * 100);
   const afterSeats = Math.min(shift.capacity, shift.confirmed + plannedCandidates.length);
-  const afterSeatPercent = shift.capacity === 0 ? 0 : Math.round((afterSeats / shift.capacity) * 100);
+  const afterSeatPercent =
+    shift.capacity === 0 ? 0 : Math.round((afterSeats / shift.capacity) * 100);
   const excludedCount = data.candidates.length - eligibleForPlan.length;
   const coverageGain = Math.max(0, afterRolePercent - beforeRolePercent);
 
@@ -475,7 +473,9 @@ export function AutoRosterPage() {
           <p className={styles.shiftBarMeta}>
             <CalendarClock size={13} aria-hidden="true" />
             {formatDate(shift.startsAt)} · {timeRange(shift.startsAt, shift.endsAt)}
-            <span className={styles.sep} aria-hidden="true">·</span>
+            <span className={styles.sep} aria-hidden="true">
+              ·
+            </span>
             <MapPin size={13} aria-hidden="true" />
             {opportunity.address}
           </p>
@@ -732,7 +732,10 @@ export function AutoRosterPage() {
                   const candidate = assignment.candidate;
                   if (!candidate) return null;
                   return (
-                    <li key={`${assignment.gap.name}-${candidate.volunteer.id}`} className={styles.planRow}>
+                    <li
+                      key={`${assignment.gap.name}-${candidate.volunteer.id}`}
+                      className={styles.planRow}
+                    >
                       <Avatar
                         initials={candidate.volunteer.initials}
                         src={candidate.volunteer.photo}
@@ -748,7 +751,8 @@ export function AutoRosterPage() {
                         </span>
                       </div>
                       <span className={styles.planReason}>
-                        {candidate.reasons[0] ?? `${candidate.volunteer.attendanceRate}% attendance`}
+                        {candidate.reasons[0] ??
+                          `${candidate.volunteer.attendanceRate}% attendance`}
                       </span>
                       <span className={styles.planScore}>{candidate.score}</span>
                     </li>
@@ -766,7 +770,10 @@ export function AutoRosterPage() {
                     ? "Assignments applied"
                     : `Apply ${plannedCandidates.length} assignment${plannedCandidates.length === 1 ? "" : "s"}`}
                 </Button>
-                <p className={applied ? styles.appliedNote : styles.applyNote} role={applied ? "status" : undefined}>
+                <p
+                  className={applied ? styles.appliedNote : styles.applyNote}
+                  role={applied ? "status" : undefined}
+                >
                   {applied
                     ? `Added to the roster and written to the audit log. Seat coverage is now ${afterSeatPercent}%.`
                     : `Nothing is saved until you apply. Seat coverage will move to ${afterSeatPercent}%.`}
@@ -777,17 +784,17 @@ export function AutoRosterPage() {
             <div className={styles.emptyPlan}>
               <p className={styles.emptyPlanTitle}>No automatic match.</p>
               <p className={styles.emptyPlanBody}>
-                The remaining people either lack the required skill, are already booked at this time,
-                or have unconfirmed availability. Allow waitlisted volunteers or lower the weekly cap,
-                then run it again.
+                The remaining people either lack the required skill, are already booked at this
+                time, or have unconfirmed availability. Allow waitlisted volunteers or lower the
+                weekly cap, then run it again.
               </p>
             </div>
           ) : (
             <div className={styles.emptyPlan}>
               <p className={styles.emptyPlanTitle}>Nothing proposed yet.</p>
               <p className={styles.emptyPlanBody}>
-                A run does not book anyone. It only suggests people for the open roles; you review the
-                list before anything reaches the roster.
+                A run does not book anyone. It only suggests people for the open roles; you review
+                the list before anything reaches the roster.
               </p>
               <Button
                 variant="secondary"
@@ -858,11 +865,16 @@ export function AutoRosterPage() {
           </p>
         </section>
 
-        <section className={`${styles.pane} ${styles.requirements}`} aria-label="Shift requirements">
+        <section
+          className={`${styles.pane} ${styles.requirements}`}
+          aria-label="Shift requirements"
+        >
           <div className={styles.paneHead}>
             <div>
               <h2 className={styles.paneTitle}>Shift brief</h2>
-              <p className={styles.paneSub}>What the shift asks for, and what is already covered.</p>
+              <p className={styles.paneSub}>
+                What the shift asks for, and what is already covered.
+              </p>
             </div>
             <span className={styles.paneCount}>
               <strong>{data.rosterCount}</strong> on roster

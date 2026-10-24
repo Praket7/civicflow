@@ -209,15 +209,16 @@ try {
       "--hide-scrollbars",
       "--force-device-scale-factor=1",
       "--window-size=1600,1000",
+      ...(process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
       `--remote-debugging-port=${CDP_PORT}`,
       `--user-data-dir=${chromeProfile}`,
       "about:blank",
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", process.env.CI ? "inherit" : "ignore"] },
   );
 
   try {
-    await waitForDevtools(20_000);
+    await waitForDevtools(30_000);
     const targets = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json();
     const page = targets.find((item) => item.type === "page");
     if (!page) throw new Error("Chrome opened no page target");

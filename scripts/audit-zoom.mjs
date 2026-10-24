@@ -125,7 +125,7 @@ const AUDIT = String.raw`(() => {
 })()`;
 
 async function waitForDevtools() {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
       const response = await fetch(`http://127.0.0.1:${PORT}/json/version`);
       if (response.ok) return;
@@ -192,11 +192,12 @@ try {
       "--hide-scrollbars",
       "--force-device-scale-factor=1",
       "--window-size=1600,1000",
+      ...(process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
       `--remote-debugging-port=${PORT}`,
       `--user-data-dir=/tmp/civicflow-zoom-${process.pid}`,
       "about:blank",
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", process.env.CI ? "inherit" : "ignore"] },
   );
   await waitForDevtools();
   const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();

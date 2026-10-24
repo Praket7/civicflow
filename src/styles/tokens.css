@@ -1,0 +1,240 @@
+/* CivicFlow design tokens.
+   The palette is built like a community service ledger: warm paper, ink,
+   brick-red pencil, moss, and ochre. One accent carries action; the rest are
+   status and cause colours. Art-directed surfaces can pin data-theme="light". */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Brand structure */
+  --color-navy: #211d17;
+  --color-navy-raised: #2b261e;
+  --color-navy-line: #423a2e;
+  --color-canvas: #f1ebe0;
+  --color-paper: #f9f4ea;
+  --color-raised: #fffdf7;
+
+  /* Channel values let one rgba() expression follow the theme. */
+  --ink-rgb: 33 29 23;
+  --scrim-rgb: 33 29 23;
+  --canvas-rgb: 241 235 224;
+  --paper-rgb: 249 244 234;
+  --raised-rgb: 255 253 247;
+
+  /* Action: brick red, used for primary controls and links. */
+  --color-cobalt: #a64b32;
+  --color-cobalt-hover: #8d3d27;
+  --color-cobalt-pressed: #742f1c;
+  --color-cobalt-soft: #f0dcd2;
+
+  /* Signature + expressive */
+  --color-lime: #e6c56d;
+  --color-lime-hover: #efd389;
+  --color-lime-ink: #3d2f0c;
+  --switch-off: #c9bfae;
+  --color-coral: #b4563d;
+  --color-orange: #b97a2c;
+  --color-yellow: #d6a63d;
+  --color-violet: #6e5a75;
+  --color-teal: #3d7168;
+  --color-cyan: #4f6f80;
+  --color-green: #3f6b4a;
+  --color-red: #a83e34;
+
+  /* Tinted status surfaces */
+  --tone-green-soft: #e3ecdf;
+  --tone-green-ink: #31583a;
+  --tone-amber-soft: #f5e8d0;
+  --tone-amber-ink: #764810;
+  --tone-red-soft: #f4ded6;
+  --tone-red-ink: #8a3229;
+  --tone-cobalt-soft: #f0dcd2;
+  --tone-cobalt-ink: #843825;
+  --tone-violet-soft: #ece5ed;
+  --tone-violet-ink: #57465d;
+  --tone-cyan-soft: #e4ebee;
+  --tone-cyan-ink: #3c5b6b;
+  --tone-teal-soft: #deeae6;
+  --tone-teal-ink: #2f5b53;
+  --tone-lime-soft: rgba(230, 197, 109, 0.26);
+  --tone-lime-ink: #5b470f;
+
+  /* Ink */
+  --color-ink: #1e1a15;
+  --color-ink-soft: #5d5549;
+  --color-ink-muted: #6a6154;
+  --color-ink-inverse: #f8f1e3;
+  --color-white: #ffffff;
+
+  /* Semantic aliases */
+  --surface-canvas: var(--color-canvas);
+  --surface-paper: var(--color-paper);
+  --surface-raised: var(--color-raised);
+  --surface-muted: #eae2d5;
+  --surface-dark: var(--color-navy);
+  --surface-dark-raised: var(--color-navy-raised);
+  --surface-sidebar: #1c1914;
+  --text-primary: var(--color-ink);
+  --text-secondary: var(--color-ink-soft);
+  --text-muted: var(--color-ink-muted);
+  --text-inverse: var(--color-ink-inverse);
+  --action-primary: var(--color-cobalt);
+  --action-hover: var(--color-cobalt-hover);
+  --action-pressed: var(--color-cobalt-pressed);
+  --border-soft: rgba(48, 39, 28, 0.14);
+  --border-strong: rgba(48, 39, 28, 0.26);
+  --status-success: var(--color-green);
+  --status-warning: var(--color-orange);
+  --status-critical: var(--color-red);
+  --status-info: var(--color-cyan);
+
+  /* Paper and glass */
+  --glass-surface: rgba(249, 244, 234, 0.9);
+  --glass-strong: rgba(255, 253, 247, 0.96);
+  --glass-border: rgba(48, 39, 28, 0.16);
+  --glass-highlight: rgba(255, 255, 255, 0.55);
+  --glass-blur: 0px;
+  --paper-grain-opacity: 0.05;
+
+  /* Causes */
+  --cause-food: var(--color-coral);
+  --cause-education: var(--color-violet);
+  --cause-environment: var(--color-teal);
+  --cause-health: var(--color-cyan);
+  --cause-community: var(--color-orange);
+  --cause-animals: #a25663;
+
+  /* Type */
+  --font-sans: "Geist Variable", "Geist Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Source Serif 4 Variable", "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii. Small, printed-paper corners instead of soft SaaS pills. */
+  --radius-compact: 2px;
+  --radius-control: 4px;
+  --radius-panel: 5px;
+  --radius-card: 6px;
+  --radius-hero: 4px;
+  --radius-pill: 999px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Elevation: paper lift, not floating glass. */
+  --shadow-card: 0 1px 0 rgba(48, 39, 28, 0.05);
+  --shadow-popover: 0 14px 34px -22px rgba(48, 39, 28, 0.42), 0 1px 0 rgba(48, 39, 28, 0.08);
+  --shadow-float: 0 22px 50px -28px rgba(48, 39, 28, 0.5), 0 1px 0 rgba(48, 39, 28, 0.1);
+
+  /* Motion */
+  --motion-instant: 80ms;
+  --motion-fast: 130ms;
+  --motion-standard: 190ms;
+  --motion-celebration: 380ms;
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.22, 1.05, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout */
+  --sidebar-width: 224px;
+  --sidebar-width-collapsed: 68px;
+  --topbar-height: 64px;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #17140f;
+  --color-paper: #211d16;
+  --color-raised: #27221a;
+  --color-navy: #100e0a;
+  --color-navy-raised: #1d1912;
+  --color-navy-line: #3a3125;
+  --color-ink: #f0e7d7;
+  --color-ink-soft: #cfc2ad;
+  --color-ink-muted: #a99a84;
+  --color-ink-inverse: #f8f1e3;
+
+  --ink-rgb: 240 231 215;
+  --canvas-rgb: 23 20 15;
+  --paper-rgb: 33 29 22;
+  --raised-rgb: 39 34 26;
+
+  --color-lime: #d9b85f;
+  --color-lime-hover: #e8ca7b;
+  --color-lime-ink: #302509;
+  --switch-off: #51463a;
+
+  --color-cobalt: #b45c42;
+  --color-cobalt-hover: #c56b4f;
+  --color-cobalt-pressed: #9d4a33;
+  --color-cobalt-soft: #3a2720;
+
+  --tone-green-soft: #223226;
+  --tone-green-ink: #a8c9a5;
+  --tone-amber-soft: #352a16;
+  --tone-amber-ink: #e0bd7b;
+  --tone-red-soft: #3b211c;
+  --tone-red-ink: #e3a096;
+  --tone-cobalt-soft: #3a2720;
+  --tone-cobalt-ink: #e7b19f;
+  --tone-violet-soft: #322a35;
+  --tone-violet-ink: #c7b3cc;
+  --tone-cyan-soft: #213139;
+  --tone-cyan-ink: #a7c4d2;
+  --tone-teal-soft: #1f322d;
+  --tone-teal-ink: #9fc8bd;
+  --tone-lime-soft: rgba(217, 184, 95, 0.16);
+  --tone-lime-ink: #e5c983;
+
+  --surface-canvas: var(--color-canvas);
+  --surface-paper: var(--color-paper);
+  --surface-raised: var(--color-raised);
+  --surface-muted: #2d271e;
+  --surface-dark: var(--color-navy);
+  --surface-dark-raised: var(--color-navy-raised);
+  --surface-sidebar: #12100b;
+  --text-primary: var(--color-ink);
+  --text-secondary: var(--color-ink-soft);
+  --text-muted: var(--color-ink-muted);
+  --text-inverse: var(--color-ink-inverse);
+  --action-primary: #d98b70;
+  --action-hover: #e5a088;
+  --action-pressed: #c8795e;
+  --border-soft: rgba(240, 231, 215, 0.15);
+  --border-strong: rgba(240, 231, 215, 0.27);
+
+  --glass-surface: rgba(33, 29, 22, 0.94);
+  --glass-strong: rgba(39, 34, 26, 0.98);
+  --glass-border: rgba(240, 231, 215, 0.16);
+  --glass-highlight: rgba(255, 255, 255, 0.06);
+  --glass-blur: 0px;
+  --paper-grain-opacity: 0.08;
+
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.28);
+  --shadow-popover: 0 18px 40px -22px rgba(0, 0, 0, 0.75), 0 1px 0 rgba(240, 231, 215, 0.08);
+  --shadow-float: 0 28px 60px -28px rgba(0, 0, 0, 0.82), 0 1px 0 rgba(240, 231, 215, 0.1);
+}
+
+html[data-transparency="reduced"] {
+  --glass-surface: var(--surface-paper);
+  --glass-strong: var(--surface-raised);
+  --glass-border: var(--border-soft);
+  --glass-blur: 0px;
+  --paper-grain-opacity: 0;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-surface: var(--surface-paper);
+    --glass-strong: var(--surface-raised);
+    --glass-border: var(--border-soft);
+    --glass-blur: 0px;
+    --paper-grain-opacity: 0;
+  }
+}

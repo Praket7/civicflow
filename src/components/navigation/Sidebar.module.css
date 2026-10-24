@@ -1,0 +1,695 @@
+.sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 0 14px 14px;
+  overflow: visible;
+  isolation: isolate;
+  background: var(--surface-sidebar);
+  color: var(--text-inverse);
+  border-right: 1px solid rgba(248, 241, 227, 0.09);
+  transition:
+    width var(--motion-standard) var(--ease-out),
+    box-shadow var(--motion-standard) var(--ease-out),
+    transform var(--motion-standard) var(--ease-out);
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 18px 4px 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-inverse);
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline-color: var(--color-lime);
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--color-cobalt);
+  transition: transform var(--motion-standard) var(--ease-spring);
+}
+
+.brand:hover .mark {
+  transform: rotate(-3deg);
+}
+
+.mark svg {
+  width: 21px;
+  height: 21px;
+}
+
+.brandName {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.frameButton {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-spring);
+}
+
+.frameButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+.frameButton:focus-visible {
+  outline-color: var(--color-lime);
+}
+
+.workspace {
+  position: relative;
+}
+
+.orgSwitcher {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  margin: 0 0 8px;
+  border: 1px solid rgba(248, 241, 227, 0.14);
+  border-radius: 2px;
+  background: rgba(248, 241, 227, 0.04);
+  color: var(--text-inverse);
+  text-align: left;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.orgSwitcher:hover,
+.orgSwitcher[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.orgSwitcher:focus-visible {
+  outline-color: var(--color-lime);
+}
+
+.orgBadge {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--color-lime);
+  color: var(--color-navy);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.orgText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.orgName {
+  font-size: 15.5px;
+  font-weight: 520;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.orgMeta {
+  margin-top: 3px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.chevron {
+  flex: none;
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.5);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.orgSwitcher[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+
+.workspaceMenu {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 0;
+  z-index: 50;
+  width: min(268px, 78vw);
+  padding: 8px;
+  border: 1px solid rgba(248, 241, 227, 0.16);
+  border-radius: 3px;
+  background: var(--surface-sidebar);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-float);
+  animation: menuIn var(--motion-fast) var(--ease-out);
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menuLabel {
+  display: block;
+  padding: 4px 8px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(248, 241, 227, 0.46);
+}
+
+.menuCurrent {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: var(--radius-control);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.menuCurrentText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.menuCurrentName {
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.menuCurrentMeta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.menuDivider {
+  height: 1px;
+  margin: 7px 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13.5px;
+  text-decoration: none;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.menuItem:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.nav {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 8px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.group {
+  margin-top: 12px;
+}
+
+.groupLabel {
+  margin: 0 0 5px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(248, 241, 227, 0.56);
+}
+
+.group ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-left: 3px solid transparent;
+  border-radius: 2px;
+  color: rgba(248, 241, 227, 0.76);
+  font-size: 14.5px;
+  font-weight: 440;
+  text-decoration: none;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-spring);
+}
+
+.item svg {
+  flex: none;
+  opacity: 0.86;
+  transition: transform var(--motion-fast) var(--ease-spring);
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.item:hover svg {
+  transform: translateX(1px);
+}
+
+.item:focus-visible {
+  outline-color: var(--color-lime);
+}
+
+.itemActive,
+.itemActive:hover {
+  background: rgba(248, 241, 227, 0.08);
+  border-left-color: var(--color-lime);
+  color: #fff;
+  font-weight: 520;
+  box-shadow: none;
+}
+
+.itemActive svg {
+  opacity: 1;
+}
+
+.itemLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 2px;
+  background: var(--color-coral);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.footer {
+  flex: none;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 6px;
+}
+
+.personText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.personName {
+  font-size: 15px;
+  font-weight: 520;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.personRole {
+  margin-top: 2px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.signOut {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.signOut:hover,
+.signOut:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 5px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.status > span:not(.sep) {
+  white-space: nowrap;
+}
+
+.onlineDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-green);
+}
+
+.sep {
+  opacity: 0.5;
+}
+
+.mobileBackdrop {
+  display: none;
+}
+
+/* Desktop rail: hover or focus reveals the full navigation without losing the compact grid. */
+@media (min-width: 761px) {
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) {
+    padding: 0 10px 14px;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .brandName,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .orgText,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .chevron,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .itemLabel,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .badge,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .groupLabel,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .personText,
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .status {
+    display: none;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .brandRow {
+    justify-content: center;
+    padding: 20px 0 16px;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .orgSwitcher {
+    justify-content: center;
+    padding: 9px 0;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .group {
+    margin-top: 18px;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .person {
+    justify-content: center;
+    padding: 4px 0 6px;
+  }
+
+  .sidebar[data-collapsed="true"]:not(:hover):not(:focus-within) .frameButton {
+    position: absolute;
+    top: 22px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: var(--color-navy-raised);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sidebar[data-collapsed="true"]:hover .frameButton,
+  .sidebar[data-collapsed="true"]:focus-within .frameButton {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* A soft cast shadow marks the rail as floating without covering the page. */
+  .sidebar[data-collapsed="true"]::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -26px;
+    width: 26px;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(90deg, rgba(4, 14, 26, 0.22), rgba(4, 14, 26, 0));
+    transition: opacity var(--motion-standard) var(--ease-out);
+  }
+
+  .sidebar[data-collapsed="true"]:hover::after,
+  .sidebar[data-collapsed="true"]:focus-within::after {
+    opacity: 1;
+  }
+
+  .sidebar[data-collapsed="true"]:hover,
+  .sidebar[data-collapsed="true"]:focus-within {
+    z-index: 45;
+    padding: 0 14px 14px;
+    background: var(--surface-sidebar);
+    box-shadow: var(--shadow-float);
+  }
+
+  .sidebar[data-collapsed="true"]:hover .brandRow,
+  .sidebar[data-collapsed="true"]:focus-within .brandRow {
+    justify-content: space-between;
+    padding: 20px 4px 16px;
+  }
+
+  .sidebar[data-collapsed="true"]:hover .orgSwitcher,
+  .sidebar[data-collapsed="true"]:focus-within .orgSwitcher {
+    justify-content: flex-start;
+    padding: 9px 10px;
+  }
+
+  .sidebar[data-collapsed="true"]:hover .group,
+  .sidebar[data-collapsed="true"]:focus-within .group {
+    margin-top: 12px;
+  }
+
+  .sidebar[data-collapsed="true"]:hover .item,
+  .sidebar[data-collapsed="true"]:focus-within .item {
+    justify-content: flex-start;
+    padding: 0 12px;
+  }
+
+  .sidebar[data-collapsed="true"]:hover .person,
+  .sidebar[data-collapsed="true"]:focus-within .person {
+    justify-content: flex-start;
+    padding: 4px 8px 6px;
+  }
+}
+
+@keyframes railReveal {
+  from {
+    opacity: 0.7;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .sidebar:not(:hover):not(:focus-within) {
+    padding: 0 10px 14px;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .brandRow {
+    justify-content: center;
+    padding: 20px 0 16px;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .brandName,
+  .sidebar:not(:hover):not(:focus-within) .orgText,
+  .sidebar:not(:hover):not(:focus-within) .chevron,
+  .sidebar:not(:hover):not(:focus-within) .itemLabel,
+  .sidebar:not(:hover):not(:focus-within) .badge,
+  .sidebar:not(:hover):not(:focus-within) .groupLabel,
+  .sidebar:not(:hover):not(:focus-within) .personText,
+  .sidebar:not(:hover):not(:focus-within) .status {
+    display: none;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .orgSwitcher {
+    justify-content: center;
+    padding: 9px 0;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .group {
+    margin-top: 18px;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .person {
+    justify-content: center;
+    padding: 4px 0 6px;
+  }
+
+  .sidebar:hover,
+  .sidebar:focus-within {
+    z-index: 45;
+    box-shadow: var(--shadow-float);
+  }
+}
+
+@media (max-width: 760px) {
+  .mobileBackdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    border: 0;
+    background: rgba(3, 12, 24, 0.55);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-standard) var(--ease-standard);
+  }
+
+  .mobileBackdrop[data-open="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: min(310px, 88vw);
+    padding: 0 14px 18px;
+    transform: translateX(-103%);
+    box-shadow: var(--shadow-float);
+    overflow: hidden;
+  }
+
+  .sidebar[data-mobile-open="true"] {
+    transform: translateX(0);
+  }
+
+  .sidebar .brandName,
+  .sidebar .orgText,
+  .sidebar .chevron,
+  .sidebar .itemLabel,
+  .sidebar .badge,
+  .sidebar .groupLabel,
+  .sidebar .personText,
+  .sidebar .status {
+    display: revert;
+  }
+
+  .sidebar .item {
+    justify-content: flex-start;
+    padding: 0 12px;
+  }
+
+  .sidebar .orgSwitcher {
+    justify-content: flex-start;
+    padding: 9px 10px;
+  }
+
+  .sidebar .person {
+    justify-content: flex-start;
+    padding: 4px 8px 6px;
+  }
+
+  .workspaceMenu {
+    width: 100%;
+  }
+}

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pnpm typecheck
+pnpm lint
+pnpm format
+pnpm test
+pnpm build:web
+
+# These need headless Chrome. --best-effort skips only when no browser is
+# installed; a real failure still exits non-zero.
+echo "print audit"
+node scripts/audit-print.mjs --best-effort
+echo "accessibility tree audit"
+node scripts/audit-accessibility-tree.mjs --best-effort
+echo "200% zoom audit"
+node scripts/audit-zoom.mjs --best-effort
+
+pushd src-tauri/core >/dev/null
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+popd >/dev/null

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>CivicFlow — Turning time into impact</title>
+    <script>
+      // Apply saved appearance before the first paint so the theme never flashes.
+      (function () {
+        try {
+          var saved = JSON.parse(localStorage.getItem("civicflow.display") || "{}");
+          var preference =
+            saved.theme === "dark" || saved.theme === "system" ? saved.theme : "light";
+          var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = preference === "system" ? (dark ? "dark" : "light") : preference;
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+          if (saved.spacing === "comfortable")
+            document.documentElement.dataset.spacing = "comfortable";
+          if (saved.alwaysShowFocus === true)
+            document.documentElement.dataset.focusRings = "always";
+          if (saved.transparency === "reduced")
+            document.documentElement.dataset.transparency = "reduced";
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

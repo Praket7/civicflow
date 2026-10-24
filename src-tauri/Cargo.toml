@@ -1,0 +1,26 @@
+[package]
+name = "civicflow"
+version = "0.1.0"
+description = "CivicFlow — volunteer coordination with explainable staffing"
+authors = ["CivicFlow"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "civicflow_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-wdio-webdriver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+civicflow-core = { path = "core" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

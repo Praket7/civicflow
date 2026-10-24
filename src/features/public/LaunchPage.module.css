@@ -1,0 +1,364 @@
+/* Launch — a front page, not a splash card: masthead, readiness ledger, city strip. */
+
+.launch {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 17px 40px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-ink);
+}
+
+.brandMark svg {
+  width: 26px;
+  height: 26px;
+}
+
+.wordmark {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.mastheadMeta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+  align-items: center;
+  gap: 40px 80px;
+  flex: 1;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 54px 40px 54px;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.kicker {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.headline {
+  max-width: 760px;
+  margin-top: 16px;
+  font-family: var(--font-serif);
+  font-size: clamp(54px, 5.6vw, 86px);
+  font-weight: 560;
+  line-height: 0.94;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.lede {
+  max-width: 510px;
+  margin-top: 20px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 28px;
+}
+
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 17px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  font-weight: 580;
+  text-decoration: none;
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.primaryAction {
+  background: var(--color-cobalt);
+  color: #fff;
+}
+
+.primaryAction:hover {
+  background: var(--color-cobalt-hover);
+}
+
+.secondaryAction {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.secondaryAction:hover {
+  background: var(--surface-paper);
+  border-color: rgb(var(--ink-rgb) / 0.34);
+}
+
+.reassurance {
+  margin-top: 18px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.statusCard {
+  align-self: center;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--color-navy);
+  border-radius: var(--radius-card);
+  background: var(--surface-paper);
+  box-shadow: var(--shadow-card);
+}
+
+.statusHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.statusKicker {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.statusCount {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+}
+
+.check {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.check:last-child {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+
+.checkTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tone-green-ink);
+  font-size: 12.5px;
+  font-weight: 620;
+}
+
+.checkDetail {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.statusFoot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.01em;
+}
+
+.cityStrip {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 208px;
+  margin: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border-strong);
+  background: var(--color-navy);
+}
+
+.cityImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 62%;
+  filter: saturate(0.72) contrast(1.04);
+}
+
+.cityScrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgb(20 17 12 / 0.86) 0%, rgb(20 17 12 / 0.18) 56%, transparent 100%),
+    linear-gradient(0deg, rgb(20 17 12 / 0.58), transparent 62%);
+}
+
+.cityCaption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 18px 40px;
+  color: rgba(255, 248, 234, 0.86);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.cityCaption span:first-child {
+  color: #fff8ea;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 14px 40px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 1000px) {
+  .masthead {
+    padding: 15px 24px;
+  }
+
+  .stage {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+    padding: 40px 24px;
+  }
+
+  .statusCard {
+    width: 100%;
+    max-width: 560px;
+  }
+
+  .headline {
+    font-size: clamp(46px, 7vw, 64px);
+  }
+
+  .cityStrip {
+    height: 172px;
+  }
+
+  .cityCaption {
+    padding: 16px 24px;
+  }
+
+  .footer {
+    padding: 13px 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .stage {
+    padding: 32px 18px;
+  }
+
+  .headline {
+    font-size: 44px;
+  }
+
+  .lede {
+    font-size: 15px;
+  }
+
+  .cityStrip {
+    height: 138px;
+  }
+
+  .cityCaption span:last-child {
+    display: none;
+  }
+
+  .cityCaption {
+    padding: 14px 18px;
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 12px 18px;
+  }
+}

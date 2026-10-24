@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format
+      - run: pnpm test
+      - run: pnpm build:web
+      - name: Print audit
+        run: node scripts/audit-print.mjs
+      - name: Accessibility-tree audit
+        run: node scripts/audit-accessibility-tree.mjs
+      - name: 200% zoom audit
+        run: node scripts/audit-zoom.mjs
+
+  native:
+    name: Native end-to-end (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri/core -> target
+            src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:native:test
+      - run: pnpm test:native
+      - name: Upload native test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-log
+          path: |
+            wdio-logs/
+          if-no-files-found: ignore
+
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri/core -> target
+            src-tauri -> target
+      - name: Format
+        working-directory: src-tauri/core
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: src-tauri/core
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Core tests
+        working-directory: src-tauri/core
+        run: cargo test
+      - name: Desktop shell compiles
+        working-directory: src-tauri
+        run: cargo check

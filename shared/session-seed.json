@@ -1,0 +1,244 @@
+{
+  "savedOpportunityIds": ["opp-garden", "opp-library", "opp-animal", "opp-park"],
+  "waitlist": [
+    {
+      "id": "wait-sh-sat-food-vol-014",
+      "shiftId": "sh-sat-food",
+      "volunteerId": "vol-014",
+      "createdAt": "2026-10-16T11:00:00.000Z",
+      "status": "waiting",
+      "position": 1,
+      "eligibleRole": "Driver"
+    },
+    {
+      "id": "wait-sh-sat-food-vol-maya",
+      "shiftId": "sh-sat-food",
+      "volunteerId": "vol-maya",
+      "createdAt": "2026-10-15T17:00:00.000Z",
+      "status": "waiting",
+      "position": 2,
+      "eligibleRole": "Spanish Support"
+    },
+    {
+      "id": "wait-sh-sat-food-vol-018",
+      "shiftId": "sh-sat-food",
+      "volunteerId": "vol-018",
+      "createdAt": "2026-10-14T23:00:00.000Z",
+      "status": "waiting",
+      "position": 3,
+      "eligibleRole": "Food handling"
+    },
+    {
+      "id": "wait-sh-sun-library-vol-009",
+      "shiftId": "sh-sun-library",
+      "volunteerId": "vol-009",
+      "createdAt": "2026-10-17T16:00:00.000Z",
+      "status": "waiting",
+      "position": 1,
+      "eligibleRole": "Tutor"
+    }
+  ],
+  "applications": [
+    {
+      "id": "app-001",
+      "name": "Renée Alvarez",
+      "email": "renee.alvarez@example.org",
+      "initials": "RA",
+      "tone": "violet",
+      "stage": "applied",
+      "appliedAt": "2026-10-12T16:20:00-04:00",
+      "source": "Community fair",
+      "cause": "food",
+      "skills": ["Spanish", "Customer service"],
+      "note": "Available weekday mornings; wants to help with pantry intake."
+    },
+    {
+      "id": "app-002",
+      "name": "Devon Park",
+      "email": "devon.park@example.org",
+      "initials": "DP",
+      "tone": "teal",
+      "stage": "applied",
+      "appliedAt": "2026-10-11T09:05:00-04:00",
+      "source": "Website",
+      "cause": "environment",
+      "skills": ["Gardening", "Event setup"],
+      "note": "Weekend gardener with a pickup truck."
+    },
+    {
+      "id": "app-003",
+      "name": "Nora Haddad",
+      "email": "nora.haddad@example.org",
+      "initials": "NH",
+      "tone": "coral",
+      "stage": "applied",
+      "appliedAt": "2026-10-10T13:42:00-04:00",
+      "source": "Referral",
+      "cause": "education",
+      "skills": ["Tutoring", "Spanish"],
+      "note": "Former middle-school math teacher."
+    },
+    {
+      "id": "app-004",
+      "name": "Liam Foster",
+      "email": "liam.foster@example.org",
+      "initials": "LF",
+      "tone": "amber",
+      "stage": "review",
+      "appliedAt": "2026-10-08T10:15:00-04:00",
+      "source": "Website",
+      "cause": "health",
+      "skills": ["Driver", "CPR"],
+      "note": "Can cover Tuesday and Thursday delivery routes."
+    },
+    {
+      "id": "app-005",
+      "name": "Priya Desai",
+      "email": "priya.desai@example.org",
+      "initials": "PD",
+      "tone": "cobalt",
+      "stage": "review",
+      "appliedAt": "2026-10-06T18:30:00-04:00",
+      "source": "Partner agency",
+      "cause": "food",
+      "skills": ["Food handling", "Leadership"],
+      "note": "ServSafe certified; interested in shift lead work."
+    },
+    {
+      "id": "app-006",
+      "name": "Marcus Webb",
+      "email": "marcus.webb@example.org",
+      "initials": "MW",
+      "tone": "green",
+      "stage": "onboarding",
+      "appliedAt": "2026-10-02T11:00:00-04:00",
+      "source": "Volunteer match",
+      "cause": "community",
+      "skills": ["Event setup", "Technology"],
+      "note": "Background check complete; orientation booked."
+    },
+    {
+      "id": "app-007",
+      "name": "Tess Kim",
+      "email": "tess.kim@example.org",
+      "initials": "TK",
+      "tone": "rose",
+      "stage": "onboarding",
+      "appliedAt": "2026-09-28T15:25:00-04:00",
+      "source": "Referral",
+      "cause": "animals",
+      "skills": ["Customer service", "Technology"],
+      "note": "Kennel orientation scheduled for Oct 15."
+    }
+  ],
+  "audit": [
+    {
+      "id": "audit-seed-1",
+      "at": "2026-10-13T07:56:00-04:00",
+      "actor": "Praket Gauri",
+      "action": "waitlist.promote",
+      "entityType": "shift",
+      "entityId": "sh-sat-food",
+      "summary": "Promoted Jordan Lee from the waitlist",
+      "detail": "Role: Spanish Support · position 1"
+    },
+    {
+      "id": "audit-seed-2",
+      "at": "2026-10-13T07:30:00-04:00",
+      "actor": "System",
+      "action": "coverage.alert",
+      "entityType": "shift",
+      "entityId": "sh-sat-food",
+      "summary": "Driver role flagged for Saturday distribution"
+    },
+    {
+      "id": "audit-seed-3",
+      "at": "2026-10-12T18:05:00-04:00",
+      "actor": "Maya Chen",
+      "action": "hours.submit",
+      "entityType": "hours",
+      "entityId": "hours-maya-4",
+      "summary": "Submitted 9 h for Pantry Setup",
+      "detail": "Note: helped with extended evening restock"
+    },
+    {
+      "id": "audit-seed-4",
+      "at": "2026-10-12T17:20:00-04:00",
+      "actor": "Praket Gauri",
+      "action": "hours.approve",
+      "entityType": "hours",
+      "entityId": "hours-003",
+      "summary": "Approved 2 h 30 m for Ava Patel"
+    },
+    {
+      "id": "audit-seed-5",
+      "at": "2026-10-12T09:10:00-04:00",
+      "actor": "System",
+      "action": "backup.create",
+      "entityType": "backup",
+      "entityId": "backup-2026-10-12",
+      "summary": "Automatic snapshot completed",
+      "detail": "1.4 MB · 486 rows"
+    },
+    {
+      "id": "audit-seed-6",
+      "at": "2026-10-11T14:35:00-04:00",
+      "actor": "Praket Gauri",
+      "action": "opportunity.update",
+      "entityType": "opportunity",
+      "entityId": "opp-food",
+      "summary": "Changed Saturday capacity from 14 to 16"
+    },
+    {
+      "id": "audit-seed-7",
+      "at": "2026-10-10T11:02:00-04:00",
+      "actor": "Praket Gauri",
+      "action": "volunteer.update",
+      "entityType": "volunteer",
+      "entityId": "vol-maya",
+      "summary": "Added Food handling skill to Maya Chen"
+    },
+    {
+      "id": "audit-seed-8",
+      "at": "2026-10-09T08:44:00-04:00",
+      "actor": "Alicia Rivera",
+      "action": "shift.checkin",
+      "entityType": "shift",
+      "entityId": "sh-thu-food",
+      "summary": "Opened check-in for 12 volunteers"
+    },
+    {
+      "id": "audit-seed-9",
+      "at": "2026-10-08T16:18:00-04:00",
+      "actor": "Praket Gauri",
+      "action": "settings.update",
+      "entityType": "settings",
+      "entityId": "workspace",
+      "summary": "Turned on automatic waitlist promotion"
+    },
+    {
+      "id": "audit-seed-10",
+      "at": "2026-10-07T09:00:00-04:00",
+      "actor": "System",
+      "action": "credential.expiring",
+      "entityType": "volunteer",
+      "entityId": "vol-004",
+      "summary": "CPR / AED credential expires in 30 days"
+    }
+  ],
+  "settings": {
+    "organizationName": "FeedMore WNY",
+    "contactEmail": "volunteer@feedmorewny.org",
+    "timezone": "America/New_York",
+    "weekStartsOn": "monday",
+    "defaultShiftLength": 180,
+    "autoPromoteWaitlist": true,
+    "hoursRequireApproval": true,
+    "emailDigest": "weekly",
+    "textScale": "standard",
+    "highContrast": false,
+    "reducedMotion": false,
+    "underlineLinks": false,
+    "colourIndependent": true
+  }
+}

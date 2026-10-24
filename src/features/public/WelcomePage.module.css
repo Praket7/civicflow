@@ -1,0 +1,538 @@
+.page {
+  display: grid;
+  grid-template-columns: 52.8% minmax(0, 47.2%);
+  min-height: 100dvh;
+  background: var(--tone-amber-soft);
+}
+
+/* --------------------------------- photo ---------------------------------- */
+
+.photoPanel {
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--color-navy);
+  isolation: isolate;
+}
+
+.photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 52% 31%;
+  z-index: -2;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgb(var(--scrim-rgb) / 0.5) 0%, rgb(var(--scrim-rgb) / 0) 26%),
+    linear-gradient(
+      0deg,
+      rgb(var(--scrim-rgb) / 0.93) 2%,
+      rgb(var(--scrim-rgb) / 0.6) 27%,
+      rgb(var(--scrim-rgb) / 0) 56%
+    );
+}
+
+.brand {
+  position: absolute;
+  top: 32px;
+  left: 38px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 15px 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-compact);
+  background: rgb(var(--scrim-rgb) / 0.55);
+  text-decoration: none;
+  backdrop-filter: blur(10px);
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--color-lime);
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.4);
+}
+
+.mark svg {
+  width: 21px;
+  height: 21px;
+}
+
+.brandName {
+  color: #fff;
+  font-size: 21px;
+  font-weight: 640;
+  letter-spacing: -0.025em;
+}
+
+.photoCopy {
+  position: absolute;
+  left: 38px;
+  right: 56px;
+  bottom: 64px;
+  max-width: 560px;
+  color: #fff;
+}
+
+.photoEyebrow {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--color-lime);
+}
+
+.statement {
+  max-width: 540px;
+  margin-top: 12px;
+  font-family: var(--font-serif);
+  font-size: clamp(36px, 3.1vw, 50px);
+  font-weight: 560;
+  line-height: 1.04;
+  letter-spacing: -0.028em;
+  color: #fff;
+  text-wrap: balance;
+}
+
+.photoBody {
+  max-width: 430px;
+  margin-top: 16px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.credit {
+  position: absolute;
+  right: 22px;
+  bottom: 15px;
+  z-index: 2;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.52);
+  text-decoration: none;
+}
+
+.credit:hover {
+  color: rgba(255, 255, 255, 0.86);
+  text-decoration: underline;
+}
+
+/* --------------------------------- panel ---------------------------------- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  padding: clamp(44px, 11vh, 108px) clamp(40px, 4.1vw, 66px) 40px;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgb(230 197 109 / 0.08), transparent 52%),
+    var(--surface-paper);
+}
+
+.panelInner {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.panelEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.title {
+  max-width: 620px;
+  font-family: var(--font-serif);
+  font-size: clamp(35px, 2.7vw, 44px);
+  font-weight: 560;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.lede {
+  max-width: 440px;
+  margin-top: 10px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.roles {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 34px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.roleCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 22px;
+  min-height: 106px;
+  padding: 18px 20px 18px 25px;
+  border: 1px solid rgb(var(--ink-rgb) / 0.11);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.roleCard:hover {
+  border-color: rgb(var(--ink-rgb) / 0.24);
+}
+
+.roleCard[data-selected="true"] {
+  border-color: var(--action-primary);
+  box-shadow: inset 3px 0 0 var(--action-primary);
+}
+
+.roleCard:has(.radio:focus-visible) {
+  outline: 3px solid var(--color-cobalt);
+  outline-offset: 3px;
+}
+
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.accent {
+  position: absolute;
+  left: 6px;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 4px;
+}
+
+.roleCard[data-role="coordinator"] .accent {
+  background: var(--color-cobalt);
+}
+
+.roleCard[data-role="volunteer"] .accent {
+  background: var(--color-teal);
+}
+
+.roleCopy {
+  display: block;
+  min-width: 0;
+}
+
+.roleTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15.5px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.radioMark {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid rgb(var(--ink-rgb) / 0.24);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: #fff;
+  flex: none;
+}
+
+.roleCard[data-selected="true"] .radioMark {
+  border-color: var(--action-primary);
+  background: var(--color-cobalt);
+}
+
+.roleBody {
+  display: block;
+  max-width: 396px;
+  margin-top: 5px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.roleAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 35px;
+  padding: 0 15px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast);
+}
+
+.roleCard[data-role="coordinator"] .roleAction {
+  background: var(--color-cobalt);
+  color: #fff;
+}
+
+.roleCard[data-role="coordinator"]:hover .roleAction {
+  background: var(--color-cobalt-hover);
+}
+
+.roleCard[data-role="volunteer"] .roleAction {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.roleCard[data-role="volunteer"]:hover .roleAction {
+  border-color: rgb(var(--ink-rgb) / 0.32);
+  background: var(--surface-paper);
+}
+
+/* -------------------------------- continue -------------------------------- */
+
+.continue {
+  width: 100%;
+  height: 44px;
+  justify-content: space-between;
+  margin-top: 18px;
+  padding: 0 18px;
+  border-radius: var(--radius-control);
+  font-size: 14.5px;
+}
+
+.continueHint {
+  margin-top: 7px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* --------------------------------- trust ---------------------------------- */
+
+.trust {
+  margin-top: 38px;
+}
+
+.trustTitle {
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-compact);
+  font-size: 12.5px;
+  font-weight: 570;
+}
+
+.chip[data-tone="green"] {
+  background: var(--tone-green-soft);
+  color: var(--tone-green-ink);
+}
+
+.chip[data-tone="violet"] {
+  background: var(--tone-violet-soft);
+  color: var(--tone-violet-ink);
+}
+
+.chip[data-tone="teal"] {
+  background: var(--tone-teal-soft);
+  color: var(--tone-teal-ink);
+}
+
+.signIn {
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid rgb(var(--ink-rgb) / 0.12);
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.signIn a {
+  margin-left: 4px;
+  font-weight: 620;
+  color: var(--action-primary);
+}
+
+/* ------------------------------- responsive ------------------------------- */
+
+@media (max-width: 1280px) {
+  .page {
+    grid-template-columns: 50% minmax(0, 50%);
+  }
+
+  .panel {
+    padding-left: 42px;
+    padding-right: 42px;
+  }
+
+  .photoCopy {
+    left: 32px;
+    right: 40px;
+    bottom: 52px;
+  }
+
+  .brand {
+    top: 26px;
+    left: 32px;
+  }
+
+  .roleCard {
+    min-height: 100px;
+    gap: 14px;
+    padding-right: 16px;
+  }
+
+  .roleBody {
+    max-width: 330px;
+  }
+}
+
+@media (max-width: 1020px) {
+  .page {
+    grid-template-columns: 1fr;
+    min-height: 100dvh;
+  }
+
+  .photoPanel {
+    min-height: 360px;
+    height: 360px;
+  }
+
+  .photo {
+    object-position: 55% 28%;
+  }
+
+  .photoCopy {
+    bottom: 30px;
+    left: 26px;
+    right: 26px;
+  }
+
+  .statement {
+    font-size: 34px;
+    max-width: 430px;
+  }
+
+  .photoBody {
+    display: none;
+  }
+
+  .brand {
+    top: 22px;
+    left: 26px;
+  }
+
+  .credit {
+    bottom: 10px;
+    right: 16px;
+  }
+
+  .panel {
+    height: auto;
+    overflow: visible;
+    padding: 34px 26px 44px;
+  }
+
+  .panelInner {
+    max-width: 620px;
+  }
+
+  .title {
+    font-size: 32px;
+  }
+
+  .roles {
+    margin-top: 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  .roleCard {
+    grid-template-columns: 1fr;
+    gap: 13px;
+    padding: 17px 16px 17px 22px;
+  }
+
+  .roleAction {
+    width: fit-content;
+  }
+
+  .roleBody {
+    max-width: none;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 1021px) {
+  .panel {
+    padding-top: 40px;
+  }
+
+  .roles {
+    margin-top: 24px;
+  }
+
+  .roleCard {
+    min-height: 88px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  .trust {
+    margin-top: 26px;
+  }
+
+  .signIn {
+    margin-top: 22px;
+    padding-top: 16px;
+  }
+}

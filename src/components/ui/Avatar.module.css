@@ -1,0 +1,58 @@
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  overflow: hidden;
+  user-select: none;
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar[data-tone="violet"] {
+  background: var(--tone-violet-soft);
+  color: var(--tone-violet-ink);
+}
+
+.avatar[data-tone="teal"] {
+  background: var(--tone-teal-soft);
+  color: var(--tone-teal-ink);
+}
+
+.avatar[data-tone="coral"] {
+  background: var(--tone-red-soft);
+  color: var(--tone-red-ink);
+}
+
+.avatar[data-tone="amber"] {
+  background: var(--tone-amber-soft);
+  color: var(--tone-amber-ink);
+}
+
+.avatar[data-tone="cobalt"] {
+  background: var(--color-cobalt-soft);
+  color: var(--tone-cobalt-ink);
+}
+
+.avatar[data-tone="green"] {
+  background: var(--tone-green-soft);
+  color: var(--tone-green-ink);
+}
+
+.avatar[data-tone="rose"] {
+  background: var(--tone-red-soft);
+  color: var(--tone-red-ink);
+}
+
+.avatar[data-tone="cyan"] {
+  background: var(--tone-cyan-soft);
+  color: var(--tone-cyan-ink);
+}

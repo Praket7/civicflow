@@ -4,6 +4,14 @@ The release workflow signs and notarizes macOS builds, and signs Windows builds,
 repository secrets below are present. Without them it still publishes the same installers,
 unsigned. The steps live in `.github/workflows/release.yml`.
 
+Unsigned macOS builds are still ad-hoc signed, because
+`src-tauri/tauri.conf.json` sets `bundle.macOS.signingIdentity` to `-`. That binds
+`Info.plist` and seals the resources, so Gatekeeper reports a normal unverified app that
+**Open Anyway** can start. A bundle with no signature at all is instead reported as damaged
+and macOS only offers **Move to Trash**. Set `APPLE_SIGNING_IDENTITY` (the workflow does,
+when the certificate secret is present) and Tauri signs with the Developer ID identity
+instead.
+
 ## Secrets
 
 Add these under **Settings → Secrets and variables → Actions → New repository secret**.
@@ -51,7 +59,8 @@ Integrations, download the `.p8` once, and set `APPLE_API_KEY`,
 
 The workflow imports the certificate into a temporary keychain, finds the
 `Developer ID Application` identity, and lets Tauri sign, notarize, and staple the app and
-DMG.
+DMG. To pin the identity locally, export `APPLE_SIGNING_IDENTITY="Developer ID Application:
+Your Name (TEAMID)"` before `pnpm tauri build`; it overrides the ad-hoc default.
 
 ## Windows
 
@@ -92,7 +101,7 @@ xcrun stapler validate /Applications/CivicFlow.app
 Windows, in PowerShell:
 
 ```powershell
-Get-AuthenticodeSignature .\CivicFlow_0.1.0_x64-setup.exe | Format-List
+Get-AuthenticodeSignature .\CivicFlow_0.1.1_x64-setup.exe | Format-List
 ```
 
 `Status` should be `Valid` and `SignerCertificate.Subject` should name the publisher.

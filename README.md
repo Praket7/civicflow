@@ -120,8 +120,11 @@ Download the installer for your machine from [Releases](https://github.com/Prake
 Signed releases open normally. If a build is published without signing credentials, the
 first launch needs one extra confirmation:
 
-- **macOS** — open the `.dmg` for your chip (`aarch64` for Apple silicon, `x64` for Intel),
-  drag CivicFlow to Applications, then Control-click the app and choose **Open**.
+- **macOS** — open the `.dmg` for your chip (`aarch64` for Apple silicon, `x64` for Intel)
+  and drag CivicFlow to Applications. Double-click it once. If macOS says it cannot verify
+  the app, click **Done**, then open **System Settings → Privacy & Security**, scroll to
+  **Security**, and choose **Open Anyway**. You can also run
+  `xattr -dr com.apple.quarantine /Applications/CivicFlow.app` in Terminal, then open it.
 - **Windows** — run the `.msi` or `-setup.exe`. If SmartScreen appears, choose **More info →
   Run anyway**. The installer fetches WebView2 when it is missing.
 - **Linux** — install the `.deb` with `sudo apt install ./CivicFlow*_amd64.deb`, or
@@ -156,7 +159,9 @@ unsigned in its notes.
   capability-scoped webview, so it does not create an OS-level kiosk boundary.
 - QR scanning needs camera permission. The six-digit code remains the fallback when a
   camera is unavailable or denied.
-- Code signing and notarization are not configured. macOS and Windows will warn about an
-  unidentified developer until a certificate is supplied.
+- Code signing and notarization need certificates the repository does not carry. macOS
+  builds are ad-hoc signed, so Gatekeeper offers **Open Anyway** after the first double
+  click; Windows builds are unsigned, so SmartScreen offers **More info → Run anyway**.
+  [SIGNING.md](docs/SIGNING.md) lists the secrets that remove both prompts.
 - The accessibility tree and 200% zoom checks are automated; a human VoiceOver or NVDA pass
   on the packaged build has not been recorded.

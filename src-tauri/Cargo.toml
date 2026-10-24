@@ -1,6 +1,6 @@
 [package]
 name = "civicflow"
-version = "0.1.0"
+version = "0.1.1"
 description = "CivicFlow — volunteer coordination with explainable staffing"
 authors = ["CivicFlow"]
 edition = "2021"

@@ -114,13 +114,32 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DECISIONS.md](docs/DECISIONS.md),
 
 Details in [TESTING.md](docs/TESTING.md).
 
-## Release
+## Install a release
+
+Download the installer for your machine from [Releases](https://github.com/Praket7/civicflow/releases/latest).
+The builds are not code-signed, so the first launch needs one extra confirmation:
+
+- **macOS** — open the `.dmg` for your chip (`aarch64` for Apple silicon, `x64` for Intel),
+  drag CivicFlow to Applications, then Control-click the app and choose **Open**.
+- **Windows** — run the `.msi` or `-setup.exe`. If SmartScreen appears, choose **More info →
+  Run anyway**. The installer fetches WebView2 when it is missing.
+- **Linux** — install the `.deb` with `sudo apt install ./CivicFlow*_amd64.deb`, or
+  `chmod +x` the AppImage and run it. The deb needs GTK 3 and WebKitGTK 4.1; the AppImage
+  still uses the system WebKitGTK.
+
+Verify a download against `SHA256SUMS.txt` on the release:
+
+```bash
+sha256sum -c SHA256SUMS.txt      # macOS: shasum -a 256 -c SHA256SUMS.txt
+```
+
+## Build a release
 
 `pnpm tauri build` produces `src-tauri/target/release/bundle/macos/CivicFlow.app` and a
 `.dmg` on this machine. Pushing a `v*` tag runs `.github/workflows/release.yml`, which
-builds installers for macOS (Apple silicon and Intel), Windows x64, and Linux x64 and
-attaches them to the GitHub release. Builds are not code-signed, so the operating system
-will show an unidentified-developer warning.
+builds installers for macOS (Apple silicon and Intel), Windows x64, and Linux x64, attaches
+them to the GitHub release, and publishes SHA-256 checksums. Builds are not code-signed, so
+the operating system will show an unidentified-developer warning.
 
 ## Known limits
 

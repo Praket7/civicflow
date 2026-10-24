@@ -87,3 +87,25 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
+
+  checksums:
+    name: Publish checksums
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download every installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir artifacts --clobber
+
+      - name: Write SHA-256 checksums
+        working-directory: artifacts
+        run: |
+          rm -f SHA256SUMS.txt
+          sha256sum ./* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Attach checksums to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" artifacts/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber

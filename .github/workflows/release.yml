@@ -74,16 +74,21 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: CivicFlow ${{ github.ref_name }}
           releaseBody: |
-            CivicFlow desktop installers for macOS, Windows and Linux.
+            CivicFlow desktop installers for macOS (Apple silicon and Intel),
+            Windows x64, and Linux x64.
+
+            These builds are not code-signed. On macOS, Control-click the app
+            and choose Open. On Windows, choose More info → Run anyway if
+            SmartScreen appears. On Linux, chmod +x the AppImage before running
+            it; the deb and rpm use the system WebKitGTK 4.1.
+
+            Verify a download against SHA256SUMS.txt:
+            `sha256sum -c SHA256SUMS.txt`
 
             The demo accounts are `praket@feedmorewny.org` (coordinator) and
             `maya.chen@gmail.com` (volunteer), both with the password
             `civicflow-demo`. Change the coordinator password from Settings →
             Accounts before entering real volunteer data.
-
-            These builds are not code-signed. macOS and Windows will warn about
-            an unidentified developer; verify the SHA-256 checksum published
-            with each asset if the download matters to you.
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}

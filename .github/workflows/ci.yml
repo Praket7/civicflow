@@ -83,6 +83,13 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
             wget
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -100,6 +107,10 @@ jobs:
       - name: Core tests
         working-directory: src-tauri/core
         run: cargo test
+      - name: Build the embedded frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:web
       - name: Desktop shell compiles
         working-directory: src-tauri
         run: cargo check

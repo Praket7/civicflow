@@ -1,0 +1,667 @@
+/* Coverage Command Center — one health summary, one shift drill-down, one risk rail. */
+
+.rangeRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: -2px;
+}
+
+.rangeButton {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 550;
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.rangeButton:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.rangeActive {
+  background: var(--color-navy);
+  border-color: var(--color-navy);
+  color: #fff;
+  font-weight: 600;
+}
+
+.rangeActive:hover {
+  color: #fff;
+}
+
+.rangeMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding-left: 11px;
+  border-left: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* -------------------------------- top row --------------------------------- */
+
+.topGrid {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+}
+
+.healthCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 316px;
+  padding: 20px;
+  background: var(--surface-raised);
+}
+
+.healthHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.healthTitle {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+}
+
+.healthWindow {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.healthBody {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin: 18px 0;
+}
+
+.healthFigure {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.healthFigure strong {
+  font-family: var(--font-mono);
+  font-size: 58px;
+  font-weight: 500;
+  line-height: 0.86;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.healthFigure span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.healthBar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+
+.healthBar span {
+  display: block;
+  min-width: 3px;
+}
+
+.healthLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.healthLegend li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.healthLegend li:last-child {
+  border-bottom: 0;
+}
+
+.healthLegend strong {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.healthLegend li:nth-child(1) strong {
+  color: var(--tone-red-ink);
+}
+
+.healthLegend li:nth-child(2) strong {
+  color: var(--tone-amber-ink);
+}
+
+.healthLegend li:nth-child(3) strong {
+  color: var(--tone-green-ink);
+}
+
+.legendDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.healthFoot {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.healthFoot a {
+  color: var(--action-primary);
+  text-decoration: none;
+  font-weight: 540;
+}
+
+.healthFoot a:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------- shift card ------------------------------- */
+
+.shiftCard {
+  display: flex;
+  flex-direction: column;
+  min-height: 316px;
+  padding: 20px 22px;
+}
+
+.shiftHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.shiftHeadCopy {
+  min-width: 0;
+}
+
+.shiftEyebrow {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.shiftDate {
+  font-family: var(--font-serif);
+  font-size: 23px;
+  font-weight: 570;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.shiftTitle {
+  margin-top: 2px;
+  font-size: 14.5px;
+  font-weight: 610;
+  color: var(--text-primary);
+}
+
+.shiftMeta {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.shiftHeadActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.roleList {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 14px;
+}
+
+.roleRow {
+  display: grid;
+  grid-template-columns: 166px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 16px;
+}
+
+.roleName {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.roleGap,
+.roleReady {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 570;
+}
+
+.roleGap {
+  color: var(--tone-red-ink);
+}
+
+.roleReady {
+  color: var(--tone-green-ink);
+}
+
+.roleRow > div[role="progressbar"] {
+  height: 9px;
+}
+
+.roleCount {
+  font-size: 12.5px;
+  font-weight: 570;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.shiftFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.shiftFootCopy {
+  max-width: 560px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.shiftFootCopy strong {
+  font-weight: 610;
+  color: var(--text-primary);
+}
+
+.emptyShift {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  padding: 30px;
+}
+
+.emptyShift h2 {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 560;
+}
+
+.emptyShift p {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ------------------------------- bottom row ------------------------------- */
+
+.bottomGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
+  gap: 14px;
+}
+
+.listCard {
+  padding: 20px 22px 16px;
+}
+
+.listHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px 196px;
+  gap: 16px;
+  padding: 7px 10px 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 11px;
+  font-weight: 630;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.coverageList {
+  display: flex;
+  flex-direction: column;
+}
+
+.coverageList li {
+  border-bottom: 1px solid rgba(7, 27, 50, 0.06);
+}
+
+.coverageList li:last-child {
+  border-bottom: 0;
+}
+
+.coverageRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px 196px;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 10px 8px 10px 4px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  transition: background var(--motion-fast);
+}
+
+.coverageRow:hover {
+  background: rgba(245, 241, 233, 0.7);
+}
+
+.coverageRowActive {
+  background: rgb(166 75 50 / 0.055);
+  box-shadow: inset 2px 0 0 var(--color-cobalt);
+}
+
+.rowIdentity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.causeDot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.rowCopy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: 14px;
+  font-weight: 570;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.rowMeta {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowSeats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.seatCount {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.seatCount strong {
+  font-size: 14px;
+  font-weight: 620;
+  color: var(--text-primary);
+}
+
+.seatTrack {
+  display: block;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(7, 27, 50, 0.08);
+  overflow: hidden;
+}
+
+.seatTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.rowStatus {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.showAll {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.emptyCopy {
+  padding: 20px 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* --------------------------------- risk ---------------------------------- */
+
+.riskCard {
+  padding: 20px;
+}
+
+.riskList {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.riskRow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.riskTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.riskName {
+  font-size: 13.5px;
+  font-weight: 560;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.riskValue {
+  flex: none;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.riskTrack {
+  display: block;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(7, 27, 50, 0.07);
+  overflow: hidden;
+}
+
+.riskTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.riskFoot {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.riskFoot svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--action-primary);
+}
+
+.footnote {
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ------------------------------- responsive ------------------------------- */
+
+@media (max-width: 1320px) {
+  .topGrid {
+    grid-template-columns: 330px minmax(0, 1fr);
+  }
+
+  .bottomGrid {
+    grid-template-columns: minmax(0, 1fr) 330px;
+  }
+
+  .roleRow {
+    grid-template-columns: 148px minmax(0, 1fr) 44px;
+    gap: 12px;
+  }
+
+  .listHead,
+  .coverageRow {
+    grid-template-columns: minmax(0, 1fr) 96px 160px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .topGrid,
+  .bottomGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .healthCard {
+    min-height: 260px;
+  }
+
+  .healthBody {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .shiftHead,
+  .shiftFoot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .roleRow {
+    grid-template-columns: 130px minmax(0, 1fr) 42px;
+    gap: 9px;
+  }
+
+  .listHead {
+    display: none;
+  }
+
+  .coverageRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 11px 4px;
+  }
+
+  .rowSeats {
+    grid-column: 1;
+    padding-left: 33px;
+  }
+
+  .rowStatus {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+  }
+
+  .rangeMeta {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
+}

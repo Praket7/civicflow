@@ -3,7 +3,7 @@ dist/
 src-tauri/target/
 src-tauri/core/target/
 src-tauri/gen/
-coverage/
+/coverage/
 test-results/
 playwright-report/
 wdio-logs/

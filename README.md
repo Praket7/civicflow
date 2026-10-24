@@ -117,7 +117,8 @@ Details in [TESTING.md](docs/TESTING.md).
 ## Install a release
 
 Download the installer for your machine from [Releases](https://github.com/Praket7/civicflow/releases/latest).
-The builds are not code-signed, so the first launch needs one extra confirmation:
+Signed releases open normally. If a build is published without signing credentials, the
+first launch needs one extra confirmation:
 
 - **macOS** — open the `.dmg` for your chip (`aarch64` for Apple silicon, `x64` for Intel),
   drag CivicFlow to Applications, then Control-click the app and choose **Open**.
@@ -138,8 +139,9 @@ sha256sum -c SHA256SUMS.txt      # macOS: shasum -a 256 -c SHA256SUMS.txt
 `pnpm tauri build` produces `src-tauri/target/release/bundle/macos/CivicFlow.app` and a
 `.dmg` on this machine. Pushing a `v*` tag runs `.github/workflows/release.yml`, which
 builds installers for macOS (Apple silicon and Intel), Windows x64, and Linux x64, attaches
-them to the GitHub release, and publishes SHA-256 checksums. Builds are not code-signed, so
-the operating system will show an unidentified-developer warning.
+them to the GitHub release, and publishes SHA-256 checksums. Signing and notarization secrets are documented in
+[SIGNING.md](docs/SIGNING.md); without them the release is still built, but marked
+unsigned in its notes.
 
 ## Known limits
 

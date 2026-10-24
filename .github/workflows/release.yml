@@ -67,6 +67,121 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Import Apple signing certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "No APPLE_CERTIFICATE secret; the macOS build will be unsigned."
+            exit 0
+          fi
+
+          if [ -n "$APPLE_ID$APPLE_PASSWORD$APPLE_TEAM_ID" ]; then
+            if [ -z "$APPLE_ID" ] || [ -z "$APPLE_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
+              echo "APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID must all be set." >&2
+              exit 1
+            fi
+            NOTARY_MODE=apple-id
+          elif [ -n "$APPLE_API_KEY$APPLE_API_ISSUER$APPLE_API_KEY_CONTENT" ]; then
+            if [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_ISSUER" ] || [ -z "$APPLE_API_KEY_CONTENT" ]; then
+              echo "APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_CONTENT must all be set." >&2
+              exit 1
+            fi
+            NOTARY_MODE=api-key
+          else
+            echo "Certificate found but no notarization credentials were provided." >&2
+            exit 1
+          fi
+
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain "$HOME/Library/Keychains/login.keychain-db"
+
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+            | awk -F'"' '/Developer ID Application/ { print $2; exit }')
+          if [ -z "$IDENTITY" ]; then
+            echo "The imported certificate is not a Developer ID Application identity." >&2
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+          if [ "$NOTARY_MODE" = "apple-id" ]; then
+            echo "APPLE_ID=$APPLE_ID" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+          else
+            KEY_PATH="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+            printf '%s' "$APPLE_API_KEY_CONTENT" | base64 --decode > "$KEY_PATH"
+            chmod 600 "$KEY_PATH"
+            echo "APPLE_API_KEY=$APPLE_API_KEY" >> "$GITHUB_ENV"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+            echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          fi
+
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          echo "Imported $IDENTITY for signing and notarization."
+
+      - name: Import Windows signing certificate
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Host "No WINDOWS_CERTIFICATE secret; the Windows build will be unsigned."
+            exit 0
+          }
+          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) {
+            throw "WINDOWS_CERTIFICATE_PASSWORD is required with WINDOWS_CERTIFICATE."
+          }
+
+          $pfx = Join-Path $env:RUNNER_TEMP "certificate.pfx"
+          [IO.File]::WriteAllBytes(
+            $pfx,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          )
+          $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD `
+            -Force -AsPlainText
+          $cert = Import-PfxCertificate -FilePath $pfx `
+            -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          Remove-Item $pfx -Force
+
+          $timestamp = if ($env:WINDOWS_TIMESTAMP_URL) {
+            $env:WINDOWS_TIMESTAMP_URL
+          } else {
+            "http://timestamp.digicert.com"
+          }
+          $config = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $cert.Thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = $timestamp
+              }
+            }
+          } | ConvertTo-Json -Depth 5 -Compress
+          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_CONFIG=$config"
+          Write-Host "Imported Windows certificate $($cert.Thumbprint) for signing."
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,10 +192,12 @@ jobs:
             CivicFlow desktop installers for macOS (Apple silicon and Intel),
             Windows x64, and Linux x64.
 
-            These builds are not code-signed. On macOS, Control-click the app
-            and choose Open. On Windows, choose More info → Run anyway if
-            SmartScreen appears. On Linux, chmod +x the AppImage before running
-            it; the deb and rpm use the system WebKitGTK 4.1.
+            macOS and Windows builds are signed and notarized when the
+            repository signing secrets are configured. If your system warns
+            about an unidentified developer, that build is unsigned: on macOS,
+            Control-click the app and choose Open; on Windows, choose More info
+            → Run anyway if SmartScreen appears. On Linux, chmod +x the AppImage
+            before running it; the deb and rpm use the system WebKitGTK 4.1.
 
             Verify a download against SHA256SUMS.txt:
             `sha256sum -c SHA256SUMS.txt`

@@ -95,11 +95,15 @@ async function ensureServer() {
   const base = `http://127.0.0.1:${SERVER_PORT}`;
   if (await waitForHttp(base, 800)) return base;
 
-  server = spawn("pnpm", ["exec", "vite", "--port", String(SERVER_PORT), "--strictPort"], {
-    cwd: root,
-    stdio: "ignore",
-    env: { ...process.env, CI: "1" },
-  });
+  server = spawn(
+    "pnpm",
+    ["exec", "vite", "--host", "127.0.0.1", "--port", String(SERVER_PORT), "--strictPort"],
+    {
+      cwd: root,
+      stdio: "ignore",
+      env: { ...process.env, CI: "1" },
+    },
+  );
   const exited = new Promise((resolve) => server.once("exit", resolve));
   const ready = await Promise.race([
     waitForHttp(base, 30_000).then((ok) => (ok ? "ready" : "timeout")),

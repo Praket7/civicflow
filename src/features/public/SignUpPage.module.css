@@ -1,0 +1,102 @@
+/* Only what the create-account form adds on top of the shared auth card. */
+
+.roleHint {
+  margin: -6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.checklist {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.checklist svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--tone-green-ink);
+}
+
+.challenge {
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--color-cobalt);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+
+.challengeLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.challengeCode {
+  display: block;
+  margin: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 32px;
+  letter-spacing: 0.24em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.challengeNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+input.codeField {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  letter-spacing: 0.22em;
+  text-align: center;
+}
+
+.verifyActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.textButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 540;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.textButton:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}

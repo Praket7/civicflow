@@ -176,7 +176,7 @@ export function NotificationsPage() {
       createdAt: notification.createdAt,
       href: notification.href,
       actionLabel: seedAction(notification.kind),
-      entity: seedEntity(notification, "FeedMore WNY"),
+      entity: seedEntity(notification, workspace.organization.name),
       unread: !notification.readAt,
     }));
 
@@ -292,7 +292,7 @@ export function NotificationsPage() {
         });
       }
 
-      const match = getMatches(volunteer, 1)[0];
+      const match = getMatches(volunteer, 1, workspace, session.createdOpportunities)[0];
       if (match) {
         derived.push({
           id: "derived-recommendation",

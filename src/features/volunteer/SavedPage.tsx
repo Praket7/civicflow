@@ -144,7 +144,12 @@ export function SavedPage() {
 
   const savedItems = useMemo<SavedItem[]>(() => {
     const volunteer = currentVolunteer(workspace);
-    const scores = new Map(getMatches(volunteer, 20).map((match) => [match.opportunity.id, match]));
+    const scores = new Map(
+      getMatches(volunteer, 20, workspace, session.createdOpportunities).map((match) => [
+        match.opportunity.id,
+        match,
+      ]),
+    );
     return getSavedOpportunities(session).map((opportunity) => {
       const match = scores.get(opportunity.id);
       const nextShift =

@@ -1,4 +1,4 @@
-# Screen map — 42 references to 42 routes
+# Screen map — 42 references to 46 routes
 
 All paths are registered in `src/app/routes.ts`; mounting lives in `src/app/router.tsx`.
 “Shell” means the coordinator or volunteer navigation frame; “standalone” renders its own
@@ -48,6 +48,10 @@ canvas.
 | 40  | `40_backup_recovery.png`                    | `/coordinator/backup`                                    | Backup & Recovery       | coordinator shell |
 | 41  | `41_settings.png`                           | `/coordinator/settings`                                  | Settings                | coordinator shell |
 | 42  | `42_accessibility.png`                      | `/coordinator/accessibility`                             | Accessibility           | coordinator shell |
+| 43  | — (added, no reference)                     | `/create-account`                                        | Create Account          | standalone        |
+| 44  | — (added, no reference)                     | `/coordinator/start`                                     | Coordinator Onboarding  | standalone        |
+| 45  | — (added, no reference)                     | `/coordinator/organization/new`                          | Create Organization     | standalone        |
+| 46  | — (added, no reference)                     | `/volunteer/start`                                       | Find an Organization    | standalone        |
 
 ## Notes
 
@@ -57,3 +61,7 @@ canvas.
 - The kiosk is public by design but is not granted extra Tauri capabilities; it uses the same
   welcome-scoped workflow snapshot and no privileged APIs.
 - Reference images are design targets only. They are excluded from the app build.
+- Route 43 is self-serve account creation; it wears the sign-in card so the two account
+  surfaces stay identical.
+- Routes 44–46 continue that account path: coordinators join a team with a 10-digit code or
+  create a workspace, volunteers discover public organizations or join with a 6-digit code.

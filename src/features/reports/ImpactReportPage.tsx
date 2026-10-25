@@ -53,7 +53,7 @@ export function ImpactReportPage() {
           <section className={styles.reportCover}>
             <img className={styles.coverImage} src="/media/buffalo-skyline.jpg" alt="" />
             <span className={styles.coverOverlay} aria-hidden="true" />
-            <p className={styles.coverKicker}>FeedMore WNY · Annual impact</p>
+            <p className={styles.coverKicker}>{`${workspace.organization.name} · Annual impact`}</p>
             <h2 className={styles.coverTitle}>Service that stays in the neighborhood.</h2>
             <p className={styles.coverMeta}>
               {report.period} · Generated from {workspace.impact.uniqueVolunteersYtd} unique
@@ -220,7 +220,7 @@ export function ImpactReportPage() {
                 Save as PDF
               </Button>
               <a
-                href={`mailto:?subject=${encodeURIComponent("FeedMore WNY impact report")}&body=${encodeURIComponent(
+                href={`mailto:?subject=${encodeURIComponent(`${workspace.organization.name} impact report`)}&body=${encodeURIComponent(
                   `${report.totals.hoursYtd} verified hours, ${report.totals.mealsPacked} meals packed, ${report.totals.familiesServedThisMonth} families served this year.`,
                 )}`}
                 style={{

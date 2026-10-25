@@ -1,13 +1,31 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { formatDate, formatTime } from "../../lib/workspace/selectors";
-import type { AvailabilitySlot, DayKey, PeriodKey, Volunteer } from "../../types/domain";
-import { Avatar, Badge, Button, Card, Page, PageHeader, SectionHeader } from "../../components/ui";
+import type { AvailabilitySlot, Cause, DayKey, PeriodKey, Volunteer } from "../../types/domain";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  Page,
+  PageHeader,
+  SectionHeader,
+  TextField,
+} from "../../components/ui";
 import { SetupShell } from "../../components/layout/SetupShell";
+import { useAuth } from "../../lib/auth/session";
+import { profilePhoto } from "../../lib/images";
+import { completeSetup } from "../../lib/onboarding/store";
+import {
+  CAUSE_LABELS,
+  currentVolunteer,
+  formatDate,
+  formatTime,
+  getMatches,
+  getUpcomingShiftRows,
+} from "../../lib/workspace/selectors";
 import { useWorkspace } from "../../lib/workspace/session";
-import { currentVolunteer, getMatches, getUpcomingShiftRows } from "../../lib/workspace/selectors";
 import styles from "./OnboardingPage.module.css";
 
 const SKILL_OPTIONS = [
@@ -21,6 +39,15 @@ const SKILL_OPTIONS = [
   "Technology",
   "Driver",
   "CPR",
+];
+
+const CAUSE_OPTIONS: Cause[] = [
+  "food",
+  "education",
+  "environment",
+  "health",
+  "community",
+  "animals",
 ];
 
 const DAYS: { key: DayKey; label: string }[] = [
@@ -45,27 +72,48 @@ const STEPS = ["Profile", "Skills & interests", "Availability", "Preferences"];
 
 export function OnboardingPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { workspace, session, actions } = useWorkspace();
   const baseVolunteer = currentVolunteer(workspace);
+  const profile = session.volunteerProfile;
 
-  const [skills, setSkills] = useState<string[]>(() => session.volunteerProfile.skills);
-  const [availability, setAvailability] = useState<AvailabilitySlot[]>(
-    () => session.volunteerProfile.availability,
-  );
-  const [interests, setInterests] = useState(baseVolunteer.interests);
-  const [saved, setSaved] = useState(false);
+  const [step, setStep] = useState(1);
+  const [phone, setPhone] = useState(profile.phone ?? baseVolunteer.phone);
+  const [photo, setPhoto] = useState(profile.photo ?? baseVolunteer.photo ?? "");
+  const [interests, setInterests] = useState(profile.interests ?? baseVolunteer.interests);
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [skills, setSkills] = useState<string[]>(() => profile.skills);
+  const [availability, setAvailability] = useState<AvailabilitySlot[]>(() => profile.availability);
+  const [causes, setCauses] = useState<Cause[]>(() => profile.causes ?? baseVolunteer.causes);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function uploadPhoto(file: File | undefined) {
+    if (!file) return;
+    try {
+      setPhoto(await profilePhoto(file));
+      setError("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
 
   function toggleSkill(skill: string) {
-    setSaved(false);
     setError("");
     setSkills((current) =>
       current.includes(skill) ? current.filter((item) => item !== skill) : [...current, skill],
     );
   }
 
+  function toggleCause(cause: Cause) {
+    setError("");
+    setCauses((current) =>
+      current.includes(cause) ? current.filter((item) => item !== cause) : [...current, cause],
+    );
+  }
+
   function toggleSlot(day: DayKey, period: PeriodKey) {
-    setSaved(false);
+    setError("");
     const candidate: AvailabilitySlot = { day, period };
     setAvailability((current) =>
       current.some((slot) => slot.day === day && slot.period === period)
@@ -78,42 +126,87 @@ export function OnboardingPage() {
     ...baseVolunteer,
     skills,
     availability,
+    causes,
     interests,
+    phone,
+    photo,
   };
 
-  const rankedMatches = getMatches(previewVolunteer, 8).filter((match) => match.score >= 70);
+  const rankedMatches = getMatches(
+    previewVolunteer,
+    8,
+    workspace,
+    session.createdOpportunities,
+  ).filter((match) => match.score >= 70);
   const previewMatches = rankedMatches.slice(0, 3);
   const allSkills = [...new Set([...SKILL_OPTIONS, ...baseVolunteer.skills])];
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (skills.length === 0) {
-      setError("Choose at least one skill so matches stay explainable.");
+  function validate(target: number): string {
+    if (target === 1 && phone.replace(/\D/g, "").length < 7) {
+      return "Add a phone number a coordinator can reach you on.";
+    }
+    if (target === 2 && skills.length === 0) {
+      return "Choose at least one skill so matches stay explainable.";
+    }
+    if (target === 3 && availability.length === 0) {
+      return "Add at least one availability window before continuing.";
+    }
+    if (target === 4 && causes.length === 0) {
+      return "Pick at least one cause you want to hear about.";
+    }
+    return "";
+  }
+
+  function advance() {
+    const problem = validate(step);
+    if (problem) {
+      setError(problem);
       return;
     }
-    if (availability.length === 0) {
-      setError("Add at least one availability window before continuing.");
-      return;
-    }
-    actions.saveVolunteerProfile({ skills, availability, completedOnboarding: true });
     setError("");
-    setSaved(true);
-    window.setTimeout(() => navigate("/volunteer/home"), 700);
+    setStep((current) => Math.min(STEPS.length, current + 1));
+  }
+
+  function goBack() {
+    setError("");
+    setStep((current) => Math.max(1, current - 1));
+  }
+
+  async function finish(event: FormEvent) {
+    event.preventDefault();
+    const problem = validate(STEPS.length);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setSaving(true);
+    await actions.saveVolunteerProfile({
+      skills,
+      availability,
+      completedOnboarding: true,
+      phone: phone.trim(),
+      interests: interests.trim(),
+      causes,
+      photo,
+    });
+    if (user) completeSetup(user.email, "volunteer");
+    setSaving(false);
+    navigate("/volunteer/home", { replace: true });
   }
 
   return (
-    <SetupShell label="Volunteer setup · Step 2 of 4">
+    <SetupShell label={`Volunteer setup · Step ${step} of ${STEPS.length}`}>
       <Page className={styles.page}>
         <ol className={styles.steps} aria-label="Onboarding progress">
-          {STEPS.map((step, index) => {
+          {STEPS.map((label, index) => {
             const number = index + 1;
-            const state = number < 2 ? "done" : number === 2 ? "active" : "upcoming";
+            const state = number < step ? "done" : number === step ? "active" : "upcoming";
             return (
-              <li key={step} className={styles.step} data-state={state}>
+              <li key={label} className={styles.step} data-state={state}>
                 <span className={styles.stepNumber} aria-hidden="true">
                   {state === "done" ? <Check size={12} strokeWidth={2.6} /> : number}
                 </span>
-                <span className={styles.stepLabel}>{step}</span>
+                <span className={styles.stepLabel}>{label}</span>
                 {state === "done" ? <span className="visually-hidden">completed</span> : null}
                 {state === "active" ? <span className="visually-hidden">current step</span> : null}
               </li>
@@ -122,103 +215,225 @@ export function OnboardingPage() {
         </ol>
 
         <PageHeader
-          title="What are you good at?"
-          description="Choose skills and interests you enjoy. CivicFlow uses them to explain every opportunity match."
+          title="Tell us how you can help."
+          description="Four short steps. Your answers shape the opportunities CivicFlow suggests, and you can change any of it later from your profile."
         />
 
-        <form className={styles.layout} onSubmit={handleSubmit} noValidate>
+        <form className={styles.layout} onSubmit={finish} noValidate>
           <div className={styles.mainColumn}>
-            <Card padding="loose" className={styles.block}>
-              <SectionHeader
-                title="Skills"
-                subtitle="Pick everything you would be comfortable doing on site."
-              />
-              <div className={styles.skills} role="group" aria-label="Your skills">
-                {allSkills.map((skill, index) => {
-                  const selected = skills.includes(skill);
-                  return (
-                    <button
-                      key={skill}
-                      type="button"
-                      className={styles.skill}
-                      data-tone={SKILL_TONES[index % SKILL_TONES.length]}
-                      data-selected={selected}
-                      aria-pressed={selected}
-                      onClick={() => toggleSkill(skill)}
-                    >
-                      {selected ? <Check size={11} strokeWidth={2.8} aria-hidden="true" /> : null}
-                      {skill}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className={styles.selectionCount} aria-live="polite">
-                {skills.length} {skills.length === 1 ? "skill" : "skills"} selected
-              </p>
-            </Card>
+            {step === 1 ? (
+              <Card padding="loose" className={styles.block}>
+                <SectionHeader
+                  title="Start with the basics"
+                  subtitle="Coordinators use this to reach you about a shift. Your name and email come from the account you just created."
+                />
+                <div className={styles.fieldStack}>
+                  <div className={styles.photoRow}>
+                    <Avatar
+                      initials={baseVolunteer.initials}
+                      src={photo || undefined}
+                      tone={baseVolunteer.tone}
+                      size={64}
+                      label={baseVolunteer.name}
+                    />
+                    <div className={styles.photoCopy}>
+                      <p className={styles.photoLabel}>Profile photo</p>
+                      <p className={styles.photoHint}>
+                        A face helps coordinators recognize you on site. Optional.
+                      </p>
+                      <div className={styles.photoActions}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="small"
+                          onClick={() => photoInput.current?.click()}
+                        >
+                          {photo ? "Change photo" : "Upload photo"}
+                        </Button>
+                        {photo ? (
+                          <button
+                            type="button"
+                            className={styles.photoRemove}
+                            onClick={() => setPhoto("")}
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                      <input
+                        ref={photoInput}
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(event) => {
+                          void uploadPhoto(event.target.files?.[0]);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <TextField
+                    label="Phone"
+                    type="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(event) => {
+                      setError("");
+                      setPhone(event.target.value);
+                    }}
+                    hint="Only people in your organization see this."
+                  />
+                  <p className={styles.accountLine}>
+                    {baseVolunteer.name} · {baseVolunteer.email}
+                  </p>
+                </div>
+              </Card>
+            ) : null}
 
-            <Card padding="loose" className={styles.block}>
-              <SectionHeader
-                title="Availability"
-                subtitle="Tap a window to add it. Weekday evenings and weekend mornings cover the most gaps."
-              />
-              <div className={styles.availability} role="group" aria-label="Weekly availability">
-                <span className={styles.gridCorner} aria-hidden="true" />
-                {DAYS.map((day) => (
-                  <span key={day.key} className={styles.dayLabel}>
-                    {day.label}
-                  </span>
-                ))}
-                {PERIODS.map((period) => (
-                  <div key={period.key} className={styles.periodRow}>
-                    <span className={styles.periodLabel}>{period.label}</span>
-                    {DAYS.map((day) => {
-                      const selected = availability.some(
-                        (slot) => slot.day === day.key && slot.period === period.key,
-                      );
+            {step === 2 ? (
+              <>
+                <Card padding="loose" className={styles.block}>
+                  <SectionHeader
+                    title="What are you good at?"
+                    subtitle="Pick everything you would be comfortable doing on site. Every match explains itself with these."
+                  />
+                  <div className={styles.skills} role="group" aria-label="Your skills">
+                    {allSkills.map((skill, index) => {
+                      const selected = skills.includes(skill);
                       return (
                         <button
-                          key={`${day.key}-${period.key}`}
+                          key={skill}
                           type="button"
-                          className={styles.slot}
+                          className={styles.skill}
+                          data-tone={SKILL_TONES[index % SKILL_TONES.length]}
                           data-selected={selected}
                           aria-pressed={selected}
-                          aria-label={`${day.label} ${period.label}`}
-                          onClick={() => toggleSlot(day.key, period.key)}
+                          onClick={() => toggleSkill(skill)}
                         >
                           {selected ? (
-                            <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+                            <Check size={11} strokeWidth={2.8} aria-hidden="true" />
                           ) : null}
+                          {skill}
                         </button>
                       );
                     })}
                   </div>
-                ))}
-              </div>
-              <p className={styles.selectionCount} aria-live="polite">
-                {availability.length} of 21 windows selected
-              </p>
-            </Card>
+                  <p className={styles.selectionCount} aria-live="polite">
+                    {skills.length} {skills.length === 1 ? "skill" : "skills"} selected
+                  </p>
+                </Card>
 
-            <Card padding="loose" className={styles.block}>
-              <SectionHeader
-                title="In your words"
-                subtitle="What do you want to help with? Coordinators use this when a role is hard to fill."
-              />
-              <label className={styles.textareaLabel} htmlFor="onboarding-interests">
-                Interests and experience
-              </label>
-              <textarea
-                id="onboarding-interests"
-                className={styles.textarea}
-                value={interests}
-                rows={3}
-                onChange={(event) => {
-                  setSaved(false);
-                  setInterests(event.target.value);
-                }}
-              />
-            </Card>
+                <Card padding="loose" className={styles.block}>
+                  <SectionHeader
+                    title="In your words"
+                    subtitle="What do you want to help with? Coordinators use this when a role is hard to fill."
+                  />
+                  <label className={styles.textareaLabel} htmlFor="onboarding-interests">
+                    Interests and experience
+                  </label>
+                  <textarea
+                    id="onboarding-interests"
+                    className={styles.textarea}
+                    value={interests}
+                    rows={3}
+                    onChange={(event) => setInterests(event.target.value)}
+                  />
+                </Card>
+              </>
+            ) : null}
+
+            {step === 3 ? (
+              <Card padding="loose" className={styles.block}>
+                <SectionHeader
+                  title="When can you serve?"
+                  subtitle="Tap a window to add it. Weekday evenings and weekend mornings cover the most gaps."
+                />
+                <div className={styles.availability} role="group" aria-label="Weekly availability">
+                  <span className={styles.gridCorner} aria-hidden="true" />
+                  {DAYS.map((day) => (
+                    <span key={day.key} className={styles.dayLabel}>
+                      {day.label}
+                    </span>
+                  ))}
+                  {PERIODS.map((period) => (
+                    <div key={period.key} className={styles.periodRow}>
+                      <span className={styles.periodLabel}>{period.label}</span>
+                      {DAYS.map((day) => {
+                        const selected = availability.some(
+                          (slot) => slot.day === day.key && slot.period === period.key,
+                        );
+                        return (
+                          <button
+                            key={`${day.key}-${period.key}`}
+                            type="button"
+                            className={styles.slot}
+                            data-selected={selected}
+                            aria-pressed={selected}
+                            aria-label={`${day.label} ${period.label}`}
+                            onClick={() => toggleSlot(day.key, period.key)}
+                          >
+                            {selected ? (
+                              <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <p className={styles.selectionCount} aria-live="polite">
+                  {availability.length} of 21 windows selected
+                </p>
+              </Card>
+            ) : null}
+
+            {step === 4 ? (
+              <Card padding="loose" className={styles.block}>
+                <SectionHeader
+                  title="What should we send you?"
+                  subtitle="Pick the causes you want to hear about. You can change any of this later in Settings."
+                />
+                <div className={styles.skills} role="group" aria-label="Causes you care about">
+                  {CAUSE_OPTIONS.map((cause) => {
+                    const selected = causes.includes(cause);
+                    return (
+                      <button
+                        key={cause}
+                        type="button"
+                        className={styles.skill}
+                        data-selected={selected}
+                        aria-pressed={selected}
+                        onClick={() => toggleCause(cause)}
+                      >
+                        {selected ? <Check size={11} strokeWidth={2.8} aria-hidden="true" /> : null}
+                        {CAUSE_LABELS[cause]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className={styles.selectionCount} aria-live="polite">
+                  {causes.length} {causes.length === 1 ? "cause" : "causes"} selected
+                </p>
+
+                <dl className={styles.summary}>
+                  <div>
+                    <dt>Skills</dt>
+                    <dd>{skills.join(", ")}</dd>
+                  </div>
+                  <div>
+                    <dt>Availability</dt>
+                    <dd>
+                      {availability.length} {availability.length === 1 ? "window" : "windows"} a
+                      week
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Contact</dt>
+                    <dd>{phone}</dd>
+                  </div>
+                </dl>
+              </Card>
+            ) : null}
           </div>
 
           <aside className={styles.aside} aria-label="Live profile preview">
@@ -227,6 +442,7 @@ export function OnboardingPage() {
               <div className={styles.profileHeader}>
                 <Avatar
                   initials={baseVolunteer.initials}
+                  src={photo || undefined}
                   tone={baseVolunteer.tone}
                   size={56}
                   label={baseVolunteer.name}
@@ -234,7 +450,7 @@ export function OnboardingPage() {
                 <div>
                   <h2 className={styles.profileName}>{baseVolunteer.name}</h2>
                   <p className={styles.profileMeta}>
-                    {workspace.organization.city}, {workspace.organization.state} · New volunteer
+                    {workspace.organization.city || workspace.organization.name} · New volunteer
                   </p>
                 </div>
               </div>
@@ -261,63 +477,83 @@ export function OnboardingPage() {
                 <Check size={15} aria-hidden="true" className={styles.matchIcon} />
               </div>
 
-              <ul className={styles.matchList}>
-                {previewMatches.map((match) => {
-                  const nextShift = getUpcomingShiftRows().find(
-                    (row) => row.shift.opportunityId === match.opportunity.id,
-                  );
-                  return (
-                    <li key={match.opportunity.id} className={styles.matchRow}>
-                      <div className={styles.matchRowTop}>
-                        <span className={styles.matchName}>{match.opportunity.title}</span>
-                        {nextShift ? (
-                          <span className={styles.matchWhen}>
-                            {formatDate(nextShift.shift.startsAt)} ·{" "}
-                            {formatTime(nextShift.shift.startsAt)}
+              {previewMatches.length === 0 ? (
+                <p className={styles.previewEmpty}>
+                  Nothing is scheduled yet. Matches appear as soon as your organization posts
+                  shifts.
+                </p>
+              ) : (
+                <ul className={styles.matchList}>
+                  {previewMatches.map((match) => {
+                    const nextShift = getUpcomingShiftRows(workspace).find(
+                      (row) => row.shift.opportunityId === match.opportunity.id,
+                    );
+                    return (
+                      <li key={match.opportunity.id} className={styles.matchRow}>
+                        <div className={styles.matchRowTop}>
+                          <span className={styles.matchName}>{match.opportunity.title}</span>
+                          {nextShift ? (
+                            <span className={styles.matchWhen}>
+                              {formatDate(nextShift.shift.startsAt)} ·{" "}
+                              {formatTime(nextShift.shift.startsAt)}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className={styles.matchReasons}>
+                          <Badge tone={match.score >= 90 ? "green" : "cobalt"}>
+                            {match.score}% match
+                          </Badge>
+                          <span className={styles.matchReason}>
+                            {match.reasons[0] ?? "Matches your availability"}
                           </span>
-                        ) : null}
-                      </div>
-                      <div className={styles.matchReasons}>
-                        <Badge tone={match.score >= 90 ? "green" : "cobalt"}>
-                          {match.score}% match
-                        </Badge>
-                        <span className={styles.matchReason}>
-                          {match.reasons[0] ?? "Matches your availability"}
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
 
               {error ? (
                 <p className={styles.error} role="alert">
                   {error}
                 </p>
               ) : null}
-              {saved ? (
-                <p className={styles.saved} role="status">
-                  <Check size={13} aria-hidden="true" />
-                  Profile saved. Taking you home…
-                </p>
-              ) : null}
 
-              <Button
-                type="submit"
-                variant="primary"
-                size="large"
-                className={styles.saveButton}
-                icon={<ArrowRight size={15} aria-hidden="true" />}
-              >
-                Save & continue
-              </Button>
-              <button
-                type="button"
-                className={styles.skip}
-                onClick={() => navigate("/volunteer/home")}
-              >
-                Keep my current profile
-              </button>
+              {step < STEPS.length ? (
+                // A distinct key remounts the control. React would otherwise
+                // flip this node to type="submit" inside the click, and the
+                // browser's default action would finish setup a step early.
+                <Button
+                  key="continue"
+                  type="button"
+                  variant="primary"
+                  size="large"
+                  className={styles.saveButton}
+                  onClick={advance}
+                  icon={<ArrowRight size={15} aria-hidden="true" />}
+                >
+                  Continue
+                </Button>
+              ) : (
+                <Button
+                  key="finish"
+                  type="submit"
+                  variant="primary"
+                  size="large"
+                  className={styles.saveButton}
+                  disabled={saving}
+                  icon={<ArrowRight size={15} aria-hidden="true" />}
+                >
+                  {saving ? "Saving…" : "Finish setup"}
+                </Button>
+              )}
+              {step > 1 ? (
+                <button type="button" className={styles.skip} onClick={goBack}>
+                  <ArrowLeft size={12} aria-hidden="true" /> Back
+                </button>
+              ) : (
+                <p className={styles.asideNote}>You can change every answer later in Settings.</p>
+              )}
             </Card>
           </aside>
         </form>

@@ -3,6 +3,8 @@ import { ArrowUpRight, CalendarDays, ChevronDown } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "react-router-dom";
 import { ButtonLink, Page, PageHeader } from "../../components/ui";
+import { t } from "../../lib/i18n";
+import { isDemoOrganization } from "../../lib/workspace/organizationWorkspace";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
   CAUSE_LABELS,
@@ -30,17 +32,21 @@ export function ImpactAnalyticsPage() {
   const [range, setRange] = useState("12");
   const trend = getHoursTrend(session, workspace);
   const causes = getCauseHours(session, workspace);
-  const stories = getImpactStories();
-  const galleryStories = [
-    ...stories,
-    {
-      id: "story-community",
-      title: "Neighborhood Mural Project",
-      image: "/media/opp-community-event.jpg",
-      metric: `${workspace.opportunities.length} active programs`,
-    },
-  ];
+  const demoStories = isDemoOrganization(workspace.organization.id)
+    ? [
+        ...getImpactStories(),
+        {
+          id: "story-community",
+          title: "Neighborhood Mural Project",
+          image: "/media/opp-community-event.jpg",
+          metric: `${workspace.opportunities.length} active programs`,
+        },
+      ]
+    : [];
   const impact = workspace.impact;
+  const organization = workspace.organization;
+  const ownWorkspace = !isDemoOrganization(organization.id);
+  const place = [organization.city, organization.state].filter(Boolean).join(", ");
   const outcomes = getImpactOutcomes(session);
   const demoDate = format(parseISO(workspace.demoNow), "MMM d, yyyy");
   const chartData = range === "6" ? trend.slice(-6) : trend;
@@ -65,6 +71,20 @@ export function ImpactAnalyticsPage() {
     }
     return [...totals.values()].sort((a, b) => b.hours - a.hours).slice(0, 4);
   }, [session, workspace]);
+
+  // A real organization tells its own story: one card per program it actually
+  // ran. The canned stories belong to the bundled demo only.
+  const galleryStories = ownWorkspace
+    ? programs.map((program) => ({
+        id: program.id,
+        title: program.title,
+        image:
+          workspace.opportunities.find((row) => row.id === program.id)?.image ??
+          organization.image ??
+          "/media/community-strip-1.jpg",
+        metric: formatHours(Math.round(program.hours)),
+      }))
+    : demoStories;
 
   const causeTotal = causes.reduce((sum, cause) => sum + cause.hours, 0);
   const radius = 54;
@@ -114,17 +134,17 @@ export function ImpactAnalyticsPage() {
     {
       value: (outcomes.get("meals_packed")?.value ?? 0).toLocaleString(),
       label: "Meals packed",
-      meta: "reported by the pantry",
+      meta: ownWorkspace ? t("recorded outcomes") : "reported by the pantry",
     },
     {
       value: (outcomes.get("tutoring_sessions")?.value ?? 0).toString(),
       label: "Tutoring sessions",
-      meta: "reported by the library",
+      meta: ownWorkspace ? t("recorded outcomes") : "reported by the library",
     },
     {
       value: (outcomes.get("trees_planted")?.value ?? 0).toString(),
       label: "Trees planted",
-      meta: "reported by the garden",
+      meta: ownWorkspace ? t("recorded outcomes") : "reported by the garden",
     },
   ];
 
@@ -155,22 +175,35 @@ export function ImpactAnalyticsPage() {
       <section className={styles.hero} aria-labelledby="impact-title">
         <img
           className={styles.heroImage}
-          src="/media/hero-community.jpg"
-          alt="Volunteers packing food boxes at a community pantry"
+          src={
+            ownWorkspace
+              ? (organization.image ?? "/media/hero-community.jpg")
+              : "/media/hero-community.jpg"
+          }
+          alt={
+            ownWorkspace
+              ? (organization.imageAlt ?? `${organization.name} community photo`)
+              : "Volunteers packing food boxes at a community pantry"
+          }
         />
         <div className={styles.heroWash} aria-hidden="true" />
         <div className={styles.heroCopy}>
           <p className={styles.heroPlace}>
-            Buffalo, New York · January to {format(parseISO(workspace.demoNow), "MMMM yyyy")}
+            {ownWorkspace
+              ? [organization.name, place].filter(Boolean).join(" · ")
+              : "Buffalo, New York"}
+            {" · "}January to {format(parseISO(workspace.demoNow), "MMMM yyyy")}
           </p>
           <h2 className={styles.heroStatement} id="impact-title">
             <span className={styles.heroNumber}>{impact.hoursYtd.toLocaleString()}</span>
             <span>hours from {impact.uniqueVolunteersYtd.toLocaleString()} people.</span>
           </h2>
         </div>
-        <p className={styles.heroCaption}>
-          Packing day at the Holt Street pantry. Photo: Pexels / 6646918.
-        </p>
+        {ownWorkspace ? null : (
+          <p className={styles.heroCaption}>
+            Packing day at the Holt Street pantry. Photo: Pexels / 6646918.
+          </p>
+        )}
       </section>
 
       <ul className={styles.metrics}>
@@ -362,31 +395,37 @@ export function ImpactAnalyticsPage() {
         </section>
       </div>
 
-      <section className={styles.gallery} aria-labelledby="stories-heading">
-        <header className={styles.galleryHead}>
-          <div>
-            <h2 id="stories-heading" className={styles.cardTitle}>
-              The work behind the numbers
-            </h2>
-            <p className={styles.cardSub}>Four programs, four different Saturday mornings.</p>
-          </div>
-          <Link className={styles.galleryLink} to="/coordinator/reports/preview">
-            Read the full report
-            <ArrowUpRight size={14} aria-hidden="true" />
-          </Link>
-        </header>
-        <div className={styles.stories}>
-          {galleryStories.map((story) => (
-            <Link key={story.id} className={styles.story} to="/coordinator/reports/preview">
-              <img className={styles.storyImage} src={story.image} alt="" loading="lazy" />
-              <div className={styles.storyCopy}>
-                <span className={styles.storyTitle}>{story.title}</span>
-                <span className={styles.storyMetric}>{story.metric}</span>
-              </div>
+      {galleryStories.length > 0 ? (
+        <section className={styles.gallery} aria-labelledby="stories-heading">
+          <header className={styles.galleryHead}>
+            <div>
+              <h2 id="stories-heading" className={styles.cardTitle}>
+                The work behind the numbers
+              </h2>
+              <p className={styles.cardSub}>
+                {ownWorkspace
+                  ? t("Programs with approved hours this year.")
+                  : "Four programs, four different Saturday mornings."}
+              </p>
+            </div>
+            <Link className={styles.galleryLink} to="/coordinator/reports/preview">
+              Read the full report
+              <ArrowUpRight size={14} aria-hidden="true" />
             </Link>
-          ))}
-        </div>
-      </section>
+          </header>
+          <div className={styles.stories}>
+            {galleryStories.map((story) => (
+              <Link key={story.id} className={styles.story} to="/coordinator/reports/preview">
+                <img className={styles.storyImage} src={story.image} alt="" loading="lazy" />
+                <div className={styles.storyCopy}>
+                  <span className={styles.storyTitle}>{story.title}</span>
+                  <span className={styles.storyMetric}>{story.metric}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <p className={styles.footNote}>
         Counts cover approved hours through {demoDate}. Pending and rejected submissions are

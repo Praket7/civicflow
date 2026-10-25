@@ -3,8 +3,11 @@ import type { FormEvent } from "react";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, CheckboxField, TextField } from "../../components/ui";
+import { hostedAuthConfigured } from "../../lib/auth/hosted";
 import { accountHome, useAuth } from "../../lib/auth/session";
-import styles from "./SignInPage.module.css";
+import { AuthPortrait } from "./AuthPortrait";
+import { GoogleSignIn } from "./GoogleSignIn";
+import styles from "./auth.module.css";
 
 type AccountRole = "coordinator" | "volunteer";
 
@@ -26,6 +29,7 @@ export function SignInPage() {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -82,41 +86,7 @@ export function SignInPage() {
       </Link>
 
       <section className={styles.card} aria-labelledby="sign-in-title">
-        <div className={styles.photoPanel}>
-          <img
-            className={styles.photo}
-            src="/media/signin-volunteers.jpg"
-            alt="Volunteers packing food boxes together at a community distribution"
-          />
-          <div className={styles.photoShade} aria-hidden="true" />
-          <div className={styles.brand}>
-            <span className={styles.brandMark} aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path
-                  d="M4.2 8.6c4.6-4.9 11.2-4.9 15.8-.9-4.7 4.6-11.2 4.8-15.8.9Z"
-                  fill="currentColor"
-                />
-                <path
-                  d="M4.4 15.1c4.4-4.3 10.6-4.4 15.2-.7-4.6 4.4-10.8 4.6-15.2.7Z"
-                  fill="currentColor"
-                  opacity="0.6"
-                />
-              </svg>
-            </span>
-            CivicFlow
-          </div>
-          <div className={styles.photoCopy}>
-            <p className={styles.photoHeadline}>
-              Real people.
-              <br />
-              <span className={styles.underline}>Lasting change.</span>
-            </p>
-            <p className={styles.photoBody}>
-              One place to organize service, prove participation, and make community impact visible.
-            </p>
-          </div>
-          <p className={styles.credit}>Photo: Pexels License · FeedMore WNY demo workspace</p>
-        </div>
+        <AuthPortrait />
 
         <div className={styles.formPanel}>
           <div className={styles.formHead}>
@@ -158,9 +128,7 @@ export function SignInPage() {
                 name="email"
                 autoComplete="email"
                 inputMode="email"
-                placeholder={
-                  role === "coordinator" ? "praket@feedmorewny.org" : "maya.chen@gmail.com"
-                }
+                placeholder="you@example.org"
                 value={email}
                 error={errors.email}
                 onChange={(event) => {
@@ -191,13 +159,30 @@ export function SignInPage() {
                 checked={remember}
                 onChange={(event) => setRemember(event.target.checked)}
               />
-              <a
-                className={styles.forgot}
-                href="mailto:volunteer@feedmorewny.org?subject=CivicFlow%20password%20help"
-              >
-                Forgot password?
-              </a>
+              {hostedAuthConfigured ? (
+                <Link className={styles.forgot} to="/forgot-password">
+                  Forgot password?
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.forgot}
+                  aria-expanded={helpOpen}
+                  onClick={() => setHelpOpen((open) => !open)}
+                >
+                  Forgot password?
+                </button>
+              )}
             </div>
+
+            {helpOpen ? (
+              <div className={styles.resetNote} role="note">
+                <p>
+                  Passwords live in this device&rsquo;s database, so there is no reset email to
+                  send. A coordinator resets yours from Settings &rarr; Accounts in about a minute.
+                </p>
+              </div>
+            ) : null}
 
             {errors.form ? (
               <p className={styles.error} role="alert">
@@ -208,6 +193,15 @@ export function SignInPage() {
             <Button type="submit" size="large" className={styles.primary} disabled={busy}>
               {busy ? "Signing in…" : "Continue"}
             </Button>
+
+            {hostedAuthConfigured ? (
+              <GoogleSignIn
+                role={role}
+                label="Continue with Google"
+                disabled={busy}
+                onError={(message) => setErrors({ form: message })}
+              />
+            ) : null}
 
             <div className={styles.divider} aria-hidden="true">
               <span>or</span>
@@ -224,23 +218,27 @@ export function SignInPage() {
             </Button>
           </form>
 
+          <p className={styles.swap}>
+            New to CivicFlow? <Link to="/create-account">Create an account</Link>
+          </p>
+
           <div className={styles.localNote}>
             <LockKeyhole size={15} strokeWidth={1.9} aria-hidden="true" />
             <div>
-              <p className={styles.localTitle}>Local accounts protect the two workspaces.</p>
+              <p className={styles.localTitle}>
+                {hostedAuthConfigured
+                  ? "Google and email accounts work anywhere. Local accounts still work offline."
+                  : "Local accounts protect the two workspaces."}
+              </p>
               <p className={styles.localBody}>
-                Passwords are stored as Argon2 hashes in this device&rsquo;s database. No network
-                requests leave the app.
+                {hostedAuthConfigured
+                  ? "Google and email sign-in are handled by Supabase Auth. Workspace records stay in this device's database."
+                  : "Passwords are stored as Argon2 hashes in this device's database. No network requests leave the app."}
               </p>
             </div>
           </div>
 
-          <p className={styles.legal}>
-            By continuing you agree to the demo workspace terms.{" "}
-            <a href="mailto:volunteer@feedmorewny.org?subject=CivicFlow%20accessibility">
-              Need help signing in?
-            </a>
-          </p>
+          <p className={styles.legal}>By continuing you agree to the demo workspace terms.</p>
         </div>
       </section>
     </main>

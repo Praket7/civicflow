@@ -166,6 +166,21 @@ pub fn sign_in(
         ));
     }
 
+    start_session(
+        conn,
+        &Account {
+            id,
+            name,
+            email: stored_email,
+            role,
+            volunteer_id,
+        },
+        remember,
+    )
+}
+
+/// Starts a session and records the audit entry shared by every sign-in path.
+fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result<AuthSession> {
     let now = Utc::now();
     let lifetime = if remember {
         Duration::days(REMEMBER_DAYS)
@@ -179,7 +194,7 @@ pub fn sign_in(
          VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             uuid::Uuid::new_v4().to_string(),
-            id,
+            account.id,
             token_hash(&token),
             now.to_rfc3339(),
             expires_at,
@@ -187,7 +202,7 @@ pub fn sign_in(
     )?;
     conn.execute(
         "UPDATE users SET last_login_at = ?1 WHERE id = ?2",
-        params![now.to_rfc3339(), id],
+        params![now.to_rfc3339(), account.id],
     )?;
     conn.execute(
         "INSERT INTO audit_events
@@ -196,23 +211,133 @@ pub fn sign_in(
         params![
             uuid::Uuid::new_v4().to_string(),
             now.to_rfc3339(),
-            role,
-            id,
-            format!("Signed in {stored_email}"),
+            account.role,
+            account.id,
+            format!("Signed in {}", account.email),
         ],
     )?;
 
     Ok(AuthSession {
         token,
-        user: Account {
+        user: account.clone(),
+        expires_at,
+    })
+}
+
+/// Claims a roster profile with the same email, or creates one for a new
+/// volunteer account. A profile that already has an account is refused.
+fn link_or_create_volunteer(
+    conn: &Connection,
+    name: &str,
+    email: &str,
+    now: &str,
+) -> Result<String> {
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT id FROM volunteers WHERE lower(email) = ?1",
+            params![email],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match existing {
+        Some(volunteer_id) => {
+            let linked: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM users WHERE volunteer_id = ?1",
+                    params![volunteer_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if linked.is_some() {
+                return Err(CoreError::rule(
+                    "ACCOUNT_EXISTS",
+                    "That volunteer profile already has an account. Ask a coordinator to reset its password.",
+                    Some("email".into()),
+                    Some("CONTACT_COORDINATOR".into()),
+                ));
+            }
+            Ok(volunteer_id)
+        }
+        None => insert_volunteer(conn, name, email, now),
+    }
+}
+
+/// Creates or resumes the local workspace account behind a hosted identity.
+///
+/// The hosted provider has already verified the address, so no local password
+/// is stored: `password_hash` stays NULL and the local password form keeps
+/// refusing the account until a coordinator sets one from Settings → Accounts.
+/// That keeps hosted accounts usable offline without inventing a second secret.
+pub fn sign_in_with_hosted(
+    conn: &Connection,
+    name: &str,
+    email: &str,
+    role: &str,
+) -> Result<AuthSession> {
+    let email = normalize_email(email)?;
+    let existing: Option<Account> = conn
+        .query_row(
+            "SELECT id, name, email, role, volunteer_id FROM users WHERE lower(email) = ?1",
+            params![email],
+            |row| {
+                Ok(Account {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    email: row.get(2)?,
+                    role: row.get(3)?,
+                    volunteer_id: row.get(4)?,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(account) = existing {
+        return start_session(conn, &account, true);
+    }
+
+    let role = role.trim().to_lowercase();
+    if role != "coordinator" && role != "volunteer" {
+        return Err(CoreError::Validation(
+            "Choose whether this is a coordinator or a volunteer account.".into(),
+        ));
+    }
+    let name = normalize_name(name)?;
+    let now = Utc::now().to_rfc3339();
+    let id = format!("user-{}", uuid::Uuid::new_v4());
+    let volunteer_id = if role == "volunteer" {
+        Some(link_or_create_volunteer(conn, &name, &email, &now)?)
+    } else {
+        None
+    };
+
+    conn.execute(
+        "INSERT INTO users (id, name, email, role, volunteer_id, password_hash, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'active', ?6)",
+        params![id, name, email, role, volunteer_id, now],
+    )?;
+    conn.execute(
+        "INSERT INTO audit_events
+         (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
+         VALUES (?1, ?2, ?3, ?4, 'auth.hosted_account_created', 'user', ?4, ?5)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            now,
+            role,
+            id,
+            format!("Created a hosted {role} account for {email}"),
+        ],
+    )?;
+
+    start_session(
+        conn,
+        &Account {
             id,
             name,
-            email: stored_email,
+            email,
             role,
             volunteer_id,
         },
-        expires_at,
-    })
+        true,
+    )
 }
 
 pub fn current_user(conn: &Connection, token: &str) -> Result<Option<Account>> {
@@ -345,6 +470,177 @@ pub fn reset_password(
         ],
     )?;
     Ok(())
+}
+
+fn normalize_email(email: &str) -> Result<String> {
+    let clean = email.trim().to_lowercase();
+    let mut parts = clean.split('@');
+    let local = parts.next().unwrap_or_default();
+    let domain = parts.next().unwrap_or_default();
+    let valid = !local.is_empty()
+        && clean.matches('@').count() == 1
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !clean.contains(char::is_whitespace)
+        && clean.chars().count() <= 160;
+    if !valid {
+        return Err(CoreError::rule(
+            "EMAIL_INVALID",
+            "Use an email address like name@example.org.",
+            Some("email".into()),
+            None,
+        ));
+    }
+    Ok(clean)
+}
+
+fn normalize_name(name: &str) -> Result<String> {
+    let clean = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if clean.chars().count() < 2 {
+        return Err(CoreError::rule(
+            "NAME_REQUIRED",
+            "Enter the name to show on this account.",
+            Some("name".into()),
+            None,
+        ));
+    }
+    if clean.chars().count() > 80 {
+        return Err(CoreError::rule(
+            "NAME_TOO_LONG",
+            "Keep the name under 80 characters.",
+            Some("name".into()),
+            None,
+        ));
+    }
+    Ok(clean)
+}
+
+fn initials_for(name: &str) -> String {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let mut initials: String = match (words.first(), words.last()) {
+        (Some(first), Some(last)) if words.len() > 1 => {
+            let mut value = String::new();
+            value.extend(first.chars().take(1));
+            value.extend(last.chars().take(1));
+            value
+        }
+        (Some(only), _) => only.chars().take(2).collect(),
+        _ => String::new(),
+    };
+    initials = initials.to_uppercase();
+    if initials.is_empty() {
+        "CF".into()
+    } else {
+        initials
+    }
+}
+
+/// Creates a volunteer profile for a new volunteer account, so the roster and
+/// every volunteer-scoped read model have a real row to point at.
+fn insert_volunteer(conn: &Connection, name: &str, email: &str, now: &str) -> Result<String> {
+    let organization: Option<String> = conn
+        .query_row("SELECT id FROM organizations LIMIT 1", [], |row| row.get(0))
+        .optional()?;
+    let Some(organization) = organization else {
+        return Err(CoreError::Data(
+            "The workspace has no organization for this account to join.".into(),
+        ));
+    };
+    let id = format!("vol-{}", uuid::Uuid::new_v4());
+    let first_name = name.split_whitespace().next().unwrap_or(name).to_string();
+    conn.execute(
+        "INSERT INTO volunteers
+         (id, organization_id, name, first_name, initials, role, email, phone, joined_at,
+          status, tone, languages_json, causes_json, hours_verified, attendance_rate,
+          events_completed, interests, availability_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'Volunteer', ?6, '', ?7, 'onboarding', 'violet',
+                 '[]', '[]', 0, 0, 0, '', '[]')",
+        params![
+            id,
+            organization,
+            name,
+            first_name,
+            initials_for(name),
+            email,
+            now
+        ],
+    )?;
+    Ok(id)
+}
+
+/// Creates a local account and signs it in. A volunteer account is attached to an
+/// existing roster profile when the email matches one, and otherwise a new
+/// profile is created so the coordinator can see the person on the roster.
+pub fn create_account(
+    conn: &Connection,
+    name: &str,
+    email: &str,
+    password: &str,
+    role: &str,
+) -> Result<AuthSession> {
+    let role = role.trim().to_lowercase();
+    if role != "coordinator" && role != "volunteer" {
+        return Err(CoreError::Validation(
+            "Choose whether this is a coordinator or a volunteer account.".into(),
+        ));
+    }
+    let name = normalize_name(name)?;
+    let email = normalize_email(email)?;
+    validate_password(password)?;
+
+    let taken: Option<String> = conn
+        .query_row(
+            "SELECT id FROM users WHERE lower(email) = ?1",
+            params![email],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if taken.is_some() {
+        return Err(CoreError::rule(
+            "EMAIL_TAKEN",
+            "An account already uses that email. Sign in instead.",
+            Some("email".into()),
+            Some("SIGN_IN".into()),
+        ));
+    }
+
+    let now = Utc::now().to_rfc3339();
+    let id = format!("user-{}", uuid::Uuid::new_v4());
+
+    let volunteer_id = if role == "volunteer" {
+        Some(link_or_create_volunteer(conn, &name, &email, &now)?)
+    } else {
+        None
+    };
+
+    conn.execute(
+        "INSERT INTO users (id, name, email, role, volunteer_id, password_hash, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7)",
+        params![
+            id,
+            name,
+            email,
+            role,
+            volunteer_id,
+            hash_password(password)?,
+            now
+        ],
+    )?;
+    conn.execute(
+        "INSERT INTO audit_events
+         (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
+         VALUES (?1, ?2, ?3, ?4, 'auth.account_created', 'user', ?4, ?5)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            now,
+            role,
+            id,
+            format!("Created a {role} account for {email}"),
+        ],
+    )?;
+
+    sign_in(conn, &email, password, true)
 }
 
 fn upsert_account(

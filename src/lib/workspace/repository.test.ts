@@ -65,6 +65,12 @@ describe("workspace repository", () => {
       { candidateId: "vol-002", role: "Driver", promoteWaitlist: false },
     ]);
     await repository.resetDemo();
+    await repository.createAccount(
+      "Alicia Moreno",
+      "alicia.moreno@example.org",
+      "second-saturday",
+      "volunteer",
+    );
 
     const calls = vi.mocked(invoke).mock.calls;
     expect(calls.map(([command]) => command)).toEqual([
@@ -82,6 +88,7 @@ describe("workspace repository", () => {
       "save_volunteer_profile",
       "apply_roster_plan",
       "reset_demo",
+      "create_account",
     ]);
     expect(calls[0][1]).toEqual({ token: "session-token" });
     expect(calls[1][1]).toEqual({
@@ -115,6 +122,10 @@ describe("workspace repository", () => {
       skills: ["Spanish"],
       availability: [{ day: "wed", period: "morning" }],
       completedOnboarding: true,
+      phone: "",
+      interests: "",
+      causes: [],
+      photo: "",
       token: "session-token",
     });
     expect(calls[12][1]).toEqual({
@@ -122,7 +133,48 @@ describe("workspace repository", () => {
       assignments: [{ candidateId: "vol-002", role: "Driver", promoteWaitlist: false }],
       token: "session-token",
     });
+    expect(calls[14][1]).toEqual({
+      name: "Alicia Moreno",
+      email: "alicia.moreno@example.org",
+      password: "second-saturday",
+      role: "volunteer",
+    });
     setRepositoryToken(null);
+  });
+
+  it("creates a preview account that can sign in with its own password", async () => {
+    const created = await previewRepository.createAccount(
+      "  Alicia   Moreno ",
+      "Alicia.Moreno@Example.org",
+      "second-saturday",
+      "volunteer",
+    );
+    expect(created.user).toMatchObject({
+      name: "Alicia Moreno",
+      email: "alicia.moreno@example.org",
+      role: "volunteer",
+    });
+    expect(created.user.volunteerId).toBeTruthy();
+
+    const session = await previewRepository.signIn(
+      "alicia.moreno@example.org",
+      "second-saturday",
+      false,
+    );
+    expect(session.user.id).toBe(created.user.id);
+    expect((await previewRepository.currentUser(session.token))?.id).toBe(created.user.id);
+
+    await expect(
+      previewRepository.createAccount(
+        "Alicia Moreno",
+        "alicia.moreno@example.org",
+        "another-password",
+        "volunteer",
+      ),
+    ).rejects.toThrow(/already uses that email/);
+    await expect(
+      previewRepository.createAccount("Alicia Moreno", "alicia@example.org", "short", "volunteer"),
+    ).rejects.toThrow(/at least 8 characters/);
   });
 
   it("preview cancellation promotes the next eligible waitlist candidate", async () => {

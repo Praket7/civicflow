@@ -105,7 +105,7 @@ pub fn validate(path: &Path) -> Result<()> {
         [],
         |row| row.get(0),
     )?;
-    if version != 4 {
+    if version != crate::db::SCHEMA_VERSION {
         return Err(validation(
             "This backup uses an unsupported CivicFlow schema version.",
         ));

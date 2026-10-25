@@ -67,6 +67,16 @@
   padding: 16px 18px 10px;
 }
 
+.sectionLabel {
+  margin: 0;
+  padding: 8px 18px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .title {
   font-family: var(--font-serif);
   font-size: 19px;

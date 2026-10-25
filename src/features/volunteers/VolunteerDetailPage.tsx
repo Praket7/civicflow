@@ -121,7 +121,7 @@ export function VolunteerDetailPage() {
   }
 
   const summary = getHoursSummary(volunteer.id, session, workspace);
-  const matches = getMatches(volunteer, 4);
+  const matches = getMatches(volunteer, 4, workspace, session.createdOpportunities);
   const activities = getRecentActivityFor(volunteer.id);
   const hourRows = getHourRows(session, workspace).filter(
     (row) => row.volunteer.id === volunteer.id,
@@ -278,6 +278,7 @@ export function VolunteerDetailPage() {
             <span className={styles.avatarRing}>
               <Avatar
                 initials={volunteer.initials}
+                src={volunteer.photo || undefined}
                 tone={volunteer.tone}
                 size={82}
                 label={volunteer.name}

@@ -1,4 +1,4 @@
-import { ArrowRight, RefreshCcw } from "lucide-react";
+import { ArrowRight, RefreshCcw, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useMissionControl } from "../../lib/workspace/queries";
 import { formatTime } from "../../lib/workspace/selectors";
@@ -59,6 +59,26 @@ export function MissionControlPage() {
   return (
     <div className={styles.page}>
       <MissionHero data={data} />
+
+      <section className={styles.autoroster} aria-labelledby="mc-autoroster">
+        <div className={styles.autorosterCopy}>
+          <p className={styles.autorosterKicker}>
+            <Sparkles size={13} aria-hidden="true" />
+            AutoRoster
+          </p>
+          <h2 className={styles.autorosterTitle} id="mc-autoroster">
+            Fill next week in one pass.
+          </h2>
+          <p className={styles.autorosterBody}>
+            Ranked assignments from skills, availability, and fairness. Review the plan before
+            anything is applied.
+          </p>
+        </div>
+        <Link className={styles.autorosterAction} to="/coordinator/autoroster">
+          Open AutoRoster
+          <ArrowRight size={14} aria-hidden="true" />
+        </Link>
+      </section>
 
       <section aria-labelledby="mc-numbers">
         <h2 id="mc-numbers" className="visually-hidden">

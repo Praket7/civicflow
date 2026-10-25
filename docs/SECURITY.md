@@ -52,6 +52,11 @@ OS user session
 - A session expires after 12 hours, or 30 days when “keep me signed in” is chosen. Sign-out
   sets `revoked_at`. A coordinator password reset revokes every session for that account.
 - Passwords are at least 8 and at most 200 characters. A disabled account cannot sign in.
+- `/create-account` is open on this device: it validates the name, email and password, refuses
+  an email that already has an account, creates the volunteer roster profile when one is
+  missing, and writes an `auth.account_created` audit event. The role is chosen at sign-up, so
+  the trust boundary is the OS account, not the app. The first thing an operator should do on
+  a shared computer is create the real coordinator account and disable or reset the demo one.
 - The demo accounts are seeded with `civicflow-demo`. That password is public by design and
   must be changed in Settings → Accounts before the workspace holds real volunteer data.
 

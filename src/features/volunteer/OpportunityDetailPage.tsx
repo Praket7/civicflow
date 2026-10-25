@@ -122,7 +122,9 @@ export function OpportunityDetailPage() {
   const isRegistered = Boolean(registration);
   const saved = opportunity ? session.savedOpportunityIds.includes(opportunity.id) : false;
   const match = opportunity
-    ? getMatches(volunteer, 20).find((row) => row.opportunity.id === opportunity.id)
+    ? getMatches(volunteer, 20, workspace, session.createdOpportunities).find(
+        (row) => row.opportunity.id === opportunity.id,
+      )
     : undefined;
   const matchScore = match?.score ?? 68;
   const matchReasons =
@@ -481,8 +483,8 @@ export function OpportunityDetailPage() {
                   <div>
                     <h2 className={styles.sectionHeading}>Where to go</h2>
                     <p className={styles.panelCopy}>
-                      Check in at the volunteer entrance. Parking is free in the lot off Holt
-                      Street; the 14 and 16 bus routes stop two blocks away.
+                      Check in at the volunteer entrance. Parking is free in the lot behind the
+                      building; local bus routes stop two blocks away.
                     </p>
                     <dl className={styles.addressList}>
                       <div>

@@ -267,10 +267,35 @@
 
 .forgot {
   flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
   font-size: 12.5px;
   font-weight: 540;
   color: var(--action-primary);
   text-decoration: none;
+  cursor: pointer;
+}
+
+.resetNote {
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--color-cobalt);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.resetNote p {
+  margin: 0 0 6px;
+}
+
+.resetNote a {
+  font-weight: 600;
+  color: var(--action-primary);
 }
 
 .forgot:hover {
@@ -291,6 +316,27 @@
   background: var(--surface-paper);
 }
 
+.googleButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.googleMark {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.oauthNote {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .divider {
   display: flex;
   align-items: center;
@@ -307,6 +353,24 @@
   flex: 1;
   height: 1px;
   background: rgb(var(--ink-rgb) / 0.09);
+}
+
+.swap {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.swap a {
+  font-weight: 560;
+  color: var(--action-primary);
+  text-decoration: none;
+}
+
+.swap a:hover {
+  text-decoration: underline;
 }
 
 .localNote {

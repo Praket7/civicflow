@@ -11,6 +11,8 @@ import {
   TextField,
   TextareaField,
 } from "../../components/ui";
+import { useAuth } from "../../lib/auth/session";
+import { currentOrganizationFor, recordOrganizationUpdate } from "../../lib/organizations/store";
 import { useWorkspace } from "../../lib/workspace/session";
 import { CAUSE_LABELS } from "../../lib/workspace/selectors";
 import type { Cause, NewOpportunityInput, Opportunity } from "../../types/domain";
@@ -28,14 +30,22 @@ const CAUSE_IMAGE: Record<Cause, string> = {
 const STEPS = ["Brief", "Details", "Review"];
 
 export function CreateOpportunityPage() {
-  const { actions } = useWorkspace();
+  const { workspace, actions } = useWorkspace();
+  const { user } = useAuth();
   const [step, setStep] = useState(0);
   const [planner, setPlanner] = useState("");
   const [planNote, setPlanNote] = useState("");
   const [title, setTitle] = useState("");
   const [cause, setCause] = useState<Cause>("food");
   const [description, setDescription] = useState("");
-  const [address, setAddress] = useState("91 Holt St, Buffalo, NY 14206");
+  // Start from this organization's own location, never another workspace's.
+  const [address, setAddress] = useState(() => {
+    const org = workspace.organization;
+    const cityState = [org.city, org.state].filter(Boolean).join(", ");
+    if (!org.address) return cityState;
+    if (org.city && org.address.toLowerCase().includes(org.city.toLowerCase())) return org.address;
+    return [org.address, cityState].filter(Boolean).join(", ");
+  });
   const [capacity, setCapacity] = useState("12");
   const [duration, setDuration] = useState("2 hours");
   const [requirements, setRequirements] = useState("Reliable arrival, Water bottle");
@@ -132,6 +142,17 @@ export function CreateOpportunityPage() {
     };
     try {
       const opportunity = await actions.createOpportunity(input);
+      const organization = user ? currentOrganizationFor(user.email) : null;
+      if (organization) {
+        recordOrganizationUpdate({
+          organizationId: organization.id,
+          kind: "event",
+          title: `New event: ${opportunity.title}`,
+          body: `${organization.name} published ${opportunity.title} for ${opportunity.duration}. ${opportunity.address}.`,
+          href: "/volunteer/discover",
+          author: user?.name ?? "Coordinator",
+        });
+      }
       setCreated(opportunity);
       setError("");
     } catch (caught) {

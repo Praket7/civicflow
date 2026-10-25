@@ -82,6 +82,93 @@
   padding: 26px 28px;
 }
 
+.fieldStack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.photoRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.photoCopy {
+  min-width: 0;
+}
+
+.photoLabel {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.photoHint {
+  margin: 3px 0 8px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.photoActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.photoRemove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.accountLine {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.summary {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.summary dt {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.summary dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 550;
+  text-align: right;
+}
+
+.asideNote {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .skills {
   display: flex;
   flex-wrap: wrap;

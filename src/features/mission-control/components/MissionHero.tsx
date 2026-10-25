@@ -4,7 +4,8 @@ import { Link } from "react-router-dom";
 import type { MissionControlSummary } from "../../../types/domain";
 import { t } from "../../../lib/i18n";
 import { formatLongDate, formatTime, timeRange } from "../../../lib/workspace/selectors";
-import { demoWorkspace } from "../../../lib/workspace/dataset";
+import { isDemoOrganization } from "../../../lib/workspace/organizationWorkspace";
+import { useWorkspace } from "../../../lib/workspace/session";
 import styles from "../MissionControl.module.css";
 
 interface MissionHeroProps {
@@ -19,15 +20,28 @@ function greetingFor(iso: string): string {
 }
 
 export function MissionHero({ data }: MissionHeroProps) {
+  const { workspace, session } = useWorkspace();
   const now = parseISO(data.demoNow);
-  const today = demoWorkspace.shifts.find(
+  const today = workspace.shifts.find(
     (shift) => shift.startsAt.slice(0, 10) === data.demoNow.slice(0, 10),
   );
   const todayOpportunity = today
-    ? demoWorkspace.opportunities.find((row) => row.id === today.opportunityId)
+    ? [...workspace.opportunities, ...session.createdOpportunities].find(
+        (row) => row.id === today.opportunityId,
+      )
     : undefined;
   const greeting = t(greetingFor(data.demoNow));
   const openToday = today ? timeRange(today.startsAt, today.endsAt) : t("No shift today");
+  const organization = workspace.organization;
+  const ownWorkspace = !isDemoOrganization(organization.id);
+  // A real organization shows its own cover and its own name. The pantry photo
+  // and its credit belong to the bundled demo, nothing else.
+  const cover = ownWorkspace ? organization.image : undefined;
+  const coverCaption = ownWorkspace
+    ? [organization.name, [organization.city, organization.state].filter(Boolean).join(", ")]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   return (
     <section className={styles.hero} aria-labelledby="mc-greeting">
@@ -43,18 +57,23 @@ export function MissionHero({ data }: MissionHeroProps) {
         <p className={styles.heroSub}>
           {todayOpportunity
             ? `${todayOpportunity.title} ${t("opens at")} ${formatTime(today!.startsAt)}. `
-            : `${t("The next shift is on the schedule.")} `}
-          {data.attentionCount === 0
-            ? t("Every role is covered this week.")
-            : t(
-                data.attentionCount === 1
-                  ? "{count} shift still needs people this week."
-                  : "{count} shifts still need people this week.",
-                { count: data.attentionCount },
-              )}
+            : workspace.shifts.length === 0
+              ? `${t("Nothing is scheduled yet.")} `
+              : `${t("The next shift is on the schedule.")} `}
+          {workspace.shifts.length === 0
+            ? t("Publish a shift to start filling roles.")
+            : data.attentionCount === 0
+              ? t("Every role is covered this week.")
+              : t(
+                  data.attentionCount === 1
+                    ? "{count} shift still needs people this week."
+                    : "{count} shifts still need people this week.",
+                  { count: data.attentionCount },
+                )}
         </p>
         <p className={styles.heroMeta}>
-          {data.organizationName} · {demoWorkspace.organization.address}
+          {data.organizationName}
+          {workspace.organization.address ? ` · ${workspace.organization.address}` : null}
         </p>
 
         <div className={styles.heroActions}>
@@ -90,15 +109,19 @@ export function MissionHero({ data }: MissionHeroProps) {
       <figure className={styles.heroFigure}>
         <img
           className={styles.heroImage}
-          src="/media/hero-community.jpg"
-          alt="Volunteers packing food boxes together at a community pantry"
+          src={cover ?? "/media/hero-community.jpg"}
+          alt={
+            ownWorkspace
+              ? (organization.imageAlt ?? `${organization.name} community photo`)
+              : "Volunteers packing food boxes together at a community pantry"
+          }
           width={1600}
           height={760}
           fetchPriority="high"
         />
         <figcaption className={styles.heroCaption}>
-          <span>Packing day at the Holt Street pantry</span>
-          <span>Photo: Pexels / 6646918</span>
+          <span>{ownWorkspace ? coverCaption : "Packing day at the Holt Street pantry"}</span>
+          {ownWorkspace ? null : <span>Photo: Pexels / 6646918</span>}
         </figcaption>
       </figure>
     </section>

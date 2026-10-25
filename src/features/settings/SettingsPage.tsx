@@ -10,7 +10,7 @@ import {
   Settings2,
   UserRound,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -23,6 +23,7 @@ import {
   Toggle,
 } from "../../components/ui";
 import { useAuth } from "../../lib/auth/session";
+import { restartSetup } from "../../lib/onboarding/store";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import { useWorkspace } from "../../lib/workspace/session";
 import { getHourRows } from "../../lib/workspace/selectors";
@@ -39,6 +40,7 @@ const CATEGORIES = [
 ];
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const { workspace, session, backups, actions } = useWorkspace();
   const { user, token, signOut } = useAuth();
   const [category, setCategory] = useState("general");
@@ -247,6 +249,21 @@ export function SettingsPage() {
                 <ButtonLink to="/coordinator/organization/setup" variant="ghost">
                   Organization setup
                 </ButtonLink>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (!user) return;
+                    // Setup is finished for good; this is the only way back in.
+                    restartSetup(user.email, user.role);
+                    navigate(
+                      user.role === "coordinator"
+                        ? "/coordinator/organization/setup"
+                        : "/volunteer/onboarding",
+                    );
+                  }}
+                >
+                  Run setup again
+                </Button>
                 <Button variant="primary" icon={<Save size={13} />} onClick={saveGeneral}>
                   Save changes
                 </Button>

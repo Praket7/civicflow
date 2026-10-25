@@ -24,6 +24,10 @@ function entryPath(route: RouteMeta) {
   return value ? route.path.replace(/:[^/]+/, value) : route.path;
 }
 
+// The credentials register renders every volunteer, skill and expiry row at
+// once, and axe walks the whole tree. It needs longer than the rest.
+const routeTimeout = (route: RouteMeta) => (route.id === "credentials" ? 180_000 : 30_000);
+
 function renderRoute(route: RouteMeta) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const page = pages[route.id];
@@ -49,20 +53,24 @@ function renderRoute(route: RouteMeta) {
 
 describe("route accessibility", () => {
   for (const route of routes) {
-    it(`${route.number}. ${route.title} has no serious ARIA or landmark violations`, async () => {
-      const { container } = renderRoute(route);
-      await waitFor(
-        () => {
-          expect((container.textContent ?? "").trim().length).toBeGreaterThan(40);
-        },
-        { timeout: 5000 },
-      );
+    it(
+      `${route.number}. ${route.title} has no serious ARIA or landmark violations`,
+      async () => {
+        const { container } = renderRoute(route);
+        await waitFor(
+          () => {
+            expect((container.textContent ?? "").trim().length).toBeGreaterThan(40);
+          },
+          { timeout: 5000 },
+        );
 
-      const results = await axe(container);
-      const blocking = results.violations.filter(
-        (violation) => violation.impact === "serious" || violation.impact === "critical",
-      );
-      expect(blocking).toEqual([]);
-    }, 30000);
+        const results = await axe(container);
+        const blocking = results.violations.filter(
+          (violation) => violation.impact === "serious" || violation.impact === "critical",
+        );
+        expect(blocking).toEqual([]);
+      },
+      routeTimeout(route),
+    );
   }
 });

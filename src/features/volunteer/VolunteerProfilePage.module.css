@@ -119,6 +119,29 @@
   margin-top: 13px;
 }
 
+.photoControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.photoRemove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.photoRemove:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .photoNote {
   margin-top: 9px;
   color: var(--text-muted);

@@ -162,7 +162,12 @@ export function VolunteersPage() {
       width: "30%",
       render: (volunteer) => (
         <div className={styles.personCell}>
-          <Avatar initials={volunteer.initials} tone={volunteer.tone} size={30} />
+          <Avatar
+            initials={volunteer.initials}
+            src={volunteer.photo || undefined}
+            tone={volunteer.tone}
+            size={30}
+          />
           <div className={styles.personCopy}>
             <span className={styles.personName}>{volunteer.name}</span>
             <span className={styles.personEmail}>{volunteer.email}</span>
@@ -258,7 +263,7 @@ export function VolunteersPage() {
             <a
               className={styles.invite}
               href={`mailto:${workspace.organization.email}?subject=${encodeURIComponent(
-                "Invitation to volunteer with FeedMore WNY",
+                `Invitation to volunteer with ${workspace.organization.name}`,
               )}`}
             >
               <UserPlus size={14} aria-hidden="true" />
@@ -410,7 +415,12 @@ export function VolunteersPage() {
           {selected ? (
             <aside className={styles.panel} aria-label={`Profile summary for ${selected.name}`}>
               <div className={styles.panelTop}>
-                <Avatar initials={selected.initials} tone={selected.tone} size={48} />
+                <Avatar
+                  initials={selected.initials}
+                  src={selected.photo || undefined}
+                  tone={selected.tone}
+                  size={48}
+                />
                 <button
                   type="button"
                   className={styles.panelClose}

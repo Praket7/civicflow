@@ -15,11 +15,30 @@ import type {
   SessionSnapshot,
   WorkspaceSettings,
 } from "../../types/domain";
+import { useOptionalAuth } from "../auth/session";
+import { useOrganizationWorkspace } from "../organizations/useOrganizationWorkspace";
+import type { OrganizationProfile } from "../organizations/store";
 import { demoWorkspace } from "./dataset";
-import { getWorkspaceRepository } from "./repository";
+import {
+  DEMO_ORGANIZATION,
+  isDemoOrganization,
+  workspaceForOrganization,
+} from "./organizationWorkspace";
+import { getWorkspaceRepository, previewRepository } from "./repository";
+import { WorkspaceScopeProvider } from "./scope";
 import { setDisplayTimeZone } from "./selectors";
 
-const repository = getWorkspaceRepository();
+const localRepository = getWorkspaceRepository();
+
+/**
+ * The bundled demo organization reads the app's own store. An organization
+ * someone creates or joins gets its own scoped store, so its schedule starts
+ * empty and never shows another organization's work.
+ */
+function repositoryFor(organization: OrganizationProfile | null) {
+  if (!organization || isDemoOrganization(organization.id)) return localRepository;
+  return previewRepository;
+}
 
 interface WorkspaceSessionValue {
   workspace: DemoWorkspace;
@@ -67,9 +86,56 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
 
 export function WorkspaceSessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const auth = useOptionalAuth();
+  const account = auth?.user ?? null;
+  const organizationWorkspace = useOrganizationWorkspace(account);
+  // Signed out, nothing narrows the workspace, so the signed-out preview keeps
+  // the sample organization. A signed-in account with no organization yet reads
+  // an empty workspace instead.
+  const organization = account ? organizationWorkspace.current : null;
+  const organizationId = organization?.id ?? "";
+  const organizationName = organization?.name ?? "";
+  const organizationImage = organization?.image ?? "";
+  const organizationImageAlt = organization?.imageAlt ?? "";
+  const accountId = account?.id ?? "";
+  // The store hands back a fresh object on every change; scope on identity, so
+  // an edited name or a new cover picture reaches the screens immediately.
+  const repository = useMemo(
+    () => (account ? repositoryFor(organization ?? null) : localRepository),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [organization, accountId],
+  );
+  const workspace = useMemo(
+    () => (account ? workspaceForOrganization(organization ?? null, account) : demoWorkspace),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [organization, accountId],
+  );
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [backups, setBackups] = useState<BackupSnapshot[]>([]);
   const [error, setError] = useState("");
+
+  // The saved profile is the source of truth for the signed-in volunteer, so
+  // what setup stores is what the roster and the profile screen read back.
+  const visibleWorkspace = useMemo(() => {
+    if (!session) return workspace;
+    const profile = session.volunteerProfile;
+    return {
+      ...workspace,
+      volunteers: workspace.volunteers.map((volunteer) =>
+        volunteer.id === workspace.currentVolunteerId
+          ? {
+              ...volunteer,
+              skills: profile.skills,
+              availability: profile.availability,
+              phone: profile.phone ?? volunteer.phone,
+              interests: profile.interests ?? volunteer.interests,
+              causes: profile.causes ?? volunteer.causes,
+              photo: profile.photo ?? volunteer.photo,
+            }
+          : volunteer,
+      ),
+    };
+  }, [session, workspace]);
 
   const apply = useCallback(
     (next: SessionSnapshot) => {
@@ -80,11 +146,24 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     },
     [queryClient],
   );
-
   useEffect(() => {
     let active = true;
-    repository
-      .getSnapshot()
+    const scope = account
+      ? repository.selectOrganization(
+          organizationId
+            ? {
+                id: organizationId,
+                name: organizationName,
+                coordinatorName: account.role === "coordinator" ? account.name : undefined,
+                coordinatorEmail: account.role === "coordinator" ? account.email : undefined,
+                image: organizationImage || undefined,
+                imageAlt: organizationImageAlt || undefined,
+              }
+            : null,
+        )
+      : repository.selectOrganization(DEMO_ORGANIZATION);
+    scope
+      .then(() => repository.getSnapshot())
       .then((snapshot) => {
         if (active) setSession(snapshot);
       })
@@ -100,7 +179,14 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     return () => {
       active = false;
     };
-  }, []);
+  }, [
+    repository,
+    organizationId,
+    organizationName,
+    organizationImage,
+    organizationImageAlt,
+    account,
+  ]);
 
   useEffect(() => {
     if (!session) return;
@@ -172,7 +258,7 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
           return result;
         }),
     }),
-    [apply, run],
+    [apply, repository, run],
   );
 
   const value = useMemo<WorkspaceSessionValue | null>(() => {
@@ -180,8 +266,8 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     // Apply the timezone before children format their first timestamp, so a
     // settings change never leaves a stale clock in the tree.
     setDisplayTimeZone(session.settings.timezone);
-    return { workspace: demoWorkspace, session, backups, actions };
-  }, [session, backups, actions]);
+    return { workspace: visibleWorkspace, session, backups, actions };
+  }, [visibleWorkspace, session, backups, actions]);
 
   if (!value) {
     return (
@@ -196,21 +282,23 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
 
   return (
     <WorkspaceSessionContext.Provider value={value}>
-      {error ? (
-        <p
-          role="alert"
-          style={{
-            margin: 0,
-            padding: "8px 16px",
-            background: "var(--tone-red-soft)",
-            color: "var(--tone-red-ink)",
-            font: "500 12px system-ui, sans-serif",
-          }}
-        >
-          {error}
-        </p>
-      ) : null}
-      {children}
+      <WorkspaceScopeProvider value={organizationId || "no-organization"}>
+        {error ? (
+          <p
+            role="alert"
+            style={{
+              margin: 0,
+              padding: "8px 16px",
+              background: "var(--tone-red-soft)",
+              color: "var(--tone-red-ink)",
+              font: "500 12px system-ui, sans-serif",
+            }}
+          >
+            {error}
+          </p>
+        ) : null}
+        {children}
+      </WorkspaceScopeProvider>
     </WorkspaceSessionContext.Provider>
   );
 }

@@ -24,6 +24,7 @@ import {
   LogOut,
   PanelLeftClose,
   Pin,
+  Sparkles,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -32,11 +33,12 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import type { ShellRole } from "../../app/routes";
 import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
-import { demoOrganization } from "../../lib/workspace/repository";
+import { setCurrentOrganization } from "../../lib/organizations/store";
+import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
 import { useNotifications } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
 import { Avatar } from "../ui/Avatar";
@@ -47,6 +49,7 @@ interface NavItem {
   to: string;
   icon: LucideIcon;
   showsUnread?: boolean;
+  accent?: boolean;
 }
 
 interface NavGroup {
@@ -54,10 +57,23 @@ interface NavGroup {
   items: NavItem[];
 }
 
+function initialsOf(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "CF"
+  );
+}
+
 const coordinatorGroups: NavGroup[] = [
   {
     label: "Work",
     items: [
+      { label: "AutoRoster", to: "/coordinator/autoroster", icon: Sparkles, accent: true },
       { label: "Mission Control", to: "/coordinator/mission-control", icon: Gauge },
       { label: "Schedule", to: "/coordinator/schedule", icon: CalendarDays },
       { label: "Volunteers", to: "/coordinator/volunteers", icon: Users },
@@ -129,7 +145,12 @@ export function Sidebar({
   const isCoordinator = role === "coordinator";
   const groups = isCoordinator ? coordinatorGroups : volunteerGroups;
   const { user, signOut } = useAuth();
-  const { workspace } = useWorkspace();
+  const navigate = useNavigate();
+  const { workspace, session } = useWorkspace();
+  const organizationWorkspace = useOrganizationWorkspace(user);
+  const currentOrganization = organizationWorkspace.current;
+  const organizationName = currentOrganization?.name ?? "No workspace yet";
+  const organizationInitials = initialsOf(organizationName);
   const volunteer = workspace.volunteers.find((row) => row.id === user?.volunteerId);
   const person = {
     name: user?.name ?? (isCoordinator ? "Praket Gauri" : (volunteer?.name ?? "Volunteer")),
@@ -141,11 +162,14 @@ export function Sidebar({
       .toUpperCase(),
     tone: isCoordinator ? "teal" : (volunteer?.tone ?? "cobalt"),
     role: isCoordinator ? t("Coordinator") : t("Volunteer"),
+    photo: isCoordinator ? undefined : (volunteer?.photo ?? session.volunteerProfile.photo),
   };
   const { data: notifications = [] } = useNotifications(
     user?.role ?? (role === "volunteer" ? "volunteer" : "coordinator"),
   );
-  const unread = notifications.filter((notification) => !notification.readAt).length;
+  const unread =
+    notifications.filter((notification) => !notification.readAt).length +
+    organizationWorkspace.unread;
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const workspaceTriggerRef = useRef<HTMLButtonElement>(null);
@@ -172,6 +196,13 @@ export function Sidebar({
   function dismissOnNavigate() {
     setWorkspaceOpen(false);
     onDismissMobile();
+  }
+
+  function switchWorkspace(organizationId: string) {
+    if (!user) return;
+    setCurrentOrganization(user.email, organizationId);
+    dismissOnNavigate();
+    navigate(isCoordinator ? "/coordinator/mission-control" : "/volunteer/home");
   }
 
   return (
@@ -238,18 +269,20 @@ export function Sidebar({
             ref={workspaceTriggerRef}
             type="button"
             className={styles.orgSwitcher}
-            aria-label={`${t("Workspace")}: ${demoOrganization.name}. ${t("Open workspace menu")}`}
+            aria-label={`${t("Workspace")}: ${organizationName}. ${t("Open workspace menu")}`}
             aria-haspopup="menu"
             aria-expanded={workspaceOpen}
             onClick={() => setWorkspaceOpen((open) => !open)}
           >
             <span className={styles.orgBadge} aria-hidden="true">
-              {demoOrganization.initials}
+              {organizationInitials}
             </span>
             <span className={styles.orgText}>
-              <span className={styles.orgName}>{demoOrganization.name}</span>
+              <span className={styles.orgName}>{organizationName}</span>
               <span className={styles.orgMeta}>
-                {demoOrganization.city}, {demoOrganization.state}
+                {currentOrganization
+                  ? `${currentOrganization.city}, ${currentOrganization.state}`
+                  : "No workspace yet"}
               </span>
             </span>
             <ChevronDown className={styles.chevron} size={12} aria-hidden="true" />
@@ -257,18 +290,60 @@ export function Sidebar({
 
           {workspaceOpen ? (
             <div className={styles.workspaceMenu} role="menu" aria-label="Workspace">
-              <span className={styles.menuLabel}>Current workspace</span>
-              <div className={styles.menuCurrent}>
-                <span className={styles.orgBadge} aria-hidden="true">
-                  {demoOrganization.initials}
-                </span>
-                <span className={styles.menuCurrentText}>
-                  <span className={styles.menuCurrentName}>{demoOrganization.name}</span>
-                  <span className={styles.menuCurrentMeta}>Local data · saved on this device</span>
-                </span>
-                <Check size={14} aria-hidden="true" />
-              </div>
-              <div className={styles.menuDivider} aria-hidden="true" />
+              <span className={styles.menuLabel} role="presentation">
+                {t("Workspaces")}
+              </span>
+              {organizationWorkspace.organizations.length === 0 ? (
+                <p className={styles.menuEmpty} role="none">
+                  Join or create an organization to start scheduling.
+                </p>
+              ) : (
+                organizationWorkspace.organizations.map(({ organization }) => {
+                  const active = currentOrganization?.id === organization.id;
+                  return (
+                    <button
+                      key={organization.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      className={styles.menuWorkspace}
+                      data-active={active}
+                      onClick={() => switchWorkspace(organization.id)}
+                    >
+                      <span className={styles.orgBadge} aria-hidden="true">
+                        {initialsOf(organization.name)}
+                      </span>
+                      <span className={styles.menuCurrentText}>
+                        <span className={styles.menuCurrentName}>{organization.name}</span>
+                        <span className={styles.menuCurrentMeta}>
+                          {organization.city}, {organization.state}
+                        </span>
+                      </span>
+                      {active ? <Check size={14} aria-hidden="true" /> : null}
+                    </button>
+                  );
+                })
+              )}
+              <div className={styles.menuDivider} role="separator" />
+              <Link
+                to={isCoordinator ? "/coordinator/start" : "/volunteer/start"}
+                className={styles.menuItem}
+                role="menuitem"
+                onClick={dismissOnNavigate}
+              >
+                {isCoordinator ? "Join another organization" : "Discover organizations"}
+              </Link>
+              {isCoordinator ? (
+                <Link
+                  to="/coordinator/organization/new"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  onClick={dismissOnNavigate}
+                >
+                  Create an organization
+                </Link>
+              ) : null}
+              <div className={styles.menuDivider} role="separator" />
               {isCoordinator ? (
                 <>
                   <Link
@@ -328,7 +403,13 @@ export function Sidebar({
                     <NavLink
                       to={item.to}
                       className={({ isActive }) =>
-                        isActive ? `${styles.item} ${styles.itemActive}` : styles.item
+                        [
+                          styles.item,
+                          item.accent ? styles.itemAccent : "",
+                          isActive ? styles.itemActive : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")
                       }
                       title={t(item.label)}
                       onClick={dismissOnNavigate}
@@ -420,7 +501,12 @@ export function Sidebar({
 
         <div className={styles.footer}>
           <div className={styles.person}>
-            <Avatar initials={person.initials} tone={person.tone} size={36} />
+            <Avatar
+              initials={person.initials}
+              src={person.photo || undefined}
+              tone={person.tone}
+              size={36}
+            />
             <span className={styles.personText}>
               <span className={styles.personName}>{person.name}</span>
               <span className={styles.personRole}>{person.role}</span>

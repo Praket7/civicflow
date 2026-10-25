@@ -1,4 +1,6 @@
-use civicflow_core::models::{AvailabilitySlot, NewOpportunityInput, SettingsPatch};
+use civicflow_core::models::{
+    AvailabilitySlot, NewOpportunityInput, SettingsPatch, VolunteerProfilePatch,
+};
 use civicflow_core::workflows::{
     check_in, check_out, create_opportunity, mark_no_show, promote_waitlist, register_for_shift,
     review_hours, save_volunteer_profile, set_application_stage, set_saved_opportunity, snapshot,
@@ -293,12 +295,18 @@ fn registrations_and_profiles_are_owned_by_the_database() {
 
     let profile = save_volunteer_profile(
         database.connection(),
-        vec!["Tutoring".into(), "Spanish".into()],
-        vec![AvailabilitySlot {
-            day: "wed".into(),
-            period: "morning".into(),
-        }],
-        true,
+        VolunteerProfilePatch {
+            skills: vec!["Tutoring".into(), "Spanish".into()],
+            availability: vec![AvailabilitySlot {
+                day: "wed".into(),
+                period: "morning".into(),
+            }],
+            completed_onboarding: true,
+            phone: "(716) 555-0199".into(),
+            interests: "Weekend food distribution".into(),
+            causes: vec!["food".into()],
+            photo: "data:image/jpeg;base64,abc".into(),
+        },
     )
     .unwrap();
     assert_eq!(
@@ -306,9 +314,22 @@ fn registrations_and_profiles_are_owned_by_the_database() {
         vec!["Tutoring", "Spanish"]
     );
     assert_eq!(profile.volunteer_profile.availability.len(), 1);
+    assert_eq!(profile.volunteer_profile.phone, "(716) 555-0199");
+    assert_eq!(profile.volunteer_profile.causes, vec!["food"]);
+    assert_eq!(
+        profile.volunteer_profile.photo,
+        "data:image/jpeg;base64,abc"
+    );
     assert_eq!(audit_count(&database, "volunteer.profile_update"), 1);
 
-    assert!(save_volunteer_profile(database.connection(), vec![], vec![], true).is_err());
+    assert!(save_volunteer_profile(
+        database.connection(),
+        VolunteerProfilePatch {
+            completed_onboarding: true,
+            ..VolunteerProfilePatch::default()
+        },
+    )
+    .is_err());
 }
 
 #[test]
@@ -347,12 +368,15 @@ fn every_workflow_write_survives_reopen() {
         .unwrap();
         save_volunteer_profile(
             database.connection(),
-            vec!["Tutoring".into(), "Spanish".into()],
-            vec![AvailabilitySlot {
-                day: "wed".into(),
-                period: "morning".into(),
-            }],
-            true,
+            VolunteerProfilePatch {
+                skills: vec!["Tutoring".into(), "Spanish".into()],
+                availability: vec![AvailabilitySlot {
+                    day: "wed".into(),
+                    period: "morning".into(),
+                }],
+                completed_onboarding: true,
+                ..VolunteerProfilePatch::default()
+            },
         )
         .unwrap();
     }

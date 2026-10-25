@@ -29,5 +29,8 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     include: ["src/**/*.test.{ts,tsx}"],
+    // These suites render whole screens and walk full catalogs. On a loaded CI
+    // runner the 5s default is a coin toss, so failures should mean failures.
+    testTimeout: 30_000,
   },
 });

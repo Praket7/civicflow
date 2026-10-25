@@ -1,31 +1,8 @@
-import { useState } from "react";
-import { ArrowRight, Check, Database, ShieldCheck, WifiOff } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-import { Button } from "../../components/ui";
+import { ArrowRight, Database, ShieldCheck, WifiOff } from "lucide-react";
+import { Link } from "react-router-dom";
+import { accountHome, useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
 import styles from "./WelcomePage.module.css";
-
-type Role = "coordinator" | "volunteer";
-
-const roles: {
-  id: Role;
-  title: string;
-  description: string;
-  destination: string;
-}[] = [
-  {
-    id: "coordinator",
-    title: "I coordinate volunteers",
-    description: "Build the schedule, fill gaps, approve hours, and report to the board.",
-    destination: "/coordinator/mission-control",
-  },
-  {
-    id: "volunteer",
-    title: "I volunteer",
-    description: "Find a shift that fits your week, check in at the door, and keep your hours.",
-    destination: "/volunteer/home",
-  },
-];
 
 const trustChips: { label: string; icon: typeof WifiOff; tone: "green" | "violet" | "teal" }[] = [
   { label: "Runs offline", icon: WifiOff, tone: "green" },
@@ -34,17 +11,14 @@ const trustChips: { label: string; icon: typeof WifiOff; tone: "green" | "violet
 ];
 
 export function WelcomePage() {
-  const navigate = useNavigate();
-  const [role, setRole] = useState<Role>("coordinator");
-  const selected = roles.find((option) => option.id === role) ?? roles[0];
-
+  const { user } = useAuth();
   return (
     <main className={styles.page}>
       <section className={styles.photoPanel} aria-labelledby="welcome-statement">
         <img
           className={styles.photo}
           src="/media/welcome-volunteer.jpg"
-          alt="A volunteer smiling while packing food at FeedMore WNY"
+          alt="A volunteer smiling while packing food at a community distribution"
         />
         <div className={styles.scrim} aria-hidden="true" />
 
@@ -63,13 +37,13 @@ export function WelcomePage() {
         </Link>
 
         <div className={styles.photoCopy}>
-          <p className={styles.photoEyebrow}>FeedMore WNY · Buffalo, NY</p>
+          <p className={styles.photoEyebrow}>Coordinators and volunteers</p>
           <h2 className={styles.statement} id="welcome-statement">
-            4,000 food boxes. 60 people a week.
+            The work is local. So is the record.
           </h2>
           <p className={styles.photoBody}>
-            CivicFlow is how FeedMore WNY schedules the volunteers who pack them, and how volunteers
-            find a shift that fits their week.
+            CivicFlow keeps the schedule, the roster, the hours, and the proof that they happened on
+            this device — no account on a server, no signal required.
           </p>
         </div>
 
@@ -82,63 +56,50 @@ export function WelcomePage() {
         <div className={styles.panelInner}>
           <p className={styles.panelEyebrow}>
             <ShieldCheck size={13} strokeWidth={1.9} aria-hidden="true" />
-            Local workspace · FeedMore WNY
+            Local-first volunteer operations
           </p>
           <h1 className={styles.title} id="welcome-title">
-            Choose a workspace
+            Service, organized.
           </h1>
           <p className={styles.lede}>
-            Both use the same FeedMore WNY record. You can switch at any time.
+            Schedule volunteers, fill the gaps before Sunday, and keep hours that hold up when
+            someone asks for proof.
           </p>
 
-          <fieldset className={styles.roles}>
-            <legend className="visually-hidden">Choose how you will use CivicFlow</legend>
-            {roles.map((option) => {
-              const active = option.id === role;
-              return (
-                <label
-                  key={option.id}
-                  htmlFor={`civicflow-role-${option.id}`}
-                  aria-label={t(option.title)}
-                  className={styles.roleCard}
-                  data-role={option.id}
-                  data-selected={active}
-                >
-                  <input
-                    id={`civicflow-role-${option.id}`}
-                    className={styles.radio}
-                    type="radio"
-                    name="civicflow-role"
-                    value={option.id}
-                    checked={active}
-                    onChange={() => setRole(option.id)}
-                  />
-                  <span className={styles.accent} aria-hidden="true" />
-                  <span className={styles.roleCopy}>
-                    <span className={styles.roleTitle}>
-                      <span className={styles.radioMark} aria-hidden="true">
-                        {active ? <Check size={11} strokeWidth={3} /> : null}
-                      </span>
-                      {t(option.title)}
-                    </span>
-                    <span className={styles.roleBody}>{t(option.description)}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </fieldset>
+          <div className={styles.actions}>
+            {user ? (
+              <Link className={styles.primaryAction} to={accountHome(user)}>
+                Continue as {user.name.split(" ")[0]}
+                <ArrowRight size={15} strokeWidth={2} aria-hidden="true" />
+              </Link>
+            ) : (
+              <Link className={styles.primaryAction} to="/sign-in">
+                Sign in
+                <ArrowRight size={15} strokeWidth={2} aria-hidden="true" />
+              </Link>
+            )}
+            {user ? null : (
+              <Link className={styles.secondaryAction} to="/create-account">
+                Create an account
+              </Link>
+            )}
+          </div>
+          <p className={styles.actionNote}>
+            {user
+              ? "This device still has your session. Continue where you left off."
+              : "You pick coordinator or volunteer when you create the account."}
+          </p>
 
-          <Button
-            className={styles.continue}
-            variant="primary"
-            size="large"
-            onClick={() => navigate("/sign-in")}
-          >
-            <span>
-              {t("Continue as")} {t(selected.id === "coordinator" ? "Coordinator" : "Volunteer")}
-            </span>
-            <ArrowRight size={16} aria-hidden="true" />
-          </Button>
+          <dl className={styles.roleList}>
+            <div>
+              <dt>Coordinators</dt>
+              <dd>Build shifts, run AutoRoster, approve hours, and report the month.</dd>
+            </div>
+            <div>
+              <dt>Volunteers</dt>
+              <dd>Join an organization, claim a shift, check in, and keep a record.</dd>
+            </div>
+          </dl>
 
           <div className={styles.trust}>
             <h2 className={styles.trustTitle}>How this workspace runs</h2>
@@ -155,9 +116,14 @@ export function WelcomePage() {
             </ul>
           </div>
 
-          <p className={styles.signIn}>
-            Already have a profile? <Link to="/sign-in">Sign in</Link>
-          </p>
+          {user ? null : (
+            <div className={styles.signIn}>
+              <p>
+                Just looking? <Link to="/sign-in">Open the demo workspace</Link> from the sign-in
+                screen. It loads a sample organization and needs no password of your own.
+              </p>
+            </div>
+          )}
         </div>
       </section>
     </main>

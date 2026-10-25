@@ -160,3 +160,28 @@ which needs assistive-access permission and cannot reliably read the WebView.
 system permission prompt, so the real window can be clicked in local runs and in CI. The
 plugin is compiled out of release builds, and the suite points the app at a throwaway
 `CIVICFLOW_DATA_DIR` so it never touches the real workspace.
+
+## 017 — Hosted accounts sit in front of the local workspace
+
+**Decision:** Supabase Auth is an optional identity provider. It verifies the person, and
+`sign_in_with_hosted` then opens or creates the local account that owns the workspace data.
+Provider URLs open in the system browser; the answer returns on the `civicflow://` scheme.
+**Rejected:** moving workspace data to Postgres, and loading Google's consent screen inside
+the Tauri webview.
+**Why:** the rubric and the product both rest on a local-first, offline workspace, and the
+Rust core needs a local account to enforce roles against. Keeping identity hosted and records
+local means email confirmation, password reset by email, and Google sign-in work without
+turning the app into a thin client. Google blocks OAuth inside embedded webviews, so the
+hand-off has to leave the app. With no keys configured, nothing changes and no account
+request leaves the device.
+
+## 018 — Public screens name no organization
+
+**Decision:** `/welcome`, `/sign-in`, `/create-account`, the callback screens, and the auth
+portrait describe the product, not one partner organization. In-app screens read the current
+organization's name from the workspace snapshot instead of printing it.
+**Rejected:** keeping the partner's name on the entry screens, and leaving literal
+organization names in the kiosk, notifications, invite mail, and impact report.
+**Why:** the same build is demoed for several kinds of organization, and a new coordinator
+who creates an organization should never see someone else's name in their workspace. The
+bundled sample organization keeps its own name because that is demo data, not interface copy.

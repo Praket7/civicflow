@@ -70,7 +70,10 @@ export function DiscoverPage() {
   const volunteer = currentVolunteer(workspace);
   const opportunities = getOpportunities(session, workspace);
   const upcoming = useMemo(() => getUpcomingShiftRows(workspace), [workspace]);
-  const matches = useMemo(() => getMatches(volunteer, 12), [volunteer]);
+  const matches = useMemo(
+    () => getMatches(volunteer, 12, workspace, session.createdOpportunities),
+    [volunteer, workspace, session.createdOpportunities],
+  );
   const saved = getSavedOpportunities(session);
   const [query, setQuery] = useState("");
   const [quick, setQuick] = useState<QuickFilter>("for-you");

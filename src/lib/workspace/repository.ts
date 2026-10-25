@@ -23,6 +23,7 @@ import type {
   SessionSnapshot,
   WorkspaceSettings,
 } from "../../types/domain";
+import type { HostedIdentity } from "../auth/hosted";
 import { isTauri } from "../platform";
 import { demoWorkspace } from "./dataset";
 import { previewRepository } from "./previewRepository";
@@ -36,10 +37,29 @@ import { previewRepository } from "./previewRepository";
 export interface WorkspaceRepository {
   readonly source: "desktop" | "preview";
   signIn(email: string, password: string, remember: boolean): Promise<AuthSession>;
+  createAccount(
+    name: string,
+    email: string,
+    password: string,
+    role: AccountRole,
+  ): Promise<AuthSession>;
+  /** Resumes the local workspace behind an email the hosted provider verified. */
+  signInWithHosted(identity: HostedIdentity): Promise<AuthSession>;
   signOut(token: string): Promise<void>;
   currentUser(token: string): Promise<Account | null>;
   listAccounts(token: string): Promise<Account[]>;
   resetPassword(token: string, userId: string, newPassword: string): Promise<void>;
+  /** Points the workspace at the organization the person is looking at. */
+  selectOrganization(
+    organization: {
+      id: string;
+      name: string;
+      coordinatorName?: string;
+      coordinatorEmail?: string;
+      image?: string;
+      imageAlt?: string;
+    } | null,
+  ): Promise<void>;
   getSnapshot(): Promise<SessionSnapshot>;
   setSaved(opportunityId: string, saved: boolean): Promise<SessionSnapshot>;
   setApplicationStage(applicationId: string, stage: string): Promise<SessionSnapshot>;
@@ -95,6 +115,14 @@ const desktopRepository: WorkspaceRepository = {
   source: "desktop",
   signIn: (email, password, remember) =>
     invoke<AuthSession>("sign_in", { email, password, remember }),
+  createAccount: (name, email, password, role) =>
+    invoke<AuthSession>("create_account", { name, email, password, role }),
+  signInWithHosted: (identity) =>
+    invoke<AuthSession>("sign_in_with_hosted", {
+      name: identity.name,
+      email: identity.email,
+      role: identity.role,
+    }),
   signOut: async (token) => {
     await invoke<boolean>("sign_out", { token });
   },
@@ -103,6 +131,10 @@ const desktopRepository: WorkspaceRepository = {
   resetPassword: async (token, userId, newPassword) => {
     await invoke<null>("reset_password", { token, userId, newPassword });
   },
+  // The desktop core keeps one local workspace behind SQLite; the session picks
+  // the seeded preview store for organizations created in the app, so this call
+  // has nothing to swap.
+  selectOrganization: async () => undefined,
   getSnapshot: () => invoke<SessionSnapshot>("get_workspace_snapshot", withToken()),
   setSaved: (opportunityId, saved) =>
     invoke<SessionSnapshot>("set_saved_opportunity", withToken({ opportunityId, saved })),
@@ -158,6 +190,10 @@ const desktopRepository: WorkspaceRepository = {
         skills: patch.skills ?? [],
         availability: patch.availability ?? [],
         completedOnboarding: patch.completedOnboarding ?? true,
+        phone: patch.phone ?? "",
+        interests: patch.interests ?? "",
+        causes: patch.causes ?? [],
+        photo: patch.photo ?? "",
       }),
     ),
   resetDemo: () => invoke<SessionSnapshot>("reset_demo", withToken()),
@@ -194,6 +230,13 @@ const desktopRepository: WorkspaceRepository = {
 export function getWorkspaceRepository(): WorkspaceRepository {
   return isTauri() ? desktopRepository : previewRepository;
 }
+
+/**
+ * The seeded browser store. The desktop shell uses the same implementation for
+ * an organization created in the app, so those workspaces stay isolated from the
+ * local SQLite demo workspace.
+ */
+export { previewRepository };
 
 export const demoOrganization = demoWorkspace.organization;
 export const demoCoordinator = demoWorkspace.coordinator;

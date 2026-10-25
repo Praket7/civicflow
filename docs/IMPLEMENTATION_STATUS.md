@@ -1,6 +1,6 @@
 # Implementation status
 
-Last reviewed 2026-10-24. This page describes what is in the repository now, not what the
+Last reviewed 2026-10-25. This page describes what is in the repository now, not what the
 build plan hoped for. Screens are real routes with working controls. Workflow writes go
 through `civicflow-core`, which validates them, stores them in SQLite, and appends an audit
 event before returning a fresh snapshot.
@@ -40,6 +40,18 @@ event before returning a fresh snapshot.
 - Settings → Accounts lists the local accounts and lets a coordinator reset a password.
 - Kiosk is a coordinator-authenticated route. It is still the same webview, not a separate
   capability-scoped window.
+
+### Hosted accounts
+
+Hosted auth is optional and configured only through `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY`. When both are set, `/sign-in` and `/create-account` also offer
+Google and emailed confirmation and recovery. Supabase verifies the identity, the Rust
+command `sign_in_with_hosted` opens (or creates) the matching local account, and every
+workspace command still resolves the local token. The role chosen on the form decides the
+access level of a newly created account. In the desktop app the provider page opens in the
+system browser and answers on the `civicflow://` scheme, so Google's consent screen never
+loads inside the webview. With the keys absent the app behaves exactly as before and makes
+no account request. See [AUTH.md](AUTH.md).
 
 ### Domain engine
 
@@ -84,9 +96,9 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
 
 ### Evidence and documentation
 
-- 117 frontend tests, 54 Rust tests, typecheck, lint, format, web build, contrast audit,
+- 157 frontend tests, 64 Rust tests, typecheck, lint, format, web build, contrast audit,
   print audit, accessibility-tree audit, and 200% zoom audit.
-- The accessibility-tree audit reads Chromium's accessibility tree on all 42 routes and
+- The accessibility-tree audit reads Chromium's accessibility tree on all 43 routes and
   requires a main landmark, one level-one heading, and a name on every interactive control.
 - The zoom audit renders an 800 × 500 CSS viewport (a 1600 × 1000 window at 200%) and fails
   on horizontal overflow or a lost heading.
@@ -94,11 +106,12 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
   macOS window. It signs a coordinator in, reaches Mission Control, refuses the volunteer
   workspace, signs out, signs the volunteer in, and refuses coordinator routes. The suite
   uses a throwaway `CIVICFLOW_DATA_DIR`.
-- `README.md`, `ARCHITECTURE.md`, `DATA_MODEL.md`, `MATCHING_ENGINE.md`,
-  `COVERAGE_HEALTH.md`, `METRICS.md`, `SECURITY.md`, `ACCESSIBILITY.md`, `TESTING.md`,
-  `USER_GUIDE.md`, `RUBRIC_MAP.md`, `FBLA_NYS_RUBRIC_AUDIT.md`, `DEMO.md`, `ENVIRONMENT.md`,
-  `DECISIONS.md`, and `OPEN_SOURCE_CREDITS.md`.
-- Reference comparisons, visual QA notes, and 42 route captures under `screenshots/`.
+- `README.md`, `ARCHITECTURE.md`, `AUTH.md`, `DATA_MODEL.md`, `MATCHING_ENGINE.md`,
+  `COVERAGE_HEALTH.md`, `METRICS.md`, `SECURITY.md`, `SIGNING.md`, `ACCESSIBILITY.md`,
+  `TESTING.md`, `USER_GUIDE.md`, `RUBRIC_MAP.md`, `FBLA_NYS_RUBRIC_AUDIT.md`, `DEMO.md`,
+  `ENVIRONMENT.md`, `DECISIONS.md`, and `OPEN_SOURCE_CREDITS.md`.
+- Reference comparisons and visual QA notes, with representative captures under
+  `screenshots/`; the full route sweep lives in [VISUAL_QA.md](VISUAL_QA.md).
 - `pnpm db:verify` reads the running desktop database and checks integrity, schema v4, 32
   tables, foreign keys and record counts.
 

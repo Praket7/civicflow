@@ -3,6 +3,8 @@ import { render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { AuthProvider } from "../../lib/auth/session";
+import { WorkspaceSessionProvider } from "../../lib/workspace/session";
 import { MissionControlPage } from "./MissionControlPage";
 
 function renderPage() {
@@ -11,9 +13,13 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/coordinator/mission-control"]}>
-        <MissionControlPage />
-      </MemoryRouter>
+      <AuthProvider>
+        <WorkspaceSessionProvider>
+          <MemoryRouter initialEntries={["/coordinator/mission-control"]}>
+            <MissionControlPage />
+          </MemoryRouter>
+        </WorkspaceSessionProvider>
+      </AuthProvider>
     </QueryClientProvider>,
   );
 }

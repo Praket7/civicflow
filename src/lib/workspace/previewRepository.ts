@@ -40,13 +40,61 @@ import type {
 } from "../../types/domain";
 import { buildMissionControl } from "./compute";
 import { demoWorkspace } from "./dataset";
+import { blankWorkspaceForOrganization } from "./organizationWorkspace";
+import type { OrganizationScope } from "./organizationWorkspace";
 import type { WorkspaceRepository } from "./repository";
 
 const STORAGE_KEY = "civicflow.workflow.v1";
 const READ_KEY = "civicflow.notifications.read";
 const BACKUP_KEY = "civicflow.backups.v1";
+
+/**
+ * Every organization keeps its own workflow overlay. The bundled demo
+ * organization keeps the original keys, and an account that has not joined or
+ * created an organization yet reads an empty, namespaced store.
+ */
+const DEMO_ORGANIZATION_ID = demoWorkspace.organization.id;
+const NO_ORGANIZATION_ID = "no-organization";
+
+const DEMO_SCOPE: OrganizationScope = {
+  id: demoWorkspace.organization.id,
+  name: demoWorkspace.organization.name,
+};
+
+let organization: OrganizationScope | null = DEMO_SCOPE;
+let selectedScope = DEMO_ORGANIZATION_ID;
+
+function scopeId(): string {
+  return organization?.id ?? NO_ORGANIZATION_ID;
+}
+
+function scoped(key: string): string {
+  return scopeId() === DEMO_ORGANIZATION_ID ? key : `${key}:${scopeId()}`;
+}
 const BACKUP_RETENTION = 20;
 const PREVIEW_ACCOUNT_KEY = "civicflow.auth.passwords";
+const PREVIEW_ACCOUNTS_KEY = "civicflow.auth.accounts";
+
+/** Accounts created in a previous preview session, newest last. */
+function storedPreviewAccounts(): Account[] {
+  try {
+    const raw = localStorage.getItem(PREVIEW_ACCOUNTS_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((row): row is Account => {
+      const candidate = row as Partial<Account> | null;
+      return Boolean(
+        candidate &&
+        typeof candidate.id === "string" &&
+        typeof candidate.name === "string" &&
+        typeof candidate.email === "string" &&
+        (candidate.role === "coordinator" || candidate.role === "volunteer"),
+      );
+    });
+  } catch {
+    return [];
+  }
+}
 
 function previewPasswords(): Record<string, string> {
   try {
@@ -81,13 +129,54 @@ interface SessionSeed {
   settings: WorkspaceSettings;
 }
 
-const seed = rawSessionSeed as unknown as SessionSeed;
-const workspace = rawWorkspace as unknown as DemoWorkspace;
-const current = workspace.volunteers.find(
+const demoSeed = rawSessionSeed as unknown as SessionSeed;
+const demoWorkspaceData = rawWorkspace as unknown as DemoWorkspace;
+
+let seed: SessionSeed = demoSeed;
+let workspace: DemoWorkspace = demoWorkspaceData;
+let current = workspace.volunteers.find(
   (volunteer) => volunteer.id === workspace.currentVolunteerId,
 );
 
-const previewAccounts: Account[] = [
+/** Settings for an organization nobody has set up yet: no demo identity. */
+function blankSeed(organization: OrganizationScope | null): SessionSeed {
+  return {
+    savedOpportunityIds: [],
+    waitlist: [],
+    applications: [],
+    audit: [],
+    settings: {
+      ...demoSeed.settings,
+      organizationName: organization?.name ?? "Your organization",
+      contactEmail: organization?.contactEmails?.[0] ?? "",
+    },
+  };
+}
+
+function applyScope(next: OrganizationScope | null): void {
+  organization = next;
+  selectedScope = next?.id ?? NO_ORGANIZATION_ID;
+  if (next && next.id === DEMO_ORGANIZATION_ID) {
+    workspace = demoWorkspaceData;
+    seed = demoSeed;
+  } else {
+    const coordinator: Account | null = next?.coordinatorName
+      ? {
+          id: "scope-coordinator",
+          name: next.coordinatorName,
+          email: next.coordinatorEmail ?? "",
+          role: "coordinator",
+          volunteerId: null,
+        }
+      : null;
+    workspace = blankWorkspaceForOrganization(next, coordinator);
+    seed = blankSeed(next);
+  }
+  current = workspace.volunteers.find((volunteer) => volunteer.id === workspace.currentVolunteerId);
+  state = loadSnapshot();
+}
+
+const seededAccounts: Account[] = [
   {
     id: "user-praket",
     name: "Praket Gauri",
@@ -103,6 +192,8 @@ const previewAccounts: Account[] = [
     volunteerId: current?.id ?? "vol-maya",
   },
 ];
+
+const previewAccounts: Account[] = [...seededAccounts, ...storedPreviewAccounts()];
 
 function defaultCredentials(): Credential[] {
   return workspace.credentials.map((credential) => {
@@ -208,6 +299,10 @@ export function createDefaultSnapshot(): SessionSnapshot {
       skills: current?.skills ?? [],
       availability: current?.availability ?? [],
       completedOnboarding: true,
+      phone: current?.phone ?? "",
+      interests: current?.interests ?? "",
+      causes: current?.causes ?? [],
+      photo: current?.photo ?? "",
     },
     credentials: defaultCredentials(),
     verifications: defaultVerifications(),
@@ -220,7 +315,7 @@ export function createDefaultSnapshot(): SessionSnapshot {
 
 function readIds(): string[] {
   try {
-    const raw = localStorage.getItem(READ_KEY);
+    const raw = localStorage.getItem(scoped(READ_KEY));
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) && parsed.every((id) => typeof id === "string")
       ? (parsed as string[])
@@ -232,7 +327,7 @@ function readIds(): string[] {
 
 function writeIds(ids: string[]): void {
   try {
-    localStorage.setItem(READ_KEY, JSON.stringify([...new Set(ids)]));
+    localStorage.setItem(scoped(READ_KEY), JSON.stringify([...new Set(ids)]));
   } catch {
     // Storage can be unavailable in hardened webviews; the fallback still works.
   }
@@ -241,7 +336,7 @@ function writeIds(ids: string[]): void {
 function loadSnapshot(): SessionSnapshot {
   const fallback = createDefaultSnapshot();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scoped(STORAGE_KEY));
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<SessionSnapshot>;
     return {
@@ -364,7 +459,7 @@ function makeBackup(
 
 function readBackups(): StoredBackup[] {
   try {
-    const raw = localStorage.getItem(BACKUP_KEY);
+    const raw = localStorage.getItem(scoped(BACKUP_KEY));
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -397,7 +492,7 @@ function readBackups(): StoredBackup[] {
 
 function writeBackups(backups: StoredBackup[]): void {
   try {
-    localStorage.setItem(BACKUP_KEY, JSON.stringify(backups.slice(0, BACKUP_RETENTION)));
+    localStorage.setItem(scoped(BACKUP_KEY), JSON.stringify(backups.slice(0, BACKUP_RETENTION)));
   } catch {
     // The current session can still create and restore in memory.
   }
@@ -425,7 +520,7 @@ function listBackupMeta(): BackupSnapshot[] {
 function persist(next: SessionSnapshot): SessionSnapshot {
   state = next;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    localStorage.setItem(scoped(STORAGE_KEY), JSON.stringify(next));
   } catch {
     // The in-memory store is enough when storage is refused.
   }
@@ -686,6 +781,11 @@ function buildPreviewReport(request: ReportRequest): ReportDocument {
 
 export const previewRepository: WorkspaceRepository = {
   source: "preview",
+  async selectOrganization(next) {
+    const id = next?.id ?? NO_ORGANIZATION_ID;
+    if (id === selectedScope) return;
+    applyScope(next);
+  },
   async signIn(email, password, _remember): Promise<AuthSession> {
     const clean = email.trim().toLowerCase();
     const account = previewAccounts.find((row) => row.email.toLowerCase() === clean);
@@ -694,6 +794,77 @@ export const previewRepository: WorkspaceRepository = {
     if (!account || password !== expected) {
       throw new Error("That email and password do not match an account on this device.");
     }
+    return {
+      token: previewToken(account),
+      user: account,
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    };
+  },
+  async createAccount(name, email, password, role): Promise<AuthSession> {
+    const clean = email.trim().toLowerCase();
+    const display = name.trim().replace(/\s+/g, " ");
+    if (display.length < 2) throw new Error("Enter the name to show on this account.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+      throw new Error("Use an email address like name@example.org.");
+    }
+    if (password.length < 8) throw new Error("Use at least 8 characters for the password.");
+    if (previewAccounts.some((row) => row.email.toLowerCase() === clean)) {
+      throw new Error("An account already uses that email. Sign in instead.");
+    }
+    const suffix = Date.now().toString(36);
+    const account: Account = {
+      id: `user-preview-${suffix}`,
+      name: display,
+      email: clean,
+      role,
+      volunteerId: role === "volunteer" ? `vol-preview-${suffix}` : null,
+    };
+    try {
+      localStorage.setItem(
+        PREVIEW_ACCOUNT_KEY,
+        JSON.stringify({ ...previewPasswords(), [account.id]: password }),
+      );
+      localStorage.setItem(
+        PREVIEW_ACCOUNTS_KEY,
+        JSON.stringify([...storedPreviewAccounts(), account]),
+      );
+    } catch {
+      throw new Error("The browser preview could not save the new account.");
+    }
+    previewAccounts.push(account);
+    return {
+      token: previewToken(account),
+      user: account,
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    };
+  },
+  async signInWithHosted({ name, email, role }): Promise<AuthSession> {
+    const clean = email.trim().toLowerCase();
+    const existing = previewAccounts.find((row) => row.email.toLowerCase() === clean);
+    if (existing) {
+      return {
+        token: previewToken(existing),
+        user: existing,
+        expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      };
+    }
+    const suffix = Date.now().toString(36);
+    const account: Account = {
+      id: `user-hosted-${suffix}`,
+      name: name.trim().replace(/\s+/g, " ") || clean,
+      email: clean,
+      role,
+      volunteerId: role === "volunteer" ? `vol-hosted-${suffix}` : null,
+    };
+    try {
+      localStorage.setItem(
+        PREVIEW_ACCOUNTS_KEY,
+        JSON.stringify([...storedPreviewAccounts(), account]),
+      );
+    } catch {
+      throw new Error("The browser preview could not save the hosted account.");
+    }
+    previewAccounts.push(account);
     return {
       token: previewToken(account),
       user: account,
@@ -1223,8 +1394,8 @@ export const previewRepository: WorkspaceRepository = {
   },
   async resetDemo() {
     try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(READ_KEY);
+      localStorage.removeItem(scoped(STORAGE_KEY));
+      localStorage.removeItem(scoped(READ_KEY));
     } catch {
       // Resetting in memory is still meaningful.
     }
@@ -1263,11 +1434,11 @@ export const previewRepository: WorkspaceRepository = {
     return { snapshot: next, backups: listBackupMeta() };
   },
   async getMissionControl(role: AccountRole = "coordinator") {
-    return buildMissionControl(demoWorkspace, readIds(), role);
+    return buildMissionControl(workspace, readIds(), role);
   },
   async getNotifications(role: AccountRole) {
     const read = readIds();
-    return demoWorkspace.notifications
+    return workspace.notifications
       .filter((notification) =>
         role === "volunteer"
           ? notification.href.startsWith("/volunteer")

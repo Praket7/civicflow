@@ -986,3 +986,77 @@
     padding: 16px;
   }
 }
+
+/* ---------- AutoRoster ---------- */
+
+.autoroster {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 18px 22px;
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(120% 180% at 100% 0%, rgba(217, 241, 89, 0.16) 0%, transparent 52%),
+    var(--color-navy);
+  color: #f8f1e3;
+}
+
+.autorosterCopy {
+  min-width: 0;
+}
+
+.autorosterKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-lime);
+}
+
+.autorosterTitle {
+  margin: 5px 0 0;
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.autorosterBody {
+  max-width: 60ch;
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(248, 241, 227, 0.7);
+}
+
+.autorosterAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  background: var(--color-lime);
+  color: var(--color-navy);
+  font-size: 13.5px;
+  font-weight: 640;
+  text-decoration: none;
+  transition: transform var(--motion-fast) var(--ease-spring);
+}
+
+.autorosterAction:hover {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .autoroster {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

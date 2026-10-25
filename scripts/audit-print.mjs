@@ -275,7 +275,15 @@ try {
         }"); void 0`,
       });
       await send("Page.navigate", { url: base + target.path });
-      await sleep(1200);
+      // A cold route can take longer than a second to mount. Poll for the
+      // surface instead of trusting a fixed sleep; the checks stay strict.
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const mounted = await evaluate(
+          `Boolean(document.querySelector(${JSON.stringify(target.selector)}))`,
+        );
+        if (mounted) break;
+        await sleep(250);
+      }
       await send("Emulation.setEmulatedMedia", { media: "print" });
       await sleep(250);
 

@@ -29,6 +29,9 @@ import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
 import { OpportunityDetailPage } from "../features/volunteer/OpportunityDetailPage";
 import { OpportunityManagementPage } from "../features/opportunities/OpportunityManagementPage";
 import { OrganizationSetupPage } from "../features/coordinator/OrganizationSetupPage";
+import { CoordinatorStartPage } from "../features/organizations/CoordinatorStartPage";
+import { OrganizationCreatePage } from "../features/organizations/OrganizationCreatePage";
+import { VolunteerStartPage } from "../features/organizations/VolunteerStartPage";
 import { PersonalImpactPage } from "../features/volunteer/PersonalImpactPage";
 import { RecordsPage } from "../features/records/RecordsPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
@@ -38,27 +41,38 @@ import { SchedulePage } from "../features/schedule/SchedulePage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ShiftRosterPage } from "../features/coordinator/ShiftRosterPage";
 import { SignInPage } from "../features/public/SignInPage";
+import { SignUpPage } from "../features/public/SignUpPage";
 import { VerificationPage } from "../features/volunteer/VerificationPage";
 import { VolunteerDetailPage } from "../features/volunteers/VolunteerDetailPage";
 import { VolunteerHomePage } from "../features/volunteer/VolunteerHomePage";
 import { VolunteerProfilePage } from "../features/volunteer/VolunteerProfilePage";
 import { VolunteerShiftPage } from "../features/volunteer/VolunteerShiftPage";
 import { VolunteersPage } from "../features/volunteers/VolunteersPage";
+import { AuthCallbackPage } from "../features/public/AuthCallbackPage";
+import { ForgotPasswordPage } from "../features/public/ForgotPasswordPage";
+import { ResetPasswordPage } from "../features/public/ResetPasswordPage";
 import { WelcomePage } from "../features/public/WelcomePage";
 import { AppShell } from "./AppShell";
 import { RequireAuth } from "./RequireAuth";
 import { CreditsPage } from "./CreditsPage";
 import { routes } from "./routes";
 
-const standaloneNumbers = new Set([1, 2, 3, 4, 5, 31]);
+const standaloneNumbers = new Set([1, 2, 3, 4, 5, 31, 43, 44, 45, 46, 47, 48, 49]);
 
 // Exported so tests can mount every registered screen without duplicating the map.
 export const pages: Record<string, ReactNode> = {
   launch: <LaunchPage />,
   welcome: <WelcomePage />,
   "sign-in": <SignInPage />,
+  "create-account": <SignUpPage />,
+  "forgot-password": <ForgotPasswordPage />,
+  "reset-password": <ResetPasswordPage />,
+  "auth-callback": <AuthCallbackPage />,
   "volunteer-onboarding": <OnboardingPage />,
   "organization-setup": <OrganizationSetupPage />,
+  "coordinator-start": <CoordinatorStartPage />,
+  "organization-create": <OrganizationCreatePage />,
+  "volunteer-start": <VolunteerStartPage />,
   "volunteer-home": <VolunteerHomePage />,
   discover: <DiscoverPage />,
   "opportunity-detail": <OpportunityDetailPage />,

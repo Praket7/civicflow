@@ -145,6 +145,22 @@
   border-color: rgb(var(--ink-rgb) / 0.34);
 }
 
+.tertiaryAction {
+  display: inline-flex;
+  align-items: center;
+  height: 42px;
+  padding: 0 6px;
+  border-radius: var(--radius-compact);
+  font-size: 13.5px;
+  font-weight: 560;
+  color: var(--action-primary);
+  text-decoration: none;
+}
+
+.tertiaryAction:hover {
+  text-decoration: underline;
+}
+
 .reassurance {
   margin-top: 18px;
   color: var(--text-muted);

@@ -32,6 +32,9 @@ export interface Organization {
   website: string;
   email: string;
   timezone: string;
+  /** Cover picture: a bundled sample or a photo the coordinator uploaded. */
+  image?: string;
+  imageAlt?: string;
 }
 
 export interface Person {
@@ -466,6 +469,10 @@ export interface SessionSnapshot {
     skills: string[];
     availability: AvailabilitySlot[];
     completedOnboarding: boolean;
+    phone?: string;
+    interests?: string;
+    causes?: Cause[];
+    photo?: string;
   };
   credentials: Credential[];
   verifications: ServiceVerification[];

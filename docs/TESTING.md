@@ -11,11 +11,11 @@ reproduce.
 pnpm typecheck    # tsc --noEmit, 0 errors
 pnpm lint         # eslint ., 0 problems
 pnpm format       # prettier --check, clean
-pnpm test         # 117 tests, 11 files
+pnpm test         # 124 tests, 12 files
 pnpm build:web    # tsc && vite build
 pnpm audit:print  # headless Chrome; certificate and report must print content
-pnpm audit:a11y   # Chromium accessibility tree, all 42 routes
-pnpm audit:zoom   # 800 × 500 CSS viewport (200% zoom), all 42 routes
+pnpm audit:a11y   # Chromium accessibility tree, all 43 routes
+pnpm audit:zoom   # 800 × 500 CSS viewport (200% zoom), all 43 routes
 pnpm test:native  # WebdriverIO inside the real macOS window
 ```
 
@@ -28,14 +28,14 @@ pnpm test:native  # WebdriverIO inside the real macOS window
 | `HelpPage.test.tsx`        | Renders both role journeys, the keyboard reference and a working route link, with no serious or critical axe violations                                                                                                                                                                                                                                                                                                                                                       |
 | `CustomReportPage.test.ts` | Groups report rows by ISO date and orders the trend axis chronologically, even when the ledger arrives out of order                                                                                                                                                                                                                                                                                                                                                           |
 | `accessibility.test.tsx`   | Mounts every registered route, waits for its content, and runs axe on each one; fails on serious or critical ARIA, landmark, list, or control violations                                                                                                                                                                                                                                                                                                                      |
-| `print.test.tsx`           | Mounts all 42 registered routes and asserts each renders content; the certificate sets `body[data-print-view="verification"]` only while mounted and clears it on unmount; the impact report renders its printed sections without that gate; the certificate's print-hiding selector is scoped to that attribute                                                                                                                                                              |
+| `print.test.tsx`           | Mounts all 43 registered routes and asserts each renders content; the certificate sets `body[data-print-view="verification"]` only while mounted and clears it on unmount; the impact report renders its printed sections without that gate; the certificate's print-hiding selector is scoped to that attribute                                                                                                                                                              |
 
 The axe suite disables the `color-contrast` rule because jsdom cannot compute composited
 colours. Colour is verified in a real engine instead:
 
 ```bash
 pnpm dev               # leaves the app on localhost:5173
-pnpm audit:contrast    # headless Chrome, all 42 routes, light + dark
+pnpm audit:contrast    # headless Chrome, all 43 routes, light + dark
 ```
 
 `scripts/audit-contrast.mjs` launches headless Chrome over the DevTools protocol, walks every
@@ -55,7 +55,7 @@ when no Chrome binary is installed. The suite in `src/app/print.test.tsx` guards
 contract without a browser.
 
 `scripts/audit-accessibility-tree.mjs` (`pnpm audit:a11y`) is the screen-reader-facing
-check. It enables Chromium Accessibility, navigates all 42 routes with the preview tokens,
+check. It enables Chromium Accessibility, navigates all 43 routes with the preview tokens,
 reads the full accessibility tree, and fails when a route has no `main` landmark, no level-one
 heading, or an interactive control with no accessible name. The last run passed 42/42.
 `scripts/audit-zoom.mjs` (`pnpm audit:zoom`) emulates a 1600 × 1000 window at 200% browser
@@ -91,7 +91,7 @@ fallback repository, which mirrors the same snapshot contract.
    6 KB), saved Community Food Distribution on Discover (Saved 4 → 5), returned, armed
    Restore, and confirmed. The page reported 195 rows restored with a safety snapshot kept;
    Discover read Saved (4) again and Audit listed `backup.restore` with the safety id.
-9. **All 42 routes.** Captured at 1600 × 1000, checked for console errors, failed images,
+9. **All 43 routes.** Captured at 1600 × 1000, checked for console errors, failed images,
    blank renders, missing `h1`/`main` landmarks, and horizontal overflow. All 42 rendered
    primary content with no console errors and no failed images. The sweep found one missing
    favicon request, two standalone setup pages without a `main` landmark, and one live-roster
@@ -183,7 +183,7 @@ one initial automatic snapshot, with an empty stderr log.
 
 ```bash
 cd src-tauri/core
-cargo test      # 54 tests: 18 unit + 36 integration
+cargo test      # 62 tests: 18 unit + 44 integration
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cd ..

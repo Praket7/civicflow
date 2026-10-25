@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   Heart,
+  ImagePlus,
   Mail,
   MapPin,
   Pencil,
@@ -16,6 +17,7 @@ import {
 import {
   Avatar,
   Badge,
+  Button,
   ButtonLink,
   Card,
   DataTable,
@@ -28,6 +30,7 @@ import {
 import type { Column } from "../../components/ui";
 import type { DayKey, PeriodKey } from "../../types/domain";
 import { t } from "../../lib/i18n";
+import { profilePhoto } from "../../lib/images";
 import {
   CAUSE_LABELS,
   currentVolunteer,
@@ -121,9 +124,13 @@ const HOUR_COLUMNS: Column<HourRow>[] = [
 ];
 
 export function VolunteerProfilePage() {
-  const { workspace, session } = useWorkspace();
+  const { workspace, session, actions } = useWorkspace();
   const volunteer = currentVolunteer(workspace);
   const [tab, setTab] = useState<ProfileTab>("overview");
+  const [photo, setPhoto] = useState(session.volunteerProfile.photo ?? volunteer.photo ?? "");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const photoInput = useRef<HTMLInputElement>(null);
 
   const profile = session.volunteerProfile;
   const summary = getHoursSummary(volunteer.id, session, workspace);
@@ -133,13 +140,43 @@ export function VolunteerProfilePage() {
   const credentials = getCredentials(session, workspace).filter(
     (row) => row.volunteer.id === volunteer.id,
   );
-  const matches = getMatches({ ...volunteer, skills: profile.skills }, 3);
+  const matches = getMatches(
+    { ...volunteer, skills: profile.skills },
+    3,
+    workspace,
+    session.createdOpportunities,
+  );
   const recentActivity = getRecentActivityFor(volunteer.id);
   const upcoming = getUpcomingShiftRows(workspace);
   const expiring = credentials.filter((row) => row.status !== "current");
   const availability = profile.availability;
   const availableCount = availability.length;
   const phoneHref = `tel:${volunteer.phone.replace(/[^\d+]/g, "")}`;
+
+  async function savePhoto(next: string) {
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      await actions.saveVolunteerProfile({ ...profile, photo: next });
+      setPhoto(next);
+    } catch (caught) {
+      setPhotoError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function uploadPhoto(file: File | undefined) {
+    if (!file) return;
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      await savePhoto(await profilePhoto(file));
+    } catch (caught) {
+      setPhotoError(caught instanceof Error ? caught.message : String(caught));
+      setPhotoBusy(false);
+    }
+  }
 
   const timeline = [
     ...recentActivity.map((item) => ({
@@ -167,7 +204,12 @@ export function VolunteerProfilePage() {
         <div className={styles.heroGrid}>
           <div className={styles.identity}>
             <div className={styles.avatarWrap}>
-              <Avatar initials={volunteer.initials} tone={volunteer.tone} size={84} />
+              <Avatar
+                initials={volunteer.initials}
+                src={photo || undefined}
+                tone={volunteer.tone}
+                size={84}
+              />
               <span className={styles.avatarStatus} aria-hidden="true">
                 <CheckCircle2 size={13} />
               </span>
@@ -216,8 +258,41 @@ export function VolunteerProfilePage() {
                   View verification
                 </ButtonLink>
               </div>
+              <div className={styles.photoControls}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="small"
+                  disabled={photoBusy}
+                  onClick={() => photoInput.current?.click()}
+                  icon={<ImagePlus size={13} aria-hidden="true" />}
+                >
+                  {photo ? t("Change photo") : t("Upload photo")}
+                </Button>
+                {photo ? (
+                  <button
+                    type="button"
+                    className={styles.photoRemove}
+                    disabled={photoBusy}
+                    onClick={() => void savePhoto("")}
+                  >
+                    {t("Remove")}
+                  </button>
+                ) : null}
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(event) => {
+                    void uploadPhoto(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </div>
               <p className={styles.photoNote}>
-                Profile photo is optional. Your initials stand in until a photo is added.
+                {photoError ||
+                  t("Profile photo is optional. Your initials stand in until a photo is added.")}
               </p>
             </div>
           </div>

@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - "@wdio/tauri-service@1.5.1"

@@ -82,9 +82,9 @@ placeholder.
 Automated:
 
 ```bash
-pnpm test                 # route render + print contract, axe on all 42 routes
+pnpm test                 # route render + print contract, axe on all 43 routes
 pnpm dev                  # in one terminal
-pnpm audit:contrast       # headless Chrome, 42 routes, light and dark
+pnpm audit:contrast       # headless Chrome, 43 routes, light and dark
 pnpm audit:print          # certificate and report under print media
 ```
 
@@ -96,16 +96,14 @@ pnpm audit:print          # certificate and report under print media
 - `jest-axe` runs on every registered route and fails serious or critical violations. The
   `color-contrast` rule is disabled because jsdom cannot composite colours; Chromium covers
   that separately in both themes.
-- `print.test.tsx` mounts all 42 routes, checks that content renders, and guards the
+- `print.test.tsx` mounts all 43 routes, checks that content renders, and guards the
   certificate’s print gate. `audit-print.mjs` renders the certificate and impact report to
   PDF and fails on a blank page.
-- `scripts/audit-accessibility-tree.mjs` reads Chromium’s full accessibility tree for all 42
+- `scripts/audit-accessibility-tree.mjs` reads Chromium’s full accessibility tree for all 43
   routes and fails a route without a `main` landmark, a level-one heading, or a name on every
-  interactive control. This is the same tree a screen reader consumes; the last run passed
-  42/42.
+  interactive control. This is the same tree a screen reader consumes.
 - `scripts/audit-zoom.mjs` renders an 800 × 500 CSS viewport (a 1600 × 1000 window at 200%
-  browser zoom) and fails on horizontal overflow or a lost heading. The last run passed
-  42/42.
+  browser zoom) and fails on horizontal overflow or a lost heading.
 - `tests/e2e/auth-and-roles.spec.mjs` drives the real macOS window, including the sign-in
   form and both role journeys, so the labelled controls are exercised outside jsdom.
 

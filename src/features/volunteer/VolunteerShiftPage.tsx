@@ -37,6 +37,8 @@ import {
   timeRange,
 } from "../../lib/workspace/selectors";
 import { t } from "../../lib/i18n";
+import { useAuth } from "../../lib/auth/session";
+import { currentOrganizationFor } from "../../lib/organizations/store";
 import { useWorkspace } from "../../lib/workspace/session";
 import type { Cause, Shift } from "../../types/domain";
 import styles from "./VolunteerShiftPage.module.css";
@@ -132,14 +134,15 @@ function buildCalendar(shift: Shift, title: string, location: string, timezone: 
 export function VolunteerShiftPage() {
   const { id } = useParams();
   const { workspace, session, actions } = useWorkspace();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const volunteer = currentVolunteer(workspace);
   const shift = id ? shiftById(id, workspace) : undefined;
   const opportunity = shift ? opportunityById(shift.opportunityId, workspace) : undefined;
   const [checks, setChecks] = useState<Record<string, boolean>>({
-    training: true,
-    shoes: true,
-    water: true,
+    training: false,
+    shoes: false,
+    water: false,
     "photo-id": false,
   });
   const [tab, setTab] = useState("overview");
@@ -171,7 +174,14 @@ export function VolunteerShiftPage() {
     demoNow.getTime() >= checkInOpens.getTime() &&
     demoNow.getTime() <= parseISO(shift.endsAt).getTime();
   const tasks = TASKS[opportunity.cause];
-  const mailto = `mailto:${workspace.organization.email}?subject=${encodeURIComponent(
+  const organization = user ? currentOrganizationFor(user.email) : null;
+  const orgName = organization?.name ?? workspace.organization.name;
+  const orgMission = organization?.description ?? workspace.organization.mission;
+  const orgCity = organization?.city ?? workspace.organization.city;
+  const orgState = organization?.state ?? workspace.organization.state;
+  const orgWebsite = organization?.website ?? workspace.organization.website;
+  const contactEmail = organization?.contactEmails[0] ?? workspace.organization.email;
+  const mailto = `mailto:${contactEmail}?subject=${encodeURIComponent(
     `Question about ${opportunity.title} on ${formatDate(shift.startsAt)}`,
   )}`;
   const arrivalTime = formatTime(new Date(startsAt.getTime() - 15 * 60_000).toISOString());
@@ -256,8 +266,7 @@ export function VolunteerShiftPage() {
             {opportunity.title}
           </h1>
           <p className={styles.heroMeta}>
-            {workspace.organization.name} · {formatLongDate(shift.startsAt)} ·{" "}
-            {timeRange(shift.startsAt, shift.endsAt)}
+            {orgName} · {formatLongDate(shift.startsAt)} · {timeRange(shift.startsAt, shift.endsAt)}
           </p>
           <p className={styles.heroLocation}>
             <MapPin size={14} aria-hidden="true" />
@@ -523,8 +532,8 @@ export function VolunteerShiftPage() {
                   <details open>
                     <summary>Getting into the building</summary>
                     <p>
-                      Step-free entrance on the Holt Street side with a power-assisted door. An
-                      accessible restroom is on the same floor as the distribution area.
+                      Step-free entrance with a power-assisted door. An accessible restroom is on
+                      the same floor as the volunteering area.
                     </p>
                   </details>
                   <details>
@@ -581,9 +590,7 @@ export function VolunteerShiftPage() {
                   </div>
                   <div>
                     <dt>Parking</dt>
-                    <dd>
-                      Free lot behind the building; street parking on Holt Street after 8:00 AM.
-                    </dd>
+                    <dd>Free lot behind the building; street parking nearby after 8:00 AM.</dd>
                   </div>
                   <div>
                     <dt>Transit</dt>
@@ -613,25 +620,25 @@ export function VolunteerShiftPage() {
           {tab === "organization" ? (
             <div className={styles.detailColumns}>
               <div>
-                <h2 className={styles.detailTitle}>{workspace.organization.name}</h2>
-                <p className={styles.detailIntro}>{workspace.organization.mission}</p>
+                <h2 className={styles.detailTitle}>{orgName}</h2>
+                <p className={styles.detailIntro}>{orgMission}</p>
                 <dl className={styles.locationFacts}>
                   <div>
                     <dt>Based in</dt>
                     <dd>
-                      {workspace.organization.city}, {workspace.organization.state}
+                      {orgCity}, {orgState}
                     </dd>
                   </div>
                   <div>
                     <dt>Website</dt>
                     <dd>
                       <a
-                        href={`https://${workspace.organization.website}`}
+                        href={`https://${orgWebsite}`}
                         target="_blank"
                         rel="noreferrer"
                         className={styles.inlineLink}
                       >
-                        {workspace.organization.website}
+                        {orgWebsite}
                       </a>
                     </dd>
                   </div>
@@ -639,7 +646,7 @@ export function VolunteerShiftPage() {
                     <dt>Contact</dt>
                     <dd>
                       <a href={mailto} className={styles.inlineLink}>
-                        {workspace.organization.email}
+                        {contactEmail}
                       </a>
                     </dd>
                   </div>

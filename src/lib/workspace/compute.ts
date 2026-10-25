@@ -50,7 +50,9 @@ export function roleCoveragePercent(shifts: Shift[], demoNow: string): number {
     (total, shift) => total + shift.roles.reduce((sum, role) => sum + role.filled, 0),
     0,
   );
-  if (required === 0) return 100;
+  // Nothing scheduled means nothing is covered yet. A new workspace should not
+  // read as fully staffed before its first shift exists.
+  if (required === 0) return 0;
   return Math.round((filled / required) * 100);
 }
 

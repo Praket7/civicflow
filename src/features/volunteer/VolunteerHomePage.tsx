@@ -42,7 +42,7 @@ export function VolunteerHomePage() {
   const upcoming = getUpcomingForVolunteer(volunteer.id, session, workspace);
   const next = upcoming[0];
   const summary = getHoursSummary(volunteer.id, session);
-  const matches = getMatches(volunteer, 3);
+  const matches = getMatches(volunteer, 3, workspace, session.createdOpportunities);
   const { data: notifications = [] } = useNotifications("volunteer");
 
   const hours = Math.round((summary.totalMinutes / 60) * 10) / 10;
@@ -201,90 +201,97 @@ export function VolunteerHomePage() {
         </Card>
       </div>
 
-      <section aria-labelledby="recommended-title">
-        <SectionHeader
-          title="Recommended for you"
-          id="recommended-title"
-          subtitle="Based on your skills, availability, and the causes you chose."
-          action={<Link to="/volunteer/discover">Discover all</Link>}
-        />
-        <div className={styles.recommendations}>
-          {matches.map(({ opportunity, score, reasons }) => {
-            const saved = session.savedOpportunityIds.includes(opportunity.id);
-            return (
-              <article key={opportunity.id} className={styles.recCard}>
-                <div className={styles.recMedia}>
-                  <img src={opportunity.image} alt={opportunity.imageAlt} loading="lazy" />
-                  <span className={styles.matchBadge}>
-                    <Badge tone="dark" onMedia>
-                      {t("{score}% match", { score })}
-                    </Badge>
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.saveButton}
-                    aria-pressed={saved}
-                    aria-label={t(
-                      saved
-                        ? "Remove {program} from saved opportunities"
-                        : "Save {program} to saved opportunities",
-                      { program: opportunity.title },
-                    )}
-                    onClick={() => actions.setSaved(opportunity.id, !saved)}
-                  >
-                    <Bookmark size={14} fill={saved ? "currentColor" : "none"} aria-hidden="true" />
-                  </button>
-                </div>
-                <div className={styles.recBody}>
-                  <p className={styles.recCause}>{CAUSE_LABELS[opportunity.cause]}</p>
-                  <h3 className={styles.recTitle}>
-                    <Link to={`/volunteer/opportunities/${opportunity.slug}`}>
-                      {opportunity.title}
-                    </Link>
-                  </h3>
-                  <p className={styles.recReason}>
-                    {reasons[0] ?? "Upcoming shifts fit your week."}
-                  </p>
-                  <div className={styles.recFoot}>
-                    <Link
-                      className={styles.recLink}
-                      to={`/volunteer/opportunities/${opportunity.slug}`}
-                    >
-                      View
-                      <ArrowRight size={13} aria-hidden="true" />
-                    </Link>
-                    <span className={styles.recMeta}>
-                      {formatNumber(opportunity.distanceMiles)} {t("mi away")}
+      {matches.length > 0 ? (
+        <section aria-labelledby="recommended-title">
+          <SectionHeader
+            title="Recommended for you"
+            id="recommended-title"
+            subtitle="Based on your skills, availability, and the causes you chose."
+            action={<Link to="/volunteer/discover">Discover all</Link>}
+          />
+          <div className={styles.recommendations}>
+            {matches.map(({ opportunity, score, reasons }) => {
+              const saved = session.savedOpportunityIds.includes(opportunity.id);
+              return (
+                <article key={opportunity.id} className={styles.recCard}>
+                  <div className={styles.recMedia}>
+                    <img src={opportunity.image} alt={opportunity.imageAlt} loading="lazy" />
+                    <span className={styles.matchBadge}>
+                      <Badge tone="dark" onMedia>
+                        {t("{score}% match", { score })}
+                      </Badge>
                     </span>
+                    <button
+                      type="button"
+                      className={styles.saveButton}
+                      aria-pressed={saved}
+                      aria-label={t(
+                        saved
+                          ? "Remove {program} from saved opportunities"
+                          : "Save {program} to saved opportunities",
+                        { program: opportunity.title },
+                      )}
+                      onClick={() => actions.setSaved(opportunity.id, !saved)}
+                    >
+                      <Bookmark
+                        size={14}
+                        fill={saved ? "currentColor" : "none"}
+                        aria-hidden="true"
+                      />
+                    </button>
                   </div>
-                </div>
-              </article>
-            );
-          })}
+                  <div className={styles.recBody}>
+                    <p className={styles.recCause}>{CAUSE_LABELS[opportunity.cause]}</p>
+                    <h3 className={styles.recTitle}>
+                      <Link to={`/volunteer/opportunities/${opportunity.slug}`}>
+                        {opportunity.title}
+                      </Link>
+                    </h3>
+                    <p className={styles.recReason}>
+                      {reasons[0] ?? "Upcoming shifts fit your week."}
+                    </p>
+                    <div className={styles.recFoot}>
+                      <Link
+                        className={styles.recLink}
+                        to={`/volunteer/opportunities/${opportunity.slug}`}
+                      >
+                        View
+                        <ArrowRight size={13} aria-hidden="true" />
+                      </Link>
+                      <span className={styles.recMeta}>
+                        {formatNumber(opportunity.distanceMiles)} {t("mi away")}
+                      </span>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
 
-          <aside className={styles.habitCard}>
-            <span className={styles.habitEyebrow}>Next three weeks</span>
-            <p className={styles.habitTitle}>
-              {upcoming.length > 0
-                ? t(
-                    upcoming.length === 1
-                      ? "{count} shift already on your calendar."
-                      : "{count} shifts already on your calendar.",
-                    { count: upcoming.length },
-                  )
-                : t("Your calendar is open this month.")}
-            </p>
-            <p className={styles.habitBody}>
-              Saturday morning at the pantry still needs two drivers. Booking early gives the
-              coordinator time to plan the route.
-            </p>
-            <Link className={styles.habitLink} to="/volunteer/schedule">
-              Look at the next three weeks
-              <ArrowRight size={13} aria-hidden="true" />
-            </Link>
-          </aside>
-        </div>
-      </section>
+            <aside className={styles.habitCard}>
+              <span className={styles.habitEyebrow}>Next three weeks</span>
+              <p className={styles.habitTitle}>
+                {upcoming.length > 0
+                  ? t(
+                      upcoming.length === 1
+                        ? "{count} shift already on your calendar."
+                        : "{count} shifts already on your calendar.",
+                      { count: upcoming.length },
+                    )
+                  : t("Your calendar is open this month.")}
+              </p>
+              <p className={styles.habitBody}>
+                {upcoming.length > 0
+                  ? t("Confirm your shift a day ahead so the coordinator can plan the route.")
+                  : t("Browse open roles and book your first shift.")}
+              </p>
+              <Link className={styles.habitLink} to="/volunteer/schedule">
+                Look at the next three weeks
+                <ArrowRight size={13} aria-hidden="true" />
+              </Link>
+            </aside>
+          </div>
+        </section>
+      ) : null}
 
       <div className={styles.bottomGrid}>
         <Card className={styles.weekCard}>

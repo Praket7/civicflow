@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AttentionItem, Cause } from "../../../types/domain";
 import { t } from "../../../lib/i18n";
+import { useWorkspace } from "../../../lib/workspace/session";
 import styles from "../MissionControl.module.css";
 
 interface AttentionCardProps {
@@ -19,6 +20,8 @@ const causeTone: Record<Cause, string> = {
 };
 
 export function AttentionCard({ items, count }: AttentionCardProps) {
+  const { workspace } = useWorkspace();
+  const nothingScheduled = workspace.shifts.length === 0;
   return (
     <section className={`${styles.card} ${styles.attentionCard}`} aria-labelledby="mc-attention">
       <div className={styles.cardHead}>
@@ -32,12 +35,16 @@ export function AttentionCard({ items, count }: AttentionCardProps) {
 
       {items.length === 0 ? (
         <div className={styles.emptyAttention}>
-          <p className={styles.emptyTitle}>Every shift is covered.</p>
+          <p className={styles.emptyTitle}>
+            {nothingScheduled ? t("Nothing is scheduled yet.") : t("Every shift is covered.")}
+          </p>
           <p className={styles.emptyText}>
-            The next two weeks are fully staffed. Nothing to chase today.
+            {nothingScheduled
+              ? t("Publish a shift and CivicFlow will track who is still needed.")
+              : t("The next two weeks are fully staffed. Nothing to chase today.")}
           </p>
           <Link className={styles.textLink} to="/coordinator/schedule">
-            Review the schedule
+            {nothingScheduled ? t("Open the schedule") : t("Review the schedule")}
           </Link>
         </div>
       ) : (

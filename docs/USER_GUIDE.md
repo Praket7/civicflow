@@ -1,27 +1,47 @@
 # CivicFlow user guide
 
-CivicFlow is a local volunteer-coordination workspace for FeedMore WNY. It runs as a Tauri
-desktop app with SQLite on your machine, and as a browser preview backed by the same seed and
-local storage. It needs no network connection or cloud service. It does need a local account:
-the coordinator and each volunteer sign in with an email and password.
+CivicFlow is a local-first volunteer-coordination workspace for organizations that run on
+volunteers. The bundled sample organization is a food bank in Buffalo, but the same screens
+work for a pantry, a garden, a library, or a tutoring program. It runs as a Tauri desktop app
+with SQLite on your machine, and as a browser preview backed by the same seed and local
+storage. It needs no network connection or cloud service to run.
+
+Accounts can live in this device's database, or in Supabase Auth when the build is configured
+for it. A local build signs in with an email and password; a hosted build also offers Google
+and emailed links. Either way the workspace records stay on the device.
 
 ## Start here
 
 1. Open `/launch`. The screen shows the bundled workspace checks. Choose **Open workspace**.
-2. On `/welcome`, pick **I coordinate volunteers** or **I volunteer**, then continue to
-   `/sign-in`.
-3. Choose the matching account type, enter the email and password, and choose **Continue**.
-   The demo accounts are `praket@feedmorewny.org` (coordinator) and
-   `maya.chen@gmail.com` (volunteer), both with `civicflow-demo`. **Open demo workspace**
-   fills those credentials for the selected role.
-4. Sign out from the sidebar to switch accounts. A coordinator cannot open volunteer routes,
+2. On `/welcome`, choose **Sign in** for an existing account or **Create an account** for a new
+   coordinator or volunteer. The account type is chosen on the create-account screen.
+3. Enter the details and continue. A hosted build emails a confirmation link that reopens the
+   app and finishes the account; **Continue with Google** skips the form when Google is
+   enabled. A local-only build shows the six-digit verification code on the screen instead,
+   and writes the account only after the code is entered.
+4. A coordinator lands on `/coordinator/start`: join a team with the 10-digit coordinator
+   code, or create an organization. Creating one asks for the public profile (description,
+   website, address, contact email, photo, public or private) and returns a 10-digit
+   coordinator code plus a 6-digit volunteer code.
+5. A volunteer lands on `/volunteer/start`: join a public organization near you, or enter the
+   6-digit volunteer code. Private organizations do not appear in the list.
+6. The workspace menu under the organization name lists every organization you belong to,
+   offers **Discover organizations**, and switches the current workspace. Coordinators also
+   get a shortcut to create another organization.
+7. Sign out from the sidebar to switch accounts. A coordinator cannot open volunteer routes,
    and a volunteer cannot open coordinator routes.
+
+The demo accounts are `praket@feedmorewny.org` (coordinator) and
+`maya.chen@gmail.com` (volunteer), both with `civicflow-demo`. **Open demo workspace** fills
+those credentials for the selected role.
 
 The browser preview stores its workspace in localStorage. The desktop app stores it in the
 Tauri app-data directory as SQLite. Both read the same deterministic demo seed, so the
 numbers match unless one has been edited. Passwords and session tokens are hashed in the
 database; the demo password is public, so reset it in Settings → Accounts before entering
-real volunteer information.
+real volunteer information. A coordinator can create accounts and reset passwords from that
+page as well. In a hosted build, **Forgot password?** emails a reset link instead, and the
+coordinator reset remains the fallback for local accounts.
 
 ## Coordinator tour
 

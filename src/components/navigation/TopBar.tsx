@@ -3,7 +3,7 @@ import { format, parseISO } from "date-fns";
 import { Menu, Moon, Search, Sun } from "lucide-react";
 import { useDisplayPreferences } from "../../lib/display";
 import { formatDateWithYear } from "../../lib/workspace/selectors";
-import { demoWorkspace } from "../../lib/workspace/dataset";
+import { useWorkspace } from "../../lib/workspace/session";
 import { NotificationMenu } from "./NotificationMenu";
 import styles from "./TopBar.module.css";
 
@@ -13,7 +13,8 @@ interface TopBarProps {
 }
 
 export function TopBar({ onOpenPalette, onOpenSidebar }: TopBarProps) {
-  const today = parseISO(demoWorkspace.demoNow);
+  const { workspace } = useWorkspace();
+  const today = parseISO(workspace.demoNow);
   const { resolvedTheme, toggleTheme } = useDisplayPreferences();
 
   useEffect(() => {

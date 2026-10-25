@@ -20,7 +20,7 @@ function publicName(name: string): string {
 }
 
 export function KioskPage() {
-  const { session, actions } = useWorkspace();
+  const { workspace, session, actions } = useWorkspace();
   const event = getLiveEvent(session);
   const [code, setCode] = useState("");
   const [selected, setSelected] = useState("");
@@ -132,7 +132,7 @@ export function KioskPage() {
             </span>
             CivicFlow
           </Link>
-          <span className={styles.kioskStation}>FeedMore WNY · {title}</span>
+          <span className={styles.kioskStation}>{`${workspace.organization.name} · ${title}`}</span>
         </div>
 
         <div className={styles.kioskEntry}>

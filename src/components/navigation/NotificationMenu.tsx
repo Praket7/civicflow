@@ -2,6 +2,9 @@ import { format, parseISO } from "date-fns";
 import { Bell } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../../lib/auth/session";
+import { markUpdatesRead } from "../../lib/organizations/store";
+import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
 import { useMarkNotificationRead, useNotifications } from "../../lib/workspace/queries";
 import styles from "./NotificationMenu.module.css";
 
@@ -31,7 +34,11 @@ export function NotificationMenu() {
   const role = isVolunteer ? "volunteer" : "coordinator";
   const { data: notifications = [] } = useNotifications(role);
   const markRead = useMarkNotificationRead(role);
+  const { user } = useAuth();
+  const organizationWorkspace = useOrganizationWorkspace(user);
+  const updates = organizationWorkspace.updates.slice(0, 4);
   const unread = notifications.filter((notification) => !notification.readAt);
+  const unreadCount = unread.length + organizationWorkspace.unread;
 
   useEffect(() => {
     if (!open) return;
@@ -58,13 +65,13 @@ export function NotificationMenu() {
         ref={triggerRef}
         type="button"
         className={styles.trigger}
-        aria-label={unread.length ? `Notifications, ${unread.length} unread` : "Notifications"}
+        aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((value) => !value)}
       >
         <Bell size={17} strokeWidth={1.8} aria-hidden="true" />
-        {unread.length ? <span className={styles.dot} aria-hidden="true" /> : null}
+        {unreadCount ? <span className={styles.dot} aria-hidden="true" /> : null}
       </button>
 
       {open ? (
@@ -74,12 +81,44 @@ export function NotificationMenu() {
             <button
               type="button"
               className={styles.markAll}
-              onClick={() => unread.forEach((notification) => markRead.mutate(notification.id))}
-              disabled={unread.length === 0}
+              onClick={() => {
+                unread.forEach((notification) => markRead.mutate(notification.id));
+                if (user) markUpdatesRead(user.email);
+              }}
+              disabled={unreadCount === 0}
             >
               Mark all as read
             </button>
           </div>
+          {updates.length ? (
+            <>
+              <p className={styles.sectionLabel}>Workspace updates</p>
+              <ul className={styles.list}>
+                {updates.map((update) => (
+                  <li className={styles.item} key={update.id}>
+                    <Link
+                      to={update.href}
+                      className={styles.link}
+                      onClick={() => {
+                        if (user) markUpdatesRead(user.email);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className={styles.itemDot} data-tone="info" aria-hidden="true" />
+                      <span className={styles.itemBody}>
+                        <span className={styles.itemTitle}>{update.title}</span>
+                        <span className={styles.itemText}>{update.body}</span>
+                        <span className={styles.itemTime}>
+                          {format(parseISO(update.createdAt), "MMM d · h:mm a")}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <p className={styles.sectionLabel}>Your notifications</p>
           <ul className={styles.list}>
             {notifications.map((notification) => (
               <li

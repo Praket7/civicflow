@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Coordinator window: local workspace reads and writes only.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-save", "wdio-webdriver:default"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-save",
+    "deep-link:default",
+    "wdio-webdriver:default"
+  ]
 }

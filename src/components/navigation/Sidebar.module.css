@@ -1,5 +1,6 @@
 .sidebar {
   position: relative;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -173,8 +174,10 @@
   position: absolute;
   top: calc(100% - 2px);
   left: 0;
-  z-index: 50;
+  z-index: 80;
   width: min(268px, 78vw);
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
   padding: 8px;
   border: 1px solid rgba(248, 241, 227, 0.16);
   border-radius: 3px;
@@ -206,13 +209,41 @@
   color: rgba(248, 241, 227, 0.46);
 }
 
-.menuCurrent {
+.menuWorkspace {
   display: flex;
   align-items: center;
   gap: 9px;
+  width: 100%;
+  margin-bottom: 2px;
   padding: 7px 8px;
+  border: 0;
   border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuWorkspace:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.menuWorkspace[data-active="true"] {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menuWorkspace svg {
+  flex: none;
+  color: var(--color-lime);
+}
+
+.menuEmpty {
+  margin: 0;
+  padding: 6px 8px 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .menuCurrentText {
@@ -316,9 +347,23 @@
   transition: transform var(--motion-fast) var(--ease-spring);
 }
 
+.itemAccent {
+  background: rgba(217, 241, 89, 0.07);
+  color: var(--color-lime);
+}
+
+.itemAccent svg {
+  opacity: 1;
+}
+
 .item:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.itemAccent:hover {
+  background: rgba(217, 241, 89, 0.14);
+  color: var(--color-lime);
 }
 
 .item:hover svg {

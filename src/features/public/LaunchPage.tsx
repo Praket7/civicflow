@@ -76,6 +76,9 @@ export function LaunchPage() {
               <LogIn size={14} strokeWidth={1.9} aria-hidden="true" />
               Sign in
             </Link>
+            <Link className={styles.tertiaryAction} to="/create-account">
+              Create account
+            </Link>
           </div>
 
           <p className={styles.reassurance}>

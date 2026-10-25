@@ -6,17 +6,17 @@ where coverage is thin, and why every assignment was made.
 
 This repository implements the approved CivicFlow build plan and all 42 approved design
 surfaces. Mission Control, every workflow write, and the audit trail are backed by Rust and
-SQLite. Local accounts sign people in, and the core enforces coordinator and volunteer roles
-before it returns a row. The React session layer is a cache of one snapshot returned by the
-core.
+SQLite. Accounts sign people in — locally, or through Supabase Auth with Google and email —
+and the core enforces coordinator and volunteer roles before it returns a row. The React
+session layer is a cache of one snapshot returned by the core.
 
 ![Mission Control](screenshots/mission-control.png)
 
 ## What is here
 
-- **42 screens, one design system.** Every registered route resolves to a real screen. No
-  placeholder pages remain. The mapping from reference image to route is in
-  [SCREEN_MAP.md](docs/SCREEN_MAP.md).
+- **42 reference screens, one design system.** Every registered route resolves to a real
+  screen, plus one added account-sign-up surface. No placeholder pages remain. The mapping
+  from reference image to route is in [SCREEN_MAP.md](docs/SCREEN_MAP.md).
 - **Coordinator operations.** Mission Control, coverage and AutoRoster, schedule, programs,
   live rosters, attendance, the kiosk, hours review, credentials, recruitment, analytics,
   reports, records, audit, backups, settings, accounts, and accessibility.
@@ -40,9 +40,16 @@ core.
   contrast, underlined links, text scaling, a table alternative under every chart, and a
   60-language interface with translated dates and right-to-left layout. The accessibility
   tree and a 200% zoom viewport are audited on every route.
-- **Accounts and roles.** Argon2id password hashes, hashed session tokens, coordinator and
-  volunteer roles enforced in Rust, and a volunteer snapshot that contains only the
-  signed-in volunteer's records. See [SECURITY.md](docs/SECURITY.md).
+- **Accounts and roles.** Create an account from `/create-account` as a coordinator or a
+  volunteer; a volunteer account joins the roster (claiming an existing profile when the email
+  matches one) and the app then shows that person, not the demo volunteer. Argon2id password
+  hashes, hashed session tokens, roles enforced in Rust, and a volunteer snapshot that
+  contains only the signed-in volunteer's records. See [SECURITY.md](docs/SECURITY.md).
+- **Hosted sign-in, optional.** With `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set,
+  accounts can sign in with Google or an emailed password instead. Supabase verifies the
+  identity, the app then opens the matching local workspace account, and the role is enforced
+  in Rust either way. Without the keys the app makes no account request at all. Setup and
+  limits are in [AUTH.md](docs/AUTH.md).
 
 ## Run it
 
@@ -59,7 +66,8 @@ pnpm tauri build      # .app and .dmg on macOS; installers on Windows/Linux
 
 Demo accounts: `praket@feedmorewny.org` (coordinator) and `maya.chen@gmail.com`
 (volunteer), both with the password `civicflow-demo`. Entry points: `/launch`, `/welcome`,
-`/sign-in`, `/coordinator/mission-control`, `/volunteer/home`, `/coordinator/kiosk`, and the
+`/sign-in`, `/create-account`, `/coordinator/mission-control`, `/volunteer/home`,
+`/coordinator/kiosk`, and the
 in-app guide at `/help`. After the desktop app has run, `pnpm db:verify` checks the real
 SQLite file: integrity, schema v4, all 32 tables, foreign keys and record counts. The kiosk
 displays the current six-digit code; it rotates every 15 minutes and is validated by the
@@ -84,17 +92,19 @@ React 19 + TypeScript + Vite  →  WorkspaceRepository  →  Tauri IPC  →  civ
 - The same `shared/demo-workspace.json` and `shared/session-seed.json` seed both the desktop
   database and the browser fallback, so reviews never run against a second set of numbers.
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DECISIONS.md](docs/DECISIONS.md),
-[IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), and the NYS event audit in
-[FBLA_NYS_RUBRIC_AUDIT.md](docs/FBLA_NYS_RUBRIC_AUDIT.md).
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [AUTH.md](docs/AUTH.md),
+[DECISIONS.md](docs/DECISIONS.md), [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md),
+and the NYS event audit in [FBLA_NYS_RUBRIC_AUDIT.md](docs/FBLA_NYS_RUBRIC_AUDIT.md).
 
 ## Verification
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm build:web`: clean.
-- 117 frontend tests: axe checks across all 42 routes, coverage maths, selector consistency,
+- 157 frontend tests: axe checks across all 43 routes, coverage maths, selector consistency,
   the IPC command/argument map including the session token, preview cancellation recovery,
-  the preview fallback, and preview snapshot restore.
-- 54 Rust tests: migrations/seed, foreign keys, coverage totals, attention ordering,
+  the preview fallback, hosted identity and email-link parsing, and preview snapshot restore.
+- 64 Rust tests: migrations/seed, foreign keys, account creation and its refusals, hosted
+  account linking, coverage
+  totals, attention ordering,
   notifications and their audience scoping, sign-in/sign-out, role refusal, volunteer
   snapshot redaction, registration and check-in rules including QR payloads, the AutoRoster
   flow solver and its brute-force oracle, the cancellation → waitlist → hours → verification

@@ -547,6 +547,26 @@ pub struct VolunteerProfile {
     pub skills: Vec<String>,
     pub availability: Vec<AvailabilitySlot>,
     pub completed_onboarding: bool,
+    #[serde(default)]
+    pub phone: String,
+    #[serde(default)]
+    pub interests: String,
+    #[serde(default)]
+    pub causes: Vec<String>,
+    #[serde(default)]
+    pub photo: String,
+}
+
+/// Everything the setup flow can write in one pass.
+#[derive(Debug, Clone, Default)]
+pub struct VolunteerProfilePatch {
+    pub skills: Vec<String>,
+    pub availability: Vec<AvailabilitySlot>,
+    pub completed_onboarding: bool,
+    pub phone: String,
+    pub interests: String,
+    pub causes: Vec<String>,
+    pub photo: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -13,7 +13,8 @@ pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
 /// settings) live beside the workspace seed so the browser fallback and SQLite
 /// start from the same state.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
-const SCHEMA_VERSION: i64 = 4;
+/// Bumped with every migration so backups can check they match this build.
+pub const SCHEMA_VERSION: i64 = 5;
 /// "CIFV" — marks a database as a CivicFlow workspace so restore can refuse
 /// an arbitrary SQLite file.
 pub const APPLICATION_ID: i64 = 0x4349_4656;
@@ -22,6 +23,7 @@ const WORKFLOW_SCHEMA: &str = include_str!("../migrations/0002_workflows.sql");
 const LIFECYCLE_SCHEMA: &str = include_str!("../migrations/0003_service_lifecycle.sql");
 const ACCOUNT_SCHEMA: &str =
     include_str!("../migrations/0004_accounts_and_notification_audiences.sql");
+const VOLUNTEER_PHOTO_SCHEMA: &str = include_str!("../migrations/0005_volunteer_photo.sql");
 const WORKFLOW_SEED_MARKER: &str = "workflow_seed_version";
 
 const CREDENTIAL_TYPES: [(&str, i64); 6] = [
@@ -130,6 +132,7 @@ impl Database {
             (2_i64, WORKFLOW_SCHEMA),
             (3_i64, LIFECYCLE_SCHEMA),
             (4_i64, ACCOUNT_SCHEMA),
+            (5_i64, VOLUNTEER_PHOTO_SCHEMA),
         ] {
             let applied: Option<i64> = self
                 .conn

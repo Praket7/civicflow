@@ -741,9 +741,14 @@ interface MatchRow {
   reasons: string[];
 }
 
-export function getMatches(volunteer: Volunteer, limit = 3): MatchRow[] {
-  const upcoming = getUpcomingShiftRows();
-  return demoWorkspace.opportunities
+export function getMatches(
+  volunteer: Volunteer,
+  limit = 3,
+  workspace: DemoWorkspace = demoWorkspace,
+  extraOpportunities: Opportunity[] = [],
+): MatchRow[] {
+  const upcoming = getUpcomingShiftRows(workspace);
+  return [...workspace.opportunities, ...extraOpportunities]
     .map((opportunity) => {
       let score = 40;
       const reasons: string[] = [];

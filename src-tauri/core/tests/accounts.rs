@@ -1,0 +1,265 @@
+use civicflow_core::auth::{create_account, current_user, sign_in, sign_in_with_hosted};
+use civicflow_core::error::CoreError;
+use civicflow_core::workflows::snapshot_for;
+use civicflow_core::Database;
+
+fn seeded() -> Database {
+    let mut database = Database::in_memory().expect("in-memory database");
+    assert!(database.seed_demo_if_empty().expect("seed"));
+    database
+}
+
+fn rule_code(error: CoreError) -> String {
+    match error {
+        CoreError::Rule { code, .. } => code,
+        other => panic!("expected a rule error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_new_coordinator_can_sign_in_with_the_password_it_chose() {
+    let database = seeded();
+    let session = create_account(
+        database.connection(),
+        "  Jordan   Reyes ",
+        "Jordan@FeedMoreWNY.org",
+        "kitchen-table-2026",
+        "coordinator",
+    )
+    .expect("account is created");
+
+    assert_eq!(session.user.name, "Jordan Reyes");
+    assert_eq!(session.user.email, "jordan@feedmorewny.org");
+    assert_eq!(session.user.role, "coordinator");
+    assert_eq!(session.user.volunteer_id, None);
+
+    let resolved = current_user(database.connection(), &session.token)
+        .unwrap()
+        .expect("the new session resolves");
+    assert_eq!(resolved.id, session.user.id);
+
+    let again = sign_in(
+        database.connection(),
+        "jordan@feedmorewny.org",
+        "kitchen-table-2026",
+        false,
+    )
+    .expect("the stored hash verifies");
+    assert_eq!(again.user.id, session.user.id);
+
+    let audited: i64 = database
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_events WHERE action = 'auth.account_created'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(audited, 1);
+}
+
+#[test]
+fn a_new_volunteer_gets_a_roster_profile_and_a_redacted_snapshot() {
+    let database = seeded();
+    let session = create_account(
+        database.connection(),
+        "Alicia Moreno",
+        "alicia.moreno@example.org",
+        "second-saturday",
+        "volunteer",
+    )
+    .expect("account is created");
+
+    let volunteer_id = session.user.volunteer_id.clone().expect("linked profile");
+    let (name, status, initials): (String, String, String) = database
+        .connection()
+        .query_row(
+            "SELECT name, status, initials FROM volunteers WHERE id = ?1",
+            [&volunteer_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the volunteer row exists");
+    assert_eq!(name, "Alicia Moreno");
+    assert_eq!(status, "onboarding");
+    assert_eq!(initials, "AM");
+
+    let snapshot = snapshot_for(database.connection(), Some(&volunteer_id)).unwrap();
+    assert!(snapshot
+        .registrations
+        .iter()
+        .all(|row| row.volunteer_id == volunteer_id));
+    assert!(snapshot.hours_decisions.is_empty());
+    assert!(snapshot.audit.is_empty());
+}
+
+#[test]
+fn an_existing_roster_profile_is_claimed_by_its_email() {
+    let database = seeded();
+    let (volunteer_id, email): (String, String) = database
+        .connection()
+        .query_row(
+            "SELECT id, email FROM volunteers WHERE id <> 'vol-maya' ORDER BY id LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+
+    let session = create_account(
+        database.connection(),
+        "Someone Else",
+        &email,
+        "second-saturday",
+        "volunteer",
+    )
+    .expect("account is created");
+
+    assert_eq!(
+        session.user.volunteer_id.as_deref(),
+        Some(volunteer_id.as_str())
+    );
+}
+
+#[test]
+fn an_email_that_already_has_an_account_is_refused() {
+    let database = seeded();
+    let error = create_account(
+        database.connection(),
+        "Praket Gauri",
+        "praket@feedmorewny.org",
+        "another-password",
+        "coordinator",
+    )
+    .expect_err("duplicate email is refused");
+    assert_eq!(rule_code(error), "EMAIL_TAKEN");
+
+    // The signed-in volunteer's email is taken as well, wherever the role sits.
+    let error = create_account(
+        database.connection(),
+        "Maya Chen",
+        "maya.chen@gmail.com",
+        "another-password",
+        "volunteer",
+    )
+    .expect_err("the volunteer profile already has an account");
+    assert_eq!(rule_code(error), "EMAIL_TAKEN");
+}
+
+#[test]
+fn a_hosted_identity_gets_a_local_account_without_a_password() {
+    let database = seeded();
+    let first = sign_in_with_hosted(
+        database.connection(),
+        "Jordan Reyes",
+        "Jordan@Example.org",
+        "coordinator",
+    )
+    .expect("hosted account is created");
+
+    assert_eq!(first.user.email, "jordan@example.org");
+    assert_eq!(first.user.role, "coordinator");
+
+    let hash: Option<String> = database
+        .connection()
+        .query_row(
+            "SELECT password_hash FROM users WHERE id = ?1",
+            [&first.user.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(hash.is_none(), "hosted accounts keep no local password");
+
+    let error = sign_in(
+        database.connection(),
+        "jordan@example.org",
+        "second-saturday",
+        true,
+    )
+    .expect_err("the local password form stays closed");
+    assert_eq!(rule_code(error), "PASSWORD_NOT_SET");
+
+    // Returning from another email link resumes the same local account and
+    // keeps the role it already had.
+    let again = sign_in_with_hosted(
+        database.connection(),
+        "Jordan",
+        "jordan@example.org",
+        "volunteer",
+    )
+    .expect("the hosted identity resumes");
+    assert_eq!(again.user.id, first.user.id);
+    assert_eq!(again.user.role, "coordinator");
+}
+
+#[test]
+fn a_hosted_volunteer_gets_a_roster_profile() {
+    let database = seeded();
+    let session = sign_in_with_hosted(
+        database.connection(),
+        "Alicia Moreno",
+        "alicia.hosted@example.org",
+        "volunteer",
+    )
+    .expect("hosted volunteer is created");
+
+    let volunteer_id = session.user.volunteer_id.clone().expect("linked profile");
+    let name: String = database
+        .connection()
+        .query_row(
+            "SELECT name FROM volunteers WHERE id = ?1",
+            [&volunteer_id],
+            |row| row.get(0),
+        )
+        .expect("the volunteer row exists");
+    assert_eq!(name, "Alicia Moreno");
+}
+
+#[test]
+fn weak_input_is_refused_before_anything_is_written() {
+    let database = seeded();
+
+    let error = create_account(
+        database.connection(),
+        "",
+        "new@example.org",
+        "second-saturday",
+        "volunteer",
+    )
+    .expect_err("a name is required");
+    assert_eq!(rule_code(error), "NAME_REQUIRED");
+
+    let error = create_account(
+        database.connection(),
+        "Alicia Moreno",
+        "not-an-email",
+        "second-saturday",
+        "volunteer",
+    )
+    .expect_err("the email must look like an address");
+    assert_eq!(rule_code(error), "EMAIL_INVALID");
+
+    let error = create_account(
+        database.connection(),
+        "Alicia Moreno",
+        "alicia.moreno@example.org",
+        "short",
+        "volunteer",
+    )
+    .expect_err("the password is too short");
+    assert_eq!(rule_code(error), "PASSWORD_TOO_SHORT");
+
+    let error = create_account(
+        database.connection(),
+        "Alicia Moreno",
+        "alicia.moreno@example.org",
+        "second-saturday",
+        "admin",
+    )
+    .expect_err("only the two roles exist");
+    assert!(matches!(error, CoreError::Validation(_)));
+
+    let users: i64 = database
+        .connection()
+        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(users, 2, "the demo accounts are untouched");
+}

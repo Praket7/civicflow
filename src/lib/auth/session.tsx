@@ -1,7 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { Account, AuthSession } from "../../types/domain";
+import type { Account, AccountRole, AuthSession } from "../../types/domain";
+import { isSetupPending, markSetupPending, setupRoute } from "../onboarding/store";
+import { organizationsFor } from "../organizations/store";
+import { isTauri } from "../platform";
 import { getWorkspaceRepository, setRepositoryToken } from "../workspace/repository";
+import {
+  clearPendingHostedIdentity,
+  exchangeHostedCode,
+  hostedAuthConfigured,
+  hostedSignIn,
+  hostedSignOut,
+  identityFromUser,
+  parseHostedLink,
+  setHostedSession,
+  type HostedIdentity,
+} from "./hosted";
 
 const repository = getWorkspaceRepository();
 const TOKEN_KEY = "civicflow.auth.token";
@@ -11,8 +25,19 @@ interface AuthValue {
   token: string | null;
   loading: boolean;
   signIn(email: string, password: string, remember: boolean): Promise<AuthSession>;
+  signUp(
+    name: string,
+    email: string,
+    password: string,
+    role: AccountRole,
+    remember: boolean,
+  ): Promise<AuthSession>;
   signOut(): Promise<void>;
   refresh(): Promise<void>;
+  /** True when a hosted provider is configured in this build. */
+  hosted: boolean;
+  /** Resumes the local workspace for an identity the hosted provider verified. */
+  adoptHostedIdentity(identity: HostedIdentity, remember: boolean): Promise<AuthSession>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -107,7 +132,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string, remember: boolean) => {
+  const adoptHostedIdentity = useCallback(async (identity: HostedIdentity, remember: boolean) => {
+    const session = await repository.signInWithHosted(identity);
+    setRepositoryToken(session.token);
+    if (remember) rememberToken(session.token);
+    else rememberToken(null);
+    setToken(session.token);
+    setUser(session.user);
+    clearPendingHostedIdentity();
+    return session;
+  }, []);
+
+  const localSignIn = useCallback(async (email: string, password: string, remember: boolean) => {
     const session = await repository.signIn(email, password, remember);
     setRepositoryToken(session.token);
     if (remember) rememberToken(session.token);
@@ -116,6 +152,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(session.user);
     return session;
   }, []);
+
+  const signIn = useCallback(
+    async (email: string, password: string, remember: boolean) => {
+      if (hostedAuthConfigured) {
+        let hostedError: unknown = null;
+        try {
+          const hostedSession = await hostedSignIn(email, password);
+          const identity = identityFromUser(hostedSession.user);
+          if (identity) return await adoptHostedIdentity(identity, remember);
+        } catch (caught) {
+          hostedError = caught;
+        }
+        // Local accounts remain the fallback when the provider is unreachable
+        // or the address only exists in this device's database.
+        try {
+          return await localSignIn(email, password, remember);
+        } catch (localError) {
+          throw hostedError ?? localError;
+        }
+      }
+      return localSignIn(email, password, remember);
+    },
+    [adoptHostedIdentity, localSignIn],
+  );
+
+  // Email links come back to the installed app through the civicflow:// scheme.
+  // The callback page handles the browser build.
+  useEffect(() => {
+    if (!hostedAuthConfigured || !isTauri()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    async function receive(urls: string[] | null) {
+      if (!urls?.length || disposed) return;
+      for (const raw of urls) {
+        const link = parseHostedLink(raw);
+        if (!link) continue;
+        try {
+          if (link.error) throw new Error(link.error);
+          const hostedSession =
+            link.accessToken && link.refreshToken
+              ? await setHostedSession(link.accessToken, link.refreshToken)
+              : link.code
+                ? await exchangeHostedCode(link.code)
+                : null;
+          if (!hostedSession) continue;
+          if (link.kind === "reset") {
+            window.location.hash = "#/reset-password";
+            return;
+          }
+          const identity = identityFromUser(hostedSession.user);
+          if (!identity) continue;
+          // A provider account with no organization yet is new: setup comes first.
+          if (organizationsFor(identity.email).length === 0) {
+            markSetupPending(identity.email, identity.role);
+          }
+          const session = await adoptHostedIdentity(identity, true);
+          window.location.hash = `#${accountHome(session.user)}`;
+        } catch {
+          window.location.hash = "#/sign-in";
+        }
+      }
+    }
+
+    void (async () => {
+      try {
+        const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+        const current = await getCurrent();
+        if (current) await receive(current);
+        unlisten = await onOpenUrl((urls) => void receive(urls));
+      } catch {
+        // A build without the deep-link plugin simply has no email returns.
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [adoptHostedIdentity]);
+
+  const signUp = useCallback(
+    async (name: string, email: string, password: string, role: AccountRole, remember: boolean) => {
+      const session = await repository.createAccount(name, email, password, role);
+      setRepositoryToken(session.token);
+      if (remember) rememberToken(session.token);
+      else rememberToken(null);
+      setToken(session.token);
+      setUser(session.user);
+      return session;
+    },
+    [],
+  );
 
   const signOut = useCallback(async () => {
     const current = token ?? storedToken();
@@ -132,11 +261,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // The token is gone from this device; revocation can wait for expiry.
       }
     }
+    await hostedSignOut();
   }, [token]);
 
   const value = useMemo<AuthValue>(
-    () => ({ user, token, loading, signIn, signOut, refresh }),
-    [user, token, loading, signIn, signOut, refresh],
+    () => ({
+      user,
+      token,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      refresh,
+      hosted: hostedAuthConfigured,
+      adoptHostedIdentity,
+    }),
+    [user, token, loading, signIn, signUp, signOut, refresh, adoptHostedIdentity],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -148,6 +288,19 @@ export function useAuth(): AuthValue {
   return value;
 }
 
+/** For providers that can also render without an account, such as tests. */
+export function useOptionalAuth(): AuthValue | null {
+  return useContext(AuthContext);
+}
+
 export function accountHome(account: Account): string {
+  const organizations = organizationsFor(account.email);
+  // A new account finishes its one-time setup before it reaches a workspace.
+  if (isSetupPending(account)) return setupRoute(account, organizations.length > 0);
+  // A fresh account has no organization yet, so send it to the join-or-create
+  // step instead of dropping it into the demo workspace uninvited.
+  if (organizations.length === 0) {
+    return account.role === "volunteer" ? "/volunteer/start" : "/coordinator/start";
+  }
   return account.role === "volunteer" ? "/volunteer/home" : "/coordinator/mission-control";
 }

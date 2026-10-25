@@ -532,14 +532,32 @@ fn load_created_opportunities(conn: &Connection) -> Result<Vec<OpportunityRecord
 
 fn load_volunteer_profile(conn: &Connection) -> Result<crate::models::VolunteerProfile> {
     let volunteer_id = current_volunteer_id(conn)?;
-    let (availability_json, completed_onboarding): (String, i64) = conn
+    let (availability_json, completed_onboarding, phone, interests, causes_json, photo): (
+        String,
+        i64,
+        String,
+        String,
+        String,
+        String,
+    ) = conn
         .query_row(
-            "SELECT availability_json, onboarding_completed FROM volunteers WHERE id = ?1",
+            "SELECT availability_json, onboarding_completed, phone, interests, causes_json, photo
+             FROM volunteers WHERE id = ?1",
             params![volunteer_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
         )
         .optional()?
         .ok_or_else(|| CoreError::NotFound("Current volunteer".into()))?;
+    let causes: Vec<String> = serde_json::from_str(&causes_json).unwrap_or_default();
     let raw: Vec<String> = serde_json::from_str(&availability_json)?;
     let availability = raw
         .into_iter()
@@ -561,6 +579,10 @@ fn load_volunteer_profile(conn: &Connection) -> Result<crate::models::VolunteerP
         skills,
         availability,
         completed_onboarding: completed_onboarding == 1,
+        phone,
+        interests,
+        causes,
+        photo,
     })
 }
 
@@ -2372,10 +2394,17 @@ fn next_waitlist_candidate(
 
 pub fn save_volunteer_profile(
     conn: &Connection,
-    skills: Vec<String>,
-    availability: Vec<AvailabilitySlot>,
-    completed_onboarding: bool,
+    patch: crate::models::VolunteerProfilePatch,
 ) -> Result<WorkspaceSnapshot> {
+    let crate::models::VolunteerProfilePatch {
+        skills,
+        availability,
+        completed_onboarding,
+        phone,
+        interests,
+        causes,
+        photo,
+    } = patch;
     if skills.is_empty() {
         return Err(CoreError::Validation(
             "Choose at least one skill so matches stay explainable".into(),
@@ -2408,11 +2437,19 @@ pub fn save_volunteer_profile(
             params![volunteer_id, skill],
         )?;
     }
+    let causes_json = serde_json::to_string(&causes)?;
     transaction.execute(
-        "UPDATE volunteers SET availability_json = ?1, onboarding_completed = ?2 WHERE id = ?3",
+        "UPDATE volunteers
+            SET availability_json = ?1, onboarding_completed = ?2, phone = ?3,
+                interests = ?4, causes_json = ?5, photo = ?6
+          WHERE id = ?7",
         params![
             availability_json,
             i64::from(completed_onboarding),
+            phone.trim(),
+            interests.trim(),
+            causes_json,
+            photo,
             volunteer_id
         ],
     )?;

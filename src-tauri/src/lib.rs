@@ -86,6 +86,59 @@ fn only_display_settings(patch: &SettingsPatch) -> bool {
         && patch.email_digest.is_none()
 }
 
+/// Only web addresses belong in the browser; a newline would let the shell read
+/// the rest of the line as a second command.
+fn is_openable_sign_in_url(url: &str) -> bool {
+    url.starts_with("https://") && !url.contains(['\n', '\r', '"', '\''])
+}
+
+/// Opens a sign-in page in the system browser. Google refuses to render its
+/// consent screen inside a webview, so provider sign-in is handed off here and
+/// answers on the civicflow:// scheme.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), AppError> {
+    if !is_openable_sign_in_url(&url) {
+        return Err(AppError::from(CoreError::rule(
+            "INVALID_URL",
+            "That sign-in address is not usable.",
+            None,
+            None,
+        )));
+    }
+    open_in_browser(&url).map_err(|error| {
+        AppError::from(CoreError::rule(
+            "BROWSER_UNAVAILABLE",
+            &format!("The browser could not be opened: {error}"),
+            None,
+            Some("TRY_AGAIN".into()),
+        ))
+    })
+}
+
+fn open_in_browser(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg(url);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        // The empty string is start's window title, not part of the address.
+        let mut command = std::process::Command::new("cmd");
+        command.args(["/C", "start", "", url]);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    command.spawn()?;
+    Ok(())
+}
+
 #[tauri::command]
 fn sign_in(
     state: State<'_, AppState>,
@@ -95,6 +148,48 @@ fn sign_in(
 ) -> Result<AuthSession, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     auth::sign_in(database.connection(), &email, &password, remember).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn sign_in_with_hosted(
+    state: State<'_, AppState>,
+    name: String,
+    email: String,
+    role: String,
+) -> Result<AuthSession, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    auth::sign_in_with_hosted(database.connection(), &name, &email, &role).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn create_account(
+    state: State<'_, AppState>,
+    name: String,
+    email: String,
+    password: String,
+    role: String,
+) -> Result<AuthSession, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    auth::create_account(database.connection(), &name, &email, &password, &role)
+        .map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_openable_sign_in_url;
+
+    #[test]
+    fn opens_web_sign_in_addresses_only() {
+        assert!(is_openable_sign_in_url(
+            "https://imzdblvljdcbnxtwbmbw.supabase.co/auth/v1/authorize?provider=google&state=abc"
+        ));
+        assert!(!is_openable_sign_in_url("http://localhost:5199/sign-in"));
+        assert!(!is_openable_sign_in_url("file:///etc/passwd"));
+        assert!(!is_openable_sign_in_url(
+            "https://example.org/\nopen -a Calculator"
+        ));
+        assert!(!is_openable_sign_in_url("https://example.org/\"quoted\""));
+    }
 }
 
 #[tauri::command]
@@ -450,6 +545,10 @@ fn save_volunteer_profile(
     skills: Vec<String>,
     availability: Vec<AvailabilitySlot>,
     completed_onboarding: bool,
+    phone: Option<String>,
+    interests: Option<String>,
+    causes: Option<Vec<String>>,
+    photo: Option<String>,
 ) -> Result<WorkspaceSnapshot, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_account(&database, &token)?;
@@ -463,9 +562,15 @@ fn save_volunteer_profile(
     }
     workflows::save_volunteer_profile(
         database.connection(),
-        skills,
-        availability,
-        completed_onboarding,
+        civicflow_core::models::VolunteerProfilePatch {
+            skills,
+            availability,
+            completed_onboarding,
+            phone: phone.unwrap_or_default(),
+            interests: interests.unwrap_or_default(),
+            causes: causes.unwrap_or_default(),
+            photo: photo.unwrap_or_default(),
+        },
     )
     .map_err(AppError::from)?;
     snapshot_for(&database, &account)
@@ -620,8 +725,12 @@ pub fn run() {
             });
             Ok(())
         })
+        .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![
+            open_external_url,
             sign_in,
+            sign_in_with_hosted,
+            create_account,
             sign_out,
             current_user,
             list_accounts,

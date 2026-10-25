@@ -161,7 +161,7 @@ shell removed. The certificate stylesheet no longer leaks into other routes. Web
 (Tauri on macOS) still needs a manual pass; the rules use standard `@page`, `break-inside`,
 and visibility declarations, but no automated WebKit printer is available here.
 
-`src/app/print.test.tsx` is the regression guard: it mounts all 42 routes, checks the
+`src/app/print.test.tsx` is the regression guard: it mounts all 43 routes, checks the
 certificate sets and clears its print gate, checks the impact report still renders the
 sections it prints, and asserts the certificate's print-hiding selector stays scoped to that
 gate. jsdom does not evaluate `@media print`, so the rendered-PDF result above remains the

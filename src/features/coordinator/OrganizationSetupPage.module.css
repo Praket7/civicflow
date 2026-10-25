@@ -5,6 +5,94 @@
   align-items: start;
 }
 
+.steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 26px;
+  margin: 4px 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.step[data-state="active"] {
+  color: var(--text-primary);
+  font-weight: 620;
+}
+
+.step[data-state="done"] {
+  color: var(--text-secondary);
+}
+
+.stepNumber {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-raised);
+  font-size: 12px;
+  font-weight: 620;
+  color: var(--text-muted);
+  flex: none;
+}
+
+.step[data-state="active"] .stepNumber {
+  background: var(--color-cobalt);
+  border-color: var(--action-primary);
+  color: #fff;
+}
+
+.step[data-state="done"] .stepNumber {
+  background: var(--tone-green-soft);
+  border-color: transparent;
+  color: var(--tone-green-ink);
+}
+
+.review {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.review div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.review dt {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  flex: none;
+}
+
+.review dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 550;
+  text-align: right;
+}
+
+.reviewNote {
+  margin: 16px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 .formCard {
   display: flex;
   flex-direction: column;
@@ -229,6 +317,33 @@
 
 .pickerOption[data-selected="true"] {
   border-color: var(--color-lime);
+}
+
+.pickerUpload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 58px;
+  height: 38px;
+  border: 1px dashed rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 560;
+}
+
+.pickerUpload[data-selected="true"] {
+  border-color: var(--color-lime);
+  border-style: solid;
+}
+
+.coverError {
+  margin: 0;
+  color: var(--tone-red-ink);
+  font-size: 12.5px;
 }
 
 .pickerOption svg {

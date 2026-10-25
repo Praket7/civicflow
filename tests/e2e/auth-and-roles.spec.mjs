@@ -16,6 +16,38 @@ async function signIn(email, password, role = "coordinator") {
   await $('button[type="submit"]').click();
 }
 
+/**
+ * Click a rendered button by its visible text. Setup is a sequence of
+ * re-rendered steps, and a real click would wait on the embedded driver's
+ * window probe, so the click is dispatched straight to the React handler.
+ */
+async function clickButton(label, groupLabel) {
+  await browser.execute(
+    (wanted, group) => {
+      const scope = group ? document.querySelector(`[aria-label="${group}"]`) : document.body;
+      const button = [...(scope ?? document.body).querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === wanted,
+      );
+      if (!(button instanceof HTMLElement)) throw new Error(`button ${wanted} missing`);
+      button.click();
+    },
+    label,
+    groupLabel,
+  );
+}
+
+/** Press the first unpressed toggle in a group, leaving a worked example alone. */
+async function pressOne(groupLabel) {
+  await browser.execute((group) => {
+    const scope = document.querySelector(`[aria-label="${group}"]`);
+    const buttons = [...(scope?.querySelectorAll("button") ?? [])];
+    if (buttons.length === 0) throw new Error(`toggle group ${group} missing`);
+    if (buttons.some((button) => button.getAttribute("aria-pressed") === "true")) return;
+    if (!(buttons[0] instanceof HTMLElement)) throw new Error(`toggle group ${group} empty`);
+    buttons[0].click();
+  }, groupLabel);
+}
+
 async function waitForHeading(pattern, message) {
   await browser.waitUntil(
     async () =>
@@ -106,7 +138,21 @@ describe("CivicFlow native window", () => {
     await $('input[name="verification-code"]').setValue(code);
     await $('button[type="submit"]').click();
 
-    // A new account has no organization yet, so it starts on discovery.
+    // Setup is a one-time gate: a new account answers four short steps before
+    // it can reach a workspace.
+    await waitForHeading(/Tell us how you can help/, "the new volunteer did not reach setup");
+    const phoneField = await $('input[type="tel"]');
+    await phoneField.setValue("716-555-0142");
+    await clickButton("Continue");
+    await pressOne("Your skills");
+    await clickButton("Continue");
+    await pressOne("Weekly availability");
+    await clickButton("Continue");
+    await pressOne("Causes you care about");
+    await clickButton("Finish setup");
+
+    // Setup gives the account a profile but no team, so it joins an
+    // organization before its own home exists.
     await waitForHeading(/Find a place to serve/, "the new volunteer did not reach discovery");
     await browser.execute(() => {
       const join = [...document.querySelectorAll("li button")].find(

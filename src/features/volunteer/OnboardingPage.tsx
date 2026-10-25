@@ -17,6 +17,7 @@ import { SetupShell } from "../../components/layout/SetupShell";
 import { useAuth } from "../../lib/auth/session";
 import { profilePhoto } from "../../lib/images";
 import { completeSetup } from "../../lib/onboarding/store";
+import { organizationsFor } from "../../lib/organizations/store";
 import {
   CAUSE_LABELS,
   currentVolunteer,
@@ -191,7 +192,11 @@ export function OnboardingPage() {
     });
     if (user) completeSetup(user.email, "volunteer");
     setSaving(false);
-    navigate("/volunteer/home", { replace: true });
+    // Setup gives the account a profile, not a team. A volunteer who already
+    // belongs somewhere goes straight home; everyone else joins an organization
+    // first, the same way a sign-in would route them.
+    const hasOrganization = user ? organizationsFor(user.email).length > 0 : false;
+    navigate(hasOrganization ? "/volunteer/home" : "/volunteer/start", { replace: true });
   }
 
   return (

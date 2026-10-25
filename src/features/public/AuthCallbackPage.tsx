@@ -5,6 +5,7 @@ import { accountHome, useAuth } from "../../lib/auth/session";
 import { markSetupPending } from "../../lib/onboarding/store";
 import { organizationsFor } from "../../lib/organizations/store";
 import {
+  consumePendingLink,
   exchangeHostedCode,
   hostedAuthConfigured,
   hostedCodeInLocation,
@@ -12,6 +13,7 @@ import {
   identityFromUser,
   setHostedSession,
 } from "../../lib/auth/hosted";
+import { isTauri } from "../../lib/platform";
 import { AuthPortrait } from "./AuthPortrait";
 import styles from "./auth.module.css";
 
@@ -77,6 +79,20 @@ export function AuthCallbackPage() {
     const tokens = hostedTokensInHash(window.location.hash);
     if (!code && !(tokens.accessToken && tokens.refreshToken)) return;
     void (async () => {
+      // In the installed app the return link has to follow a hand-off this
+      // device started, so a stray civicflow:// URL cannot sign the window into
+      // an account nobody here chose. The browser build is same-origin and
+      // needs no such check.
+      if (isTauri() && !consumePendingLink("callback")) {
+        setFailure({
+          message:
+            "This link was not requested on this device. Start again from the sign-in screen.",
+        });
+        return;
+      }
+      // The tokens arrive in the URL, so drop them from history before the
+      // exchange leaves the window free to navigate.
+      window.history.replaceState({}, "", "/auth/callback");
       try {
         const hostedSession =
           tokens.accessToken && tokens.refreshToken
@@ -91,7 +107,6 @@ export function AuthCallbackPage() {
           markSetupPending(identity.email, identity.role);
         }
         const session = await adoptHostedIdentity(identity, true);
-        window.history.replaceState({}, "", "/auth/callback");
         setDone(true);
         navigate(accountHome(session.user), { replace: true });
       } catch (caught) {

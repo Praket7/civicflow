@@ -105,7 +105,10 @@ pub fn validate(path: &Path) -> Result<()> {
         [],
         |row| row.get(0),
     )?;
-    if version != crate::db::SCHEMA_VERSION {
+    // Older snapshots are the normal case after an update, and the restore
+    // step migrates them forward. Only a snapshot from a newer build is
+    // unreadable here, because this build cannot know what it is missing.
+    if !(1..=crate::db::SCHEMA_VERSION).contains(&version) {
         return Err(validation(
             "This backup uses an unsupported CivicFlow schema version.",
         ));
@@ -404,6 +407,10 @@ pub fn restore(conn: &mut Connection, dir: &Path, id: &str) -> Result<BackupRest
         backup.run_to_completion(100, Duration::from_millis(0), None)?;
     }
     drop(source);
+
+    // The restored copy carries the schema version it was taken at. Bring it up
+    // to this build before anything else touches it.
+    crate::db::apply_migrations(conn)?;
 
     let detail = format!("Safety snapshot: {}", safety.id);
     workflows::append_audit(

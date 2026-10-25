@@ -593,7 +593,19 @@ pub fn generate(conn: &Connection, request: &ReportRequest) -> Result<ReportDocu
 }
 
 fn csv_cell(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
+    // A cell that starts with one of these is read as a formula by Excel and
+    // Sheets when the export is opened. Names and notes are entered by people,
+    // so an export must not hand a spreadsheet a command to run.
+    let formula = value
+        .chars()
+        .next()
+        .is_some_and(|first| matches!(first, '=' | '+' | '-' | '@' | '\t' | '\r'));
+    let guarded = if formula {
+        format!("'{value}")
+    } else {
+        value.to_string()
+    };
+    format!("\"{}\"", guarded.replace('"', "\"\""))
 }
 
 pub fn to_csv(document: &ReportDocument) -> String {
@@ -832,6 +844,25 @@ mod tests {
         let csv = to_csv(&document());
         assert!(csv.contains("\"Comma, quote \"\"yes\"\"\""));
         assert!(csv.starts_with('\u{feff}'));
+    }
+
+    #[test]
+    fn csv_neutralises_cells_a_spreadsheet_would_run() {
+        let mut report = document();
+        report.rows = vec![
+            vec![
+                "=HYPERLINK(\"http://example.org\",\"open\")".into(),
+                "Normal".into(),
+            ],
+            vec!["@SUM(1+1)".into(), "-12".into()],
+        ];
+        let csv = to_csv(&report);
+
+        assert!(csv.contains("\"'=HYPERLINK"));
+        assert!(csv.contains("\"'@SUM"));
+        assert!(csv.contains("\"'-12\""), "a leading dash is guarded too");
+        assert!(!csv.contains("\"=HYPERLINK"), "no cell starts as a formula");
+        assert!(csv.contains("\"Normal\""));
     }
 
     #[test]

@@ -6,19 +6,27 @@
 //! never written to disk in plain text.
 
 use argon2::password_hash::{
-    rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+    rand_core::{OsRng, RngCore},
+    PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
 };
 use argon2::Argon2;
 use chrono::{Duration, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 
 use crate::error::{CoreError, Result};
 
 const DEMO_PASSWORD: &str = "civicflow-demo";
 const REMEMBER_DAYS: i64 = 30;
 const SHORT_SESSION_HOURS: i64 = 12;
+/// Misses this many times in the window before the wait starts.
+const FREE_ATTEMPTS: i64 = 5;
+/// The first wait, doubled for each further miss, capped at `MAX_LOCK_SECONDS`.
+const LOCK_STEP_SECONDS: i64 = 30;
+const MAX_LOCK_SECONDS: i64 = 300;
+const ATTEMPT_WINDOW_MINUTES: i64 = 15;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -57,6 +65,134 @@ fn verify_password(hash: &str, password: &str) -> bool {
 
 fn token_hash(token: &str) -> String {
     format!("{:x}", Sha256::digest(token.as_bytes()))
+}
+
+/// 256 bits from the OS generator. Only the hash of this value is stored, so a
+/// copy of the database cannot be replayed as a session.
+fn session_token() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// A real Argon2 hash the sign-in path verifies against when the email is
+/// unknown, so a miss costs the same time as a wrong password.
+fn timing_hash() -> &'static str {
+    static HASH: OnceLock<String> = OnceLock::new();
+    HASH.get_or_init(|| {
+        let salt = SaltString::encode_b64(b"civicflow-timing-1").expect("static salt encodes");
+        Argon2::default()
+            .hash_password(b"civicflow-timing-equalizer", &salt)
+            .map(|hash| hash.to_string())
+            .unwrap_or_default()
+    })
+}
+
+fn lockout_error(seconds: i64) -> CoreError {
+    let wait = if seconds >= 60 {
+        let minutes = seconds / 60;
+        if minutes <= 1 {
+            "a minute".to_string()
+        } else {
+            format!("{minutes} minutes")
+        }
+    } else {
+        format!("{seconds} seconds")
+    };
+    CoreError::rule(
+        "TOO_MANY_ATTEMPTS",
+        format!("Too many attempts. Try again in {wait}."),
+        Some("password".into()),
+        Some("TRY_AGAIN_LATER".into()),
+    )
+}
+
+/// Seconds left on an active wait, if the email is currently throttled.
+fn active_lock(conn: &Connection, email: &str) -> Result<Option<i64>> {
+    let row: Option<Option<String>> = conn
+        .query_row(
+            "SELECT locked_until FROM auth_attempts WHERE email = ?1",
+            params![email],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(Some(locked_until)) = row else {
+        return Ok(None);
+    };
+    let Ok(until) = chrono::DateTime::parse_from_rfc3339(&locked_until) else {
+        return Ok(None);
+    };
+    let now = Utc::now();
+    let seconds = (until.with_timezone(&Utc) - now).num_seconds();
+    Ok((seconds > 0).then_some(seconds))
+}
+
+/// Records a miss and returns the wait it started, or zero when one is not due.
+fn record_failure(conn: &Connection, email: &str) -> Result<i64> {
+    let now = Utc::now();
+    let existing: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT failed_count, first_failed_at FROM auth_attempts WHERE email = ?1",
+            params![email],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let started = existing.as_ref().and_then(|(_, at)| {
+        chrono::DateTime::parse_from_rfc3339(at)
+            .ok()
+            .map(|value| value.with_timezone(&Utc))
+    });
+    let in_window = started
+        .map(|at| now - at < Duration::minutes(ATTEMPT_WINDOW_MINUTES))
+        .unwrap_or(false);
+    let attempts = if in_window {
+        existing.as_ref().map(|(count, _)| *count).unwrap_or(0) + 1
+    } else {
+        1
+    };
+    let first_failed_at = if in_window {
+        existing
+            .map(|(_, at)| at)
+            .unwrap_or_else(|| now.to_rfc3339())
+    } else {
+        now.to_rfc3339()
+    };
+    let wait = if attempts > FREE_ATTEMPTS {
+        let steps = (attempts - FREE_ATTEMPTS - 1).min(4) as u32;
+        (LOCK_STEP_SECONDS * 2_i64.pow(steps)).min(MAX_LOCK_SECONDS)
+    } else {
+        0
+    };
+    let locked_until = (wait > 0).then(|| (now + Duration::seconds(wait)).to_rfc3339());
+    conn.execute(
+        "INSERT INTO auth_attempts (email, failed_count, first_failed_at, locked_until)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(email) DO UPDATE SET
+            failed_count = excluded.failed_count,
+            first_failed_at = excluded.first_failed_at,
+            locked_until = excluded.locked_until",
+        params![email, attempts, first_failed_at, locked_until],
+    )?;
+    Ok(wait)
+}
+
+fn clear_failures(conn: &Connection, email: &str) -> Result<()> {
+    conn.execute("DELETE FROM auth_attempts WHERE email = ?1", params![email])?;
+    Ok(())
+}
+
+/// The shared answer for a credential that did not match, after the miss has
+/// been counted. A miss that starts a wait says so instead.
+fn credential_error(wait: i64) -> CoreError {
+    if wait > 0 {
+        return lockout_error(wait);
+    }
+    CoreError::rule(
+        "INVALID_CREDENTIALS",
+        "That email and password do not match an account on this device.",
+        Some("password".into()),
+        None,
+    )
 }
 
 fn validate_password(password: &str) -> Result<()> {
@@ -111,6 +247,9 @@ pub fn sign_in(
     remember: bool,
 ) -> Result<AuthSession> {
     let clean_email = email.trim().to_lowercase();
+    if let Some(seconds) = active_lock(conn, &clean_email)? {
+        return Err(lockout_error(seconds));
+    }
     let row: Option<SignInRow> = conn
         .query_row(
             "SELECT id, name, email, role, volunteer_id, password_hash, status
@@ -131,12 +270,9 @@ pub fn sign_in(
         .optional()?;
 
     let Some((id, name, stored_email, role, volunteer_id, password_hash, status)) = row else {
-        return Err(CoreError::rule(
-            "INVALID_CREDENTIALS",
-            "That email and password do not match an account on this device.",
-            Some("email".into()),
-            None,
-        ));
+        // Spend the same time an existing account would, then count the miss.
+        let _ = verify_password(timing_hash(), password);
+        return Err(credential_error(record_failure(conn, &clean_email)?));
     };
 
     if status != "active" {
@@ -158,14 +294,10 @@ pub fn sign_in(
     };
 
     if !verify_password(&password_hash, password) {
-        return Err(CoreError::rule(
-            "INVALID_CREDENTIALS",
-            "That email and password do not match an account on this device.",
-            Some("password".into()),
-            None,
-        ));
+        return Err(credential_error(record_failure(conn, &clean_email)?));
     }
 
+    clear_failures(conn, &clean_email)?;
     start_session(
         conn,
         &Account {
@@ -188,7 +320,7 @@ fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result
         Duration::hours(SHORT_SESSION_HOURS)
     };
     let expires_at = (now + lifetime).to_rfc3339();
-    let token = uuid::Uuid::new_v4().to_string();
+    let token = session_token();
     conn.execute(
         "INSERT INTO auth_sessions (id, user_id, token_hash, created_at, expires_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",

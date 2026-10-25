@@ -35,6 +35,30 @@ jobs:
       - name: 200% zoom audit
         run: node scripts/audit-zoom.mjs
 
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Rust advisories (desktop shell)
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: src-tauri
+      - name: Rust advisories (core)
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: src-tauri/core
+      - name: Shipped JavaScript dependencies
+        run: pnpm audit --prod --audit-level=high
+
   native:
     name: Native end-to-end (macOS)
     runs-on: macos-latest

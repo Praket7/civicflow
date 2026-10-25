@@ -25,7 +25,7 @@ function describeError(caught: unknown): string {
 export function SignInPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signIn, signOut } = useAuth();
+  const { user, signIn, signOut, expired } = useAuth();
   // A deep link that bounced through RequireAuth leaves the page it wanted.
   // Only honour it when the signed-in role can actually open that section.
   const from = (location.state as { from?: string } | null)?.from ?? "";
@@ -116,6 +116,12 @@ export function SignInPage() {
             </h1>
             <p className={styles.subtitle}>Sign in to your CivicFlow workspace.</p>
           </div>
+
+          {expired ? (
+            <p className={styles.resetNote} role="status">
+              Your session ended on this device. Sign in again to pick up where you left off.
+            </p>
+          ) : null}
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.segmented} role="group" aria-label="Account type">

@@ -263,3 +263,114 @@ fn weak_input_is_refused_before_anything_is_written() {
         .unwrap();
     assert_eq!(users, 2, "the demo accounts are untouched");
 }
+
+#[test]
+fn a_session_token_is_256_random_bits_and_never_stored_in_the_clear() {
+    let database = seeded();
+    let session = sign_in(
+        database.connection(),
+        "praket@feedmorewny.org",
+        "civicflow-demo",
+        false,
+    )
+    .expect("demo coordinator signs in");
+
+    assert_eq!(session.token.len(), 64, "32 bytes, hex encoded");
+    assert!(session
+        .token
+        .chars()
+        .all(|character| character.is_ascii_hexdigit()));
+
+    let stored: String = database
+        .connection()
+        .query_row(
+            "SELECT token_hash FROM auth_sessions ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_ne!(stored, session.token);
+    assert_eq!(stored.len(), 64, "the database keeps only a SHA-256 hash");
+}
+
+#[test]
+fn repeated_wrong_passwords_start_a_wait_and_a_real_sign_in_clears_it() {
+    let database = seeded();
+    for _ in 0..5 {
+        let error = sign_in(
+            database.connection(),
+            "praket@feedmorewny.org",
+            "not-the-password",
+            false,
+        )
+        .expect_err("a wrong password is refused");
+        assert_eq!(rule_code(error), "INVALID_CREDENTIALS");
+    }
+
+    let error = sign_in(
+        database.connection(),
+        "praket@feedmorewny.org",
+        "not-the-password",
+        false,
+    )
+    .expect_err("the sixth miss starts a wait");
+    assert_eq!(rule_code(error), "TOO_MANY_ATTEMPTS");
+
+    // The right password is refused too while the wait runs, so guessing gains
+    // nothing from the account already being correct.
+    let error = sign_in(
+        database.connection(),
+        "praket@feedmorewny.org",
+        "civicflow-demo",
+        false,
+    )
+    .expect_err("the wait applies to every attempt");
+    assert_eq!(rule_code(error), "TOO_MANY_ATTEMPTS");
+
+    database
+        .connection()
+        .execute(
+            "UPDATE auth_attempts SET locked_until = '2000-01-01T00:00:00Z',
+                 first_failed_at = '2000-01-01T00:00:00Z'",
+            [],
+        )
+        .unwrap();
+    sign_in(
+        database.connection(),
+        "praket@feedmorewny.org",
+        "civicflow-demo",
+        false,
+    )
+    .expect("the right password works once the wait has passed");
+
+    let remaining: i64 = database
+        .connection()
+        .query_row("SELECT COUNT(*) FROM auth_attempts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(remaining, 0, "a real sign-in clears the counter");
+}
+
+#[test]
+fn an_unknown_email_is_counted_without_revealing_whether_it_exists() {
+    let database = seeded();
+    for _ in 0..6 {
+        let error = sign_in(
+            database.connection(),
+            "nobody@example.org",
+            "not-the-password",
+            false,
+        )
+        .expect_err("no such account");
+        let code = rule_code(error);
+        assert!(code == "INVALID_CREDENTIALS" || code == "TOO_MANY_ATTEMPTS");
+    }
+    let locked: i64 = database
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM auth_attempts WHERE email = 'nobody@example.org'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(locked, 1, "unknown emails are throttled the same way");
+}

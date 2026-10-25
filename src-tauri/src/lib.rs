@@ -105,10 +105,10 @@ fn open_external_url(url: String) -> Result<(), AppError> {
             None,
         )));
     }
-    open_in_browser(&url).map_err(|error| {
+    open_in_browser(url.as_str()).map_err(|error| {
         AppError::from(CoreError::rule(
             "BROWSER_UNAVAILABLE",
-            &format!("The browser could not be opened: {error}"),
+            format!("The browser could not be opened: {error}"),
             None,
             Some("TRY_AGAIN".into()),
         ))
@@ -538,6 +538,10 @@ fn register_for_shift(
     snapshot_for(&database, &account)
 }
 
+// The IPC surface is deliberately flat: the WebView sends one patch object's
+// worth of fields, and a nested struct here would only add a second place to
+// keep the TypeScript and Rust shapes in step.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 fn save_volunteer_profile(
     state: State<'_, AppState>,

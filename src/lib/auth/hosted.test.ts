@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { User } from "@supabase/supabase-js";
 import {
   clearPendingHostedIdentity,
+  consumePendingLink,
   hostedTokensInHash,
   identityFromUser,
   parseHostedLink,
@@ -54,6 +55,45 @@ describe("desktop email links", () => {
       accessToken: "one",
       refreshToken: "two",
     });
+  });
+
+  it("refuses an absurdly long launch argument", () => {
+    const padded = `civicflow://auth/callback#access_token=${"a".repeat(5000)}`;
+    expect(parseHostedLink(padded)).toBeNull();
+  });
+});
+
+describe("desktop hand-off guard", () => {
+  it("accepts a return link this device asked for, once", () => {
+    localStorage.setItem(
+      "civicflow.hosted.pending-link",
+      JSON.stringify({ kind: "callback", at: Date.now() }),
+    );
+
+    expect(consumePendingLink("callback")).toBe(true);
+    expect(consumePendingLink("callback")).toBe(false);
+  });
+
+  it("refuses a link nothing asked for", () => {
+    expect(consumePendingLink("callback")).toBe(false);
+  });
+
+  it("refuses a link of the other kind", () => {
+    localStorage.setItem(
+      "civicflow.hosted.pending-link",
+      JSON.stringify({ kind: "reset", at: Date.now() }),
+    );
+
+    expect(consumePendingLink("callback")).toBe(false);
+  });
+
+  it("refuses a link that has gone stale", () => {
+    localStorage.setItem(
+      "civicflow.hosted.pending-link",
+      JSON.stringify({ kind: "callback", at: Date.now() - 2 * 86_400_000 }),
+    );
+
+    expect(consumePendingLink("callback")).toBe(false);
   });
 });
 

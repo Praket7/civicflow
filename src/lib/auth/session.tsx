@@ -7,6 +7,7 @@ import { isTauri } from "../platform";
 import { getWorkspaceRepository, setRepositoryToken } from "../workspace/repository";
 import {
   clearPendingHostedIdentity,
+  consumePendingLink,
   exchangeHostedCode,
   hostedAuthConfigured,
   hostedSignIn,
@@ -34,6 +35,8 @@ interface AuthValue {
   ): Promise<AuthSession>;
   signOut(): Promise<void>;
   refresh(): Promise<void>;
+  /** True when this device held a session that is no longer valid. */
+  expired: boolean;
   /** True when a hosted provider is configured in this build. */
   hosted: boolean;
   /** Resumes the local workspace for an identity the hosted provider verified. */
@@ -63,6 +66,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => storedToken());
   const [user, setUser] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set only when a stored token stops resolving, never on a first visit, so
+  // the sign-in screen can say why someone landed back on it.
+  const [expired, setExpired] = useState(false);
 
   const refresh = useCallback(async () => {
     const current = token ?? storedToken();
@@ -80,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         rememberToken(null);
         setRepositoryToken(null);
         setToken(null);
+        setExpired(true);
       } else {
         setToken(current);
       }
@@ -117,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!account) {
           rememberToken(null);
           setRepositoryToken(null);
+          setExpired(true);
         }
         setToken(account ? current : null);
         setUser(account);
@@ -134,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const adoptHostedIdentity = useCallback(async (identity: HostedIdentity, remember: boolean) => {
     const session = await repository.signInWithHosted(identity);
+    setExpired(false);
     setRepositoryToken(session.token);
     if (remember) rememberToken(session.token);
     else rememberToken(null);
@@ -145,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const localSignIn = useCallback(async (email: string, password: string, remember: boolean) => {
     const session = await repository.signIn(email, password, remember);
+    setExpired(false);
     setRepositoryToken(session.token);
     if (remember) rememberToken(session.token);
     else rememberToken(null);
@@ -169,6 +179,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           return await localSignIn(email, password, remember);
         } catch (localError) {
+          // A local account that has been throttled or disabled knows more than
+          // the provider's generic "no such hosted account", and that is the
+          // message the person has to act on.
+          const code = (localError as { code?: string } | null)?.code;
+          if (code && code !== "INVALID_CREDENTIALS") throw localError;
           throw hostedError ?? localError;
         }
       }
@@ -189,6 +204,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       for (const raw of urls) {
         const link = parseHostedLink(raw);
         if (!link) continue;
+        if (!consumePendingLink(link.kind)) {
+          // A scheme URL that this device never asked for is not a sign-in.
+          window.location.hash = `#/auth/callback?error_description=${encodeURIComponent(
+            "This link was not requested on this device. Start again from the sign-in screen.",
+          )}`;
+          continue;
+        }
         try {
           if (link.error) throw new Error(link.error);
           const hostedSession =
@@ -236,6 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(
     async (name: string, email: string, password: string, role: AccountRole, remember: boolean) => {
       const session = await repository.createAccount(name, email, password, role);
+      setExpired(false);
       setRepositoryToken(session.token);
       if (remember) rememberToken(session.token);
       else rememberToken(null);
@@ -254,6 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRepositoryToken(null);
     setToken(null);
     setUser(null);
+    setExpired(false);
     if (current) {
       try {
         await repository.signOut(current);
@@ -273,10 +297,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signOut,
       refresh,
+      expired,
       hosted: hostedAuthConfigured,
       adoptHostedIdentity,
     }),
-    [user, token, loading, signIn, signUp, signOut, refresh, adoptHostedIdentity],
+    [user, token, loading, expired, signIn, signUp, signOut, refresh, adoptHostedIdentity],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -19,7 +19,10 @@ const client = hostedAuthConfigured
         // tied to one browser's storage. The callback code reads it explicitly.
         flowType: "implicit",
         detectSessionInUrl: false,
-        persistSession: true,
+        // The hosted session only proves who someone is during a hand-off. The
+        // app keeps its own local session instead, so a remote refresh token
+        // does not need to sit in this device's storage after the exchange.
+        persistSession: false,
         autoRefreshToken: true,
       },
     })
@@ -40,6 +43,36 @@ interface PendingSignup extends HostedIdentity {
 const PENDING_KEY = "civicflow.hosted.pending";
 const PENDING_ROLE_KEY = "civicflow.hosted.pending-role";
 const PENDING_TTL_MS = 86_400_000;
+const PENDING_LINK_KEY = "civicflow.hosted.pending-link";
+
+/**
+ * Records that this device asked the provider for a return link. A desktop
+ * `civicflow://` callback is otherwise indistinguishable from one another app
+ * (or a launch argument) hands to the process, and accepting it would sign the
+ * window into an account nobody here chose.
+ */
+function rememberPendingLink(kind: HostedReturnKind): void {
+  try {
+    localStorage.setItem(PENDING_LINK_KEY, JSON.stringify({ kind, at: Date.now() }));
+  } catch {
+    // A blocked storage area only costs the check below, never the sign-in.
+  }
+}
+
+/** True when a hand-off is outstanding, and clears it so a link works once. */
+export function consumePendingLink(kind: HostedReturnKind): boolean {
+  try {
+    const raw = localStorage.getItem(PENDING_LINK_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { kind?: unknown; at?: unknown };
+    const at = typeof parsed.at === "number" ? parsed.at : 0;
+    const matches = parsed.kind === kind && at > 0 && Date.now() - at < PENDING_TTL_MS;
+    localStorage.removeItem(PENDING_LINK_KEY);
+    return matches;
+  } catch {
+    return false;
+  }
+}
 
 function requireClient() {
   if (!client) throw new Error("Hosted sign-in is not configured in this build.");
@@ -91,6 +124,7 @@ export async function startHostedOAuth(
   redirectTo: string,
   provider: "google" = "google",
 ): Promise<HostedOAuth> {
+  rememberPendingLink("callback");
   const { data, error } = await requireClient().auth.signInWithOAuth({
     provider,
     options: { redirectTo, skipBrowserRedirect: true },
@@ -114,6 +148,7 @@ export async function hostedSignUp(
   identity: HostedIdentity,
   password: string,
 ): Promise<{ session: Session | null; needsVerification: boolean }> {
+  rememberPendingLink("callback");
   const { data, error } = await requireClient().auth.signUp({
     email: identity.email.trim(),
     password,
@@ -127,6 +162,7 @@ export async function hostedSignUp(
 }
 
 export async function resendHostedVerification(email: string): Promise<void> {
+  rememberPendingLink("callback");
   const { error } = await requireClient().auth.resend({
     type: "signup",
     email: email.trim(),
@@ -136,6 +172,7 @@ export async function resendHostedVerification(email: string): Promise<void> {
 }
 
 export async function requestHostedPasswordReset(email: string): Promise<void> {
+  rememberPendingLink("reset");
   const { error } = await requireClient().auth.resetPasswordForEmail(email.trim(), {
     redirectTo: hostedRedirect("reset"),
   });
@@ -275,6 +312,8 @@ function sessionFromFragment(hash: string): {
 
 /** Desktop links arrive as civicflow://auth/callback#access_token=… */
 export function parseHostedLink(raw: string): HostedLink | null {
+  // Anything longer is not a provider return; it is noise from the launcher.
+  if (raw.length > 4096) return null;
   let parsed: URL;
   try {
     parsed = new URL(raw);

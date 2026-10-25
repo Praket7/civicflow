@@ -258,3 +258,67 @@ fn restore_refuses_unknown_ids_and_traversal_names() {
         assert!(backups::restore(database.connection_mut(), &backup_dir, id).is_err());
     }
 }
+
+#[test]
+fn a_snapshot_from_an_older_schema_is_migrated_instead_of_refused() {
+    let temp = TempDir::new();
+    let backup_dir = temp.path().join("backups");
+    let mut database = seeded(&temp.path().join("civicflow.db"));
+    let snapshot = backups::create(database.connection(), &backup_dir, "manual", "Older build")
+        .expect("snapshot");
+
+    // Rewind the copy to the schema of the release before this one, which is
+    // what an existing snapshot on a real device looks like after an update.
+    let path = backup_dir.join(&snapshot.id);
+    {
+        let conn = Connection::open(&path).expect("open the snapshot");
+        conn.execute("DELETE FROM schema_migrations WHERE version = 6", [])
+            .unwrap();
+        conn.execute("DROP TABLE auth_attempts", []).unwrap();
+    }
+    backups::validate(&path).expect("an older snapshot is still readable");
+
+    let restored =
+        backups::restore(database.connection_mut(), &backup_dir, &snapshot.id).expect("restore");
+    assert!(
+        !restored.backups.is_empty(),
+        "the restored list is not empty"
+    );
+
+    let version: i64 = database
+        .connection()
+        .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(version, civicflow_core::db::SCHEMA_VERSION);
+    let throttled: i64 = database
+        .connection()
+        .query_row("SELECT COUNT(*) FROM auth_attempts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(throttled, 0, "the restored copy has the new table");
+}
+
+#[test]
+fn a_snapshot_from_a_newer_build_is_refused() {
+    let temp = TempDir::new();
+    let backup_dir = temp.path().join("backups");
+    let mut database = seeded(&temp.path().join("civicflow.db"));
+    let snapshot = backups::create(database.connection(), &backup_dir, "manual", "Future build")
+        .expect("snapshot");
+
+    {
+        let conn = Connection::open(backup_dir.join(&snapshot.id)).expect("open the snapshot");
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+            rusqlite::params![
+                civicflow_core::db::SCHEMA_VERSION + 1,
+                "2030-01-01T00:00:00Z"
+            ],
+        )
+        .unwrap();
+    }
+
+    assert!(backups::validate(&backup_dir.join(&snapshot.id)).is_err());
+    assert!(backups::restore(database.connection_mut(), &backup_dir, &snapshot.id).is_err());
+}

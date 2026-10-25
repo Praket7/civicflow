@@ -40,17 +40,30 @@ OS user session
 3. **Rust → filesystem.** The core reads and writes the SQLite database and backup files.
    Backup identifiers and export destinations are the two places where a path reaches the
    filesystem from IPC; both are validated.
-4. **Application → network.** There is no network boundary to defend at runtime because no
-   feature makes an HTTP request. Fonts, images, and data are bundled.
+4. **Application → network.** Fonts, images, and workspace data are bundled, so the local
+   workspace never sends a request. The one optional boundary is hosted identity: when
+   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, the sign-in screen exchanges
+   credentials or a provider code with Supabase over HTTPS, and the packaged CSP allows that
+   single origin. Workspace records never leave the device, and the hosted session is used
+   only to verify the identity before a local session is issued.
 
 ## Accounts and sessions
 
-- Passwords are hashed with Argon2id using a random salt. Plaintext passwords are never
-  written to the database.
-- A sign-in creates a random UUID token. Only its SHA-256 hash is stored in `auth_sessions`,
-  so a copied database does not directly yield live session tokens.
+- Passwords are hashed with Argon2id using a random salt, at the crate defaults
+  (m=19 456 KiB, t=2, p=1), which match the current OWASP minimum. Plaintext passwords are
+  never written to the database.
+- A sign-in creates a 256-bit token from the OS random generator. Only its SHA-256 hash is
+  stored in `auth_sessions`, so a copied database does not directly yield live session
+  tokens. The hash is enough because the token is high-entropy, not user-chosen.
+- Repeated failures are throttled per email in `auth_attempts`: five misses in a fifteen
+  minute window are free, then the wait starts at 30 seconds and doubles per miss up to five
+  minutes. A successful sign-in clears the row, and an unknown email is counted the same way
+  and costs the same Argon2 work, so the form does not reveal which addresses exist. The
+  form shows the remaining wait instead of a generic failure.
 - A session expires after 12 hours, or 30 days when “keep me signed in” is chosen. Sign-out
   sets `revoked_at`. A coordinator password reset revokes every session for that account.
+  When a stored token stops resolving, the app clears it and the sign-in screen says the
+  session ended rather than dropping the person on a blank form.
 - Passwords are at least 8 and at most 200 characters. A disabled account cannot sign in.
 - `/create-account` is open on this device: it validates the name, email and password, refuses
   an email that already has an account, creates the volunteer roster profile when one is
@@ -84,10 +97,13 @@ The UI routes are guarded as a convenience, but the Rust layer is authoritative:
 
 ## Tauri capabilities
 
-The capability file grants one window (`main`) `core:default` and `dialog:allow-save`. There
-is no shell plugin, filesystem plugin, HTTP plugin, process plugin, or arbitrary URL opener.
-The save dialog is the only native dialog permission; the frontend supplies the chosen path
-back to `export_report`, where Rust validates it.
+The capability file grants one window (`main`) `core:default`, `dialog:allow-save`, and the
+deep-link defaults. There is no shell plugin, filesystem plugin, HTTP plugin, or process
+plugin. The save dialog is the only native dialog permission; the frontend supplies the
+chosen path back to `export_report`, where Rust validates it. `open_external_url` is the only
+command that reaches outside the process, and it accepts an `https://` address only: the
+scheme is checked in Rust before the OS browser is asked to open it, so the WebView cannot
+hand the system a `file:` or custom-scheme target.
 
 The main window is also the kiosk window. Kiosk is an authenticated coordinator route with a
 focused UI, not a separate locked-down webview. A person at the keyboard can navigate away
@@ -99,19 +115,23 @@ server, and the release workflow builds without debug assertions.
 
 ## Content Security Policy
 
-Production uses a local-only policy:
+Production uses a bundled-asset policy with one optional API origin:
 
 ```text
-default-src 'self'; img-src 'self' data: asset: http://asset.localhost;
-style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self';
-connect-src ipc: http://ipc.localhost
+default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none';
+form-action 'self'; img-src 'self' data: asset: http://asset.localhost;
+media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self';
+script-src 'self';
+connect-src ipc: http://ipc.localhost https://<project>.supabase.co
 ```
 
-There is no remote script, style, font, frame, or connect origin. `style-src` allows inline
-styles because the app uses React inline style values and print rules; it does not allow
-inline script. `img-src` includes the Tauri asset protocol so bundled media loads and
-`data:` so the QR code can render from a data URL. `media-src` allows the camera stream's
-blob URL.
+There is no remote script, style, font, or frame origin, and `object-src`, `base-uri` and
+`form-action` are closed so a bundled page cannot load a plugin, rewrite its base URL, or
+post a form elsewhere. `style-src` allows inline styles because the app uses React inline
+style values and print rules; it does not allow inline script. `img-src` includes the Tauri
+asset protocol so bundled media loads and `data:` so the QR code can render from a data URL.
+`media-src` allows the camera stream's blob URL. `connect-src` names the hosted identity
+project, and nothing else: a build without hosted auth configured never contacts it.
 
 Development uses a separate `devCsp` that additionally allows the Vite origin
 (`http://localhost:5173`) and its WebSocket for hot reload. The production policy does not
@@ -146,7 +166,10 @@ Before a snapshot is accepted, `backups::validate` checks:
 
 - the SQLite application id matches CivicFlow;
 - all required tables are present, including `auth_sessions`;
-- the schema version is the supported version;
+- the schema version is not newer than this build. An older snapshot is accepted and
+  migrated forward during the restore, so an update does not orphan the snapshots a device
+  already has; a snapshot from a newer build is refused because this build cannot know what
+  it is missing;
 - `PRAGMA integrity_check` returns `ok`;
 - `PRAGMA foreign_key_check` returns no rows;
 - the workspace clock setting exists.
@@ -183,13 +206,21 @@ the Argon2id password hashes and the SHA-256 session-token hashes in SQLite. Vol
 “credentials” shown in the UI are domain records (for example, a food-handling certificate and
 expiry date), not application login secrets.
 
+## Dependencies
+
+CI runs the RustSec advisory database against both Rust lockfiles (`src-tauri` and
+`src-tauri/core`) and `pnpm audit --prod` against the shipped JavaScript packages, so a newly
+disclosed advisory fails the build rather than waiting for a release. Informational
+advisories (unmaintained transitive crates) are reported by the action but do not fail it.
+
 ## Out of scope
 
 The following are not provided:
 
 - multi-user sync, a hosted server, or multi-tenant isolation;
 - encryption at rest for the SQLite database or backups;
-- network transport security, because there is no network feature;
+- transport security for workspace data, because workspace data never leaves the device.
+  Hosted identity traffic relies on HTTPS and the provider's own certificate handling;
 - code signing or notarization of the installers;
 - protection from a malicious OS administrator, malware running as the same user, or a
   compromised operating system;
@@ -200,7 +231,7 @@ The following are not provided:
 | Risk                                                    | Current mitigation                                                                                               | Next step                                                                   |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | The demo password is public                             | Settings → Accounts reset; the README and release notes tell the operator to change it before real data          | Require a password change on first coordinator launch                       |
-| Anyone with the OS account can try a password           | Argon2id hashing; no lockout yet                                                                                 | Add attempt throttling and a lockout window                                 |
+| Anyone with the OS account can try a password           | Argon2id hashing; per-email throttle after five misses, growing to five minutes                                      | Bind the wait to the device as well as the email, and log repeated misses to the audit trail |
 | Database or backup is readable by another local account | Store under the per-user app-data directory; rely on OS permissions                                              | Enable full-disk encryption or SQLCipher for a shared machine               |
 | A copied backup exposes password and session hashes     | Passwords use Argon2id; session tokens are stored only as hashes                                                 | Sign backups with a key held outside the workspace                          |
 | A crafted SQLite file is offered as a backup            | Application id, required tables, schema version, integrity, foreign keys, and clock check before restore         | Sign snapshots with a key held outside the workspace                        |
@@ -211,6 +242,8 @@ The following are not provided:
 | Development CSP could leak into a packaged build        | Production `csp` and `devCsp` are separate; the packaged policy has no localhost origins                         | Add a release check that fails if the packaged config contains a dev origin |
 | A debug build exposes the WebDriver server              | Plugin server starts only under `debug_assertions`; release builds are used for distribution                     | Keep the release job on `tauri build` without debug assertions              |
 | Large or hostile text reaches SQLite                    | Bound parameters; Rust length and format validation on user-facing fields                                        | Add explicit maximum lengths to every free-text command                     |
+| A report export is opened in a spreadsheet             | CSV cells beginning with `=`, `+`, `-`, `@`, tab or return are prefixed so they stay text                          | Offer an xlsx writer with typed cells instead of raw CSV                     |
+| A crafted `civicflow://` URL starts a sign-in           | The callback must follow a hand-off this device started (24 h, single use); the URL is parsed against an exact scheme, path and length | Move desktop OAuth to PKCE with a loopback redirect per RFC 8252 |
 
 ## Reporting a problem
 

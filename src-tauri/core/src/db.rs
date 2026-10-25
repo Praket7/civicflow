@@ -14,7 +14,7 @@ pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
 /// start from the same state.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
 /// Bumped with every migration so backups can check they match this build.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 /// "CIFV" — marks a database as a CivicFlow workspace so restore can refuse
 /// an arbitrary SQLite file.
 pub const APPLICATION_ID: i64 = 0x4349_4656;
@@ -24,6 +24,7 @@ const LIFECYCLE_SCHEMA: &str = include_str!("../migrations/0003_service_lifecycl
 const ACCOUNT_SCHEMA: &str =
     include_str!("../migrations/0004_accounts_and_notification_audiences.sql");
 const VOLUNTEER_PHOTO_SCHEMA: &str = include_str!("../migrations/0005_volunteer_photo.sql");
+const AUTH_ATTEMPT_SCHEMA: &str = include_str!("../migrations/0006_auth_attempts.sql");
 const WORKFLOW_SEED_MARKER: &str = "workflow_seed_version";
 
 const CREDENTIAL_TYPES: [(&str, i64); 6] = [
@@ -88,6 +89,48 @@ fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>)
     (None, None, None)
 }
 
+/// Every schema step, in order. Kept as a free function as well as a method
+/// because restoring an older snapshot replaces the live database in place and
+/// the restored copy then has to catch up to this build.
+const MIGRATIONS: [(i64, &str); 6] = [
+    (1, INITIAL_SCHEMA),
+    (2, WORKFLOW_SCHEMA),
+    (3, LIFECYCLE_SCHEMA),
+    (4, ACCOUNT_SCHEMA),
+    (5, VOLUNTEER_PHOTO_SCHEMA),
+    (6, AUTH_ATTEMPT_SCHEMA),
+];
+
+pub fn apply_migrations(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        );",
+    )?;
+    for (version, schema) in MIGRATIONS {
+        let applied: Option<i64> = conn
+            .query_row(
+                "SELECT version FROM schema_migrations WHERE version = ?1",
+                params![version],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if applied.is_none() {
+            let transaction = conn.unchecked_transaction()?;
+            transaction.execute_batch(schema)?;
+            transaction.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+                params![version, Utc::now().to_rfc3339()],
+            )?;
+            transaction.commit()?;
+        }
+    }
+    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    Ok(())
+}
+
 pub struct Database {
     conn: Connection,
 }
@@ -121,39 +164,7 @@ impl Database {
     }
 
     fn migrate(&self) -> Result<()> {
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY,
-                applied_at TEXT NOT NULL
-            );",
-        )?;
-        for (version, schema) in [
-            (1_i64, INITIAL_SCHEMA),
-            (2_i64, WORKFLOW_SCHEMA),
-            (3_i64, LIFECYCLE_SCHEMA),
-            (4_i64, ACCOUNT_SCHEMA),
-            (5_i64, VOLUNTEER_PHOTO_SCHEMA),
-        ] {
-            let applied: Option<i64> = self
-                .conn
-                .query_row(
-                    "SELECT version FROM schema_migrations WHERE version = ?1",
-                    params![version],
-                    |row| row.get(0),
-                )
-                .optional()?;
-
-            if applied.is_none() {
-                let transaction = self.conn.unchecked_transaction()?;
-                transaction.execute_batch(schema)?;
-                transaction.execute(
-                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
-                    params![version, Utc::now().to_rfc3339()],
-                )?;
-                transaction.commit()?;
-            }
-        }
-        Ok(())
+        apply_migrations(&self.conn)
     }
 
     /// Loads the deterministic demo workspace once. Re-running is a no-op so the

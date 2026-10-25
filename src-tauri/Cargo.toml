@@ -20,7 +20,9 @@ tauri-plugin-wdio-webdriver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 civicflow-core = { path = "core" }
-tauri-plugin-deep-link = "2"
+# 2.6.1+ builds ini::ParseOption without the fields rust-ini now requires,
+# which breaks the Linux desktop build; hold until upstream catches up.
+tauri-plugin-deep-link = "=2.6.0"
 
 [features]
 default = ["custom-protocol"]

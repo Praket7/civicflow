@@ -2,17 +2,29 @@ import { CornerDownLeft, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { routes, searchRoutes } from "../../app/routes";
+import type { RouteMeta } from "../../app/routes";
+import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
 import styles from "./CommandPalette.module.css";
 
-const popular = [
-  "/coordinator/mission-control",
-  "/volunteer/discover",
-  "/volunteer/schedule",
-  "/coordinator/coverage",
-  "/coordinator/reports",
-  "/coordinator/settings",
-];
+const popular: Record<"coordinator" | "volunteer", string[]> = {
+  coordinator: [
+    "/coordinator/mission-control",
+    "/coordinator/coverage",
+    "/coordinator/schedule",
+    "/coordinator/volunteers",
+    "/coordinator/reports",
+    "/coordinator/settings",
+  ],
+  volunteer: [
+    "/volunteer/home",
+    "/volunteer/discover",
+    "/volunteer/schedule",
+    "/volunteer/hours",
+    "/volunteer/profile",
+    "/coordinator/settings",
+  ],
+};
 
 interface CommandPaletteProps {
   open: boolean;
@@ -28,15 +40,23 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const navigate = useNavigate();
   const listId = useId();
+  const { user } = useAuth();
+  const role = user?.role ?? "volunteer";
 
   const results = useMemo(() => {
+    // The palette is part of a signed-in shell. It should offer the screens this
+    // account can actually open, and never a parameterised path, which has no
+    // record behind it until a real id is chosen.
+    const visible = (route: RouteMeta) =>
+      !route.path.includes(":") &&
+      (route.role === role || route.id === "settings" || route.id === "accessibility");
     if (!query.trim()) {
-      return popular
+      return popular[role]
         .map((path) => routes.find((route) => route.path === path))
-        .filter((route): route is NonNullable<typeof route> => Boolean(route));
+        .filter((route): route is RouteMeta => route !== undefined && visible(route));
     }
-    return searchRoutes(query);
-  }, [query]);
+    return searchRoutes(query).filter(visible);
+  }, [query, role]);
 
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement | null;
@@ -133,7 +153,6 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
                   <span className={styles.optionTitle}>{t(route.title)}</span>
                   <span className={styles.optionSpec}>{t(route.spec)}</span>
                 </span>
-                {!route.built ? <span className={styles.queued}>Queued</span> : null}
                 {index === activeIndex ? (
                   <CornerDownLeft size={15} className={styles.enter} aria-hidden="true" />
                 ) : null}

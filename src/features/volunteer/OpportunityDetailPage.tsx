@@ -120,6 +120,17 @@ export function OpportunityDetailPage() {
       )
     : undefined;
   const isRegistered = Boolean(registration);
+  // A full shift can be joined once. The button says so afterwards instead of
+  // inviting the same click again.
+  const isWaitlisted = Boolean(
+    activeShift &&
+    session.waitlist.some(
+      (row) =>
+        row.shiftId === activeShift.id &&
+        row.volunteerId === volunteer.id &&
+        row.status === "waiting",
+    ),
+  );
   const saved = opportunity ? session.savedOpportunityIds.includes(opportunity.id) : false;
   const match = opportunity
     ? getMatches(volunteer, 20, workspace, session.createdOpportunities).find(
@@ -719,8 +730,9 @@ export function OpportunityDetailPage() {
                 variant="secondary"
                 className={styles.signupButton}
                 onClick={() => void handleJoinWaitlist()}
+                disabled={isWaitlisted}
               >
-                Join the waitlist
+                {t(isWaitlisted ? "On the waitlist" : "Join the waitlist")}
               </Button>
             ) : null}
 

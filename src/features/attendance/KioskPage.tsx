@@ -116,7 +116,7 @@ export function KioskPage() {
         <img className={styles.kioskPhoto} src="/media/hero-community.jpg" alt="" />
         <div className={styles.kioskScrim} aria-hidden="true" />
         <div className={styles.kioskTop}>
-          <Link className={styles.kioskBrand} to="/welcome">
+          <Link className={styles.kioskBrand} to="/coordinator/attendance">
             <span className={styles.kioskMark} aria-hidden="true">
               <svg viewBox="0 0 24 24" width="25" height="25" focusable="false">
                 <path
@@ -249,7 +249,7 @@ export function KioskPage() {
               <ShieldCheck size={13} aria-hidden="true" /> Names are shortened on this public screen
             </span>
             <Link to="/coordinator/attendance">Coordinator view</Link>
-            <Link to="/welcome">
+            <Link to="/coordinator/attendance">
               <ArrowLeft size={12} aria-hidden="true" /> Exit kiosk
             </Link>
           </div>

@@ -146,6 +146,7 @@ export function SettingsPage() {
               key={item.id}
               type="button"
               className={`${styles.categoryButton} ${category === item.id ? styles.categoryButtonActive : ""}`}
+              aria-current={category === item.id ? "page" : undefined}
               onClick={() => {
                 setCategory(item.id);
                 setSaved("");

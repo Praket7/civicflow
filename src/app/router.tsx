@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { createBrowserRouter, createHashRouter, Navigate } from "react-router-dom";
+import { accountHome, useAuth } from "../lib/auth/session";
 import { isTauri } from "../lib/platform";
 import { WorkspaceSessionProvider } from "../lib/workspace/session";
 import { AccessibilityPage } from "../features/settings/AccessibilityPage";
@@ -112,6 +113,16 @@ export const pages: Record<string, ReactNode> = {
   accessibility: <AccessibilityPage />,
 };
 
+/**
+ * The index and unknown paths used to hard-code Mission Control, which sent
+ * volunteers and signed-out visitors through a coordinator route first. Send
+ * each account to its own home instead.
+ */
+function HomeRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={user ? accountHome(user) : "/welcome"} replace />;
+}
+
 function guarded(route: (typeof routes)[number]) {
   const page = pages[route.id];
   if (route.role === "public") return page;
@@ -150,7 +161,7 @@ const routeConfig = [
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <Navigate to="/coordinator/mission-control" replace /> },
+      { index: true, element: <HomeRedirect /> },
       ...shellRoutes,
       {
         path: "/coordinator/notifications",
@@ -164,7 +175,7 @@ const routeConfig = [
       },
       { path: "/credits", element: <CreditsPage /> },
       { path: "/help", element: <HelpPage /> },
-      { path: "*", element: <Navigate to="/coordinator/mission-control" replace /> },
+      { path: "*", element: <HomeRedirect /> },
     ],
   },
 ];

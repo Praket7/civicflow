@@ -16,7 +16,7 @@ import styles from "./onboarding.module.css";
 export function VolunteerStartPage() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { organizations, memberships } = useOrganizationWorkspace(user);
+  const { organizations, memberships, current } = useOrganizationWorkspace(user);
   const [query, setQuery] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -36,6 +36,9 @@ export function VolunteerStartPage() {
   const needle = query.trim().toLowerCase();
   const publicOrganizations = listOrganizations().filter((organization) => {
     if (organization.visibility !== "public") return false;
+    // Organizations you already belong to are listed above; repeating them
+    // here makes the page look like it has two of everything.
+    if (joined.has(organization.id)) return false;
     if (!needle) return true;
     return [organization.name, organization.city, organization.state, organization.description]
       .join(" ")
@@ -93,13 +96,14 @@ export function VolunteerStartPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.backRow}>
-        <Link
-          className={styles.back}
-          to={organizations.length > 0 && user ? accountHome(user) : "/welcome"}
-        >
-          <ArrowLeft size={14} aria-hidden="true" />
-          {organizations.length > 0 ? "Back to workspace" : "Welcome"}
-        </Link>
+        {organizations.length > 0 ? (
+          <Link className={styles.back} to={accountHome(user)}>
+            <ArrowLeft size={14} aria-hidden="true" />
+            Back to workspace
+          </Link>
+        ) : (
+          <span />
+        )}
         <button type="button" className={styles.signOut} onClick={() => void signOut()}>
           Sign out
         </button>
@@ -146,9 +150,10 @@ export function VolunteerStartPage() {
                       <Button
                         size="small"
                         variant="secondary"
+                        disabled={current?.id === organization.id}
                         onClick={() => open(organization.id)}
                       >
-                        Switch
+                        {current?.id === organization.id ? "Current" : "Switch"}
                       </Button>
                     </div>
                   </li>
@@ -176,14 +181,15 @@ export function VolunteerStartPage() {
               </div>
               {publicOrganizations.length === 0 ? (
                 <p className={styles.footerNote}>
-                  Nothing matches “{query}”. Try a city, or join with a code instead.
+                  {query.trim()
+                    ? `Nothing matches “${query}”. Try a city, or join with a code instead.`
+                    : "No other organizations are open to volunteers right now. Join with a code instead."}
                 </p>
               ) : (
                 <ul className={styles.orgList}>
                   {publicOrganizations.map((organization) => {
-                    const isMember = joined.has(organization.id);
                     return (
-                      <li className={styles.orgCard} key={organization.id} data-joined={isMember}>
+                      <li className={styles.orgCard} key={organization.id} data-joined={false}>
                         <img
                           className={styles.orgThumb}
                           src={organization.image}
@@ -197,29 +203,18 @@ export function VolunteerStartPage() {
                           </p>
                           <p className={styles.orgCopy}>{organization.description}</p>
                           <p className={styles.orgMeta} style={{ marginTop: 8 }}>
-                            <Users size={10} aria-hidden="true" />{" "}
-                            {isMember ? "You are a member" : "Open to new volunteers"}
+                            <Users size={10} aria-hidden="true" /> Open to new volunteers
                           </p>
                         </div>
                         <div className={styles.orgAction}>
-                          {isMember ? (
-                            <Button
-                              size="small"
-                              variant="secondary"
-                              onClick={() => open(organization.id)}
-                            >
-                              Open
-                            </Button>
-                          ) : (
-                            <Button
-                              size="small"
-                              icon={<ArrowRight size={13} />}
-                              disabled={busy === organization.id}
-                              onClick={() => join(organization.id)}
-                            >
-                              {busy === organization.id ? "Joining…" : "Join"}
-                            </Button>
-                          )}
+                          <Button
+                            size="small"
+                            icon={<ArrowRight size={13} />}
+                            disabled={busy === organization.id}
+                            onClick={() => join(organization.id)}
+                          >
+                            {busy === organization.id ? "Joining…" : "Join"}
+                          </Button>
                         </div>
                       </li>
                     );

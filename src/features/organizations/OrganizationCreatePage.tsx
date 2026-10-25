@@ -12,16 +12,18 @@ import {
   Users,
 } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { Button, TextField, TextareaField } from "../../components/ui";
+import { Button, SelectField, TextField, TextareaField } from "../../components/ui";
 import { useAuth } from "../../lib/auth/session";
 import { coverPhoto } from "../../lib/images";
 import {
   ORGANIZATION_COVERS,
   createOrganization,
   organizationShareText,
+  organizationsFor,
   setCurrentOrganization,
 } from "../../lib/organizations/store";
 import type { OrganizationProfile, OrganizationVisibility } from "../../lib/organizations/store";
+import { US_STATES } from "../../lib/us-states";
 import styles from "./onboarding.module.css";
 
 interface FormState {
@@ -43,7 +45,7 @@ function isEmail(value: string): boolean {
 
 export function OrganizationCreatePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [form, setForm] = useState<FormState>({
     name: "",
     description: "",
@@ -83,6 +85,10 @@ export function OrganizationCreatePage() {
     );
   }
   if (user.role !== "coordinator") return <Navigate to="/volunteer/start" replace />;
+  // Before the first organization exists this page is the setup gate, so
+  // "back to onboarding" would bounce straight back here. Offer the only real
+  // way out of the wizard instead: signing out.
+  const hasOrganization = organizationsFor(user.email).length > 0;
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -145,10 +151,16 @@ export function OrganizationCreatePage() {
     return (
       <main className={styles.screen}>
         <div className={styles.backRow}>
-          <Link className={styles.back} to="/coordinator/start">
-            <ArrowLeft size={14} aria-hidden="true" />
-            Onboarding
-          </Link>
+          {hasOrganization ? (
+            <Link className={styles.back} to="/coordinator/start">
+              <ArrowLeft size={14} aria-hidden="true" />
+              Onboarding
+            </Link>
+          ) : (
+            <button type="button" className={styles.signOut} onClick={() => void signOut()}>
+              Sign out
+            </button>
+          )}
         </div>
         <section className={styles.shell} aria-labelledby="created-title">
           <header className={styles.head}>
@@ -238,10 +250,16 @@ export function OrganizationCreatePage() {
   return (
     <main className={styles.screen}>
       <div className={styles.backRow}>
-        <Link className={styles.back} to="/coordinator/start">
-          <ArrowLeft size={14} aria-hidden="true" />
-          Onboarding
-        </Link>
+        {hasOrganization ? (
+          <Link className={styles.back} to="/coordinator/start">
+            <ArrowLeft size={14} aria-hidden="true" />
+            Onboarding
+          </Link>
+        ) : (
+          <button type="button" className={styles.signOut} onClick={() => void signOut()}>
+            Sign out
+          </button>
+        )}
       </div>
 
       <section className={styles.shell} aria-labelledby="new-org-title">
@@ -326,15 +344,20 @@ export function OrganizationCreatePage() {
                   autoComplete="address-level2"
                   onChange={(event) => update("city", event.target.value)}
                 />
-                <TextField
+                <SelectField
                   label="State"
-                  placeholder="NY"
-                  maxLength={2}
                   value={form.state}
                   error={errors.state}
                   autoComplete="address-level1"
                   onChange={(event) => update("state", event.target.value)}
-                />
+                >
+                  <option value="">Select a state</option>
+                  {US_STATES.map((state) => (
+                    <option key={state.code} value={state.code}>
+                      {state.name}
+                    </option>
+                  ))}
+                </SelectField>
               </div>
 
               <fieldset className={`${styles.full} ${styles.panel}`}>

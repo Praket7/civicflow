@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, Check, KeyRound, LockKeyhole, Mail } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Button, CheckboxField, TextField } from "../../components/ui";
 import {
   hostedAuthConfigured,
@@ -53,7 +53,7 @@ function newCode(): string {
 
 export function SignUpPage() {
   const navigate = useNavigate();
-  const { signUp, adoptHostedIdentity } = useAuth();
+  const { user, signUp, adoptHostedIdentity } = useAuth();
   const [role, setRole] = useState<AccountRole>("volunteer");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -164,6 +164,10 @@ export function SignUpPage() {
       setBusy(false);
     }
   }
+
+  // An account already signed in on this device goes to its own home; creating
+  // another one here would replace the session without warning.
+  if (user && !busy) return <Navigate to={accountHome(user)} replace />;
 
   return (
     <main className={styles.screen}>

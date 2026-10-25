@@ -44,6 +44,10 @@ function GoogleMark() {
 export function GoogleSignIn({ role, label, disabled, onError }: GoogleSignInProps) {
   const [busy, setBusy] = useState(false);
   const [handedOff, setHandedOff] = useState(false);
+  // The provider hand-off returns on the civicflow:// scheme, which only the
+  // bundled app can register with the operating system. A dev build would open
+  // a browser tab that no app can answer, so it says so instead.
+  const needsBundledApp = isTauri() && import.meta.env.DEV;
 
   async function start() {
     setBusy(true);
@@ -67,12 +71,17 @@ export function GoogleSignIn({ role, label, disabled, onError }: GoogleSignInPro
         size="large"
         className={`${styles.demo} ${styles.googleButton}`}
         onClick={() => void start()}
-        disabled={disabled || busy}
+        disabled={disabled || busy || needsBundledApp}
       >
         <GoogleMark />
         {busy ? "Opening Google…" : label}
       </Button>
-      {handedOff ? (
+      {needsBundledApp ? (
+        <p className={styles.oauthNote} role="status">
+          Google sign-in finishes in the installed CivicFlow app. This development build cannot
+          receive that hand-off — use an email account here, or sign in from the packaged app.
+        </p>
+      ) : handedOff ? (
         <p className={styles.oauthNote} role="status">
           Finish in your browser. CivicFlow reopens by itself when you are done.
         </p>

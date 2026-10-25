@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button, CheckboxField, TextField } from "../../components/ui";
 import { hostedAuthConfigured } from "../../lib/auth/hosted";
 import { accountHome, useAuth } from "../../lib/auth/session";
+import type { Account } from "../../types/domain";
 import { AuthPortrait } from "./AuthPortrait";
 import { GoogleSignIn } from "./GoogleSignIn";
 import styles from "./auth.module.css";
@@ -23,12 +24,20 @@ function describeError(caught: unknown): string {
 
 export function SignInPage() {
   const navigate = useNavigate();
-  const { signIn, signOut } = useAuth();
+  const location = useLocation();
+  const { user, signIn, signOut } = useAuth();
+  // A deep link that bounced through RequireAuth leaves the page it wanted.
+  // Only honour it when the signed-in role can actually open that section.
+  const from = (location.state as { from?: string } | null)?.from ?? "";
   const [role, setRole] = useState<AccountRole>("coordinator");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  // A successful sign-in sets the account before the route changes. Without
+  // this flag the "already signed in" guard below would race the navigation
+  // and send the person home instead of where they were headed.
+  const leaving = useRef(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
 
@@ -54,12 +63,18 @@ export function SignInPage() {
         });
         return;
       }
-      navigate(accountHome(session.user), { replace: true });
+      leaving.current = true;
+      navigate(destination(session.user), { replace: true });
     } catch (caught) {
       setErrors({ form: describeError(caught) });
     } finally {
       setBusy(false);
     }
+  }
+
+  function destination(account: Account): string {
+    const allowed = account.role === "coordinator" ? "/coordinator/" : "/volunteer/";
+    return from.startsWith(allowed) ? from : accountHome(account);
   }
 
   async function openDemoWorkspace() {
@@ -70,13 +85,19 @@ export function SignInPage() {
     setBusy(true);
     try {
       const session = await signIn(demoEmail, "civicflow-demo", remember);
-      navigate(accountHome(session.user), { replace: true });
+      leaving.current = true;
+      navigate(destination(session.user), { replace: true });
     } catch (caught) {
       setErrors({ form: describeError(caught) });
     } finally {
       setBusy(false);
     }
   }
+
+  // Signing in over an existing session silently swaps accounts and drops the
+  // old one. Send people who already have a session to their own home; they can
+  // sign out first when they mean to switch.
+  if (user && !busy && !leaving.current) return <Navigate to={accountHome(user)} replace />;
 
   return (
     <main className={styles.screen}>

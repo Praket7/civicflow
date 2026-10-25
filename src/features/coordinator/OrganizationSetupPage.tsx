@@ -27,6 +27,7 @@ import { organizationById, updateOrganizationCover } from "../../lib/organizatio
 import { useWorkspace } from "../../lib/workspace/session";
 import { CAUSE_LABELS } from "../../lib/workspace/selectors";
 import type { Cause } from "../../types/domain";
+import { US_STATES } from "../../lib/us-states";
 import { SetupShell } from "../../components/layout/SetupShell";
 import styles from "./OrganizationSetupPage.module.css";
 
@@ -275,13 +276,19 @@ export function OrganizationSetupPage() {
                       error={errors.city}
                       autoComplete="address-level2"
                     />
-                    <TextField
+                    <SelectField
                       label="State"
                       value={form.state}
                       onChange={(event) => update("state", event.target.value)}
-                      maxLength={2}
                       autoComplete="address-level1"
-                    />
+                    >
+                      <option value="">Select a state</option>
+                      {US_STATES.map((state) => (
+                        <option key={state.code} value={state.code}>
+                          {state.name}
+                        </option>
+                      ))}
+                    </SelectField>
                   </div>
                   <TextField
                     label="Website"

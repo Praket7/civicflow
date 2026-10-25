@@ -59,13 +59,14 @@ export function CoordinatorStartPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.backRow}>
-        <Link
-          className={styles.back}
-          to={organizations.length > 0 && user ? accountHome(user) : "/welcome"}
-        >
-          <ArrowLeft size={14} aria-hidden="true" />
-          {organizations.length > 0 ? "Back to workspace" : "Welcome"}
-        </Link>
+        {organizations.length > 0 ? (
+          <Link className={styles.back} to={accountHome(user)}>
+            <ArrowLeft size={14} aria-hidden="true" />
+            Back to workspace
+          </Link>
+        ) : (
+          <span />
+        )}
         <button type="button" className={styles.signOut} onClick={() => void signOut()}>
           Sign out
         </button>

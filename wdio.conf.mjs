@@ -38,7 +38,10 @@ export const config = {
   framework: "mocha",
   reporters: ["spec"],
   mochaOpts: {
-    timeout: 90_000,
+    // Every element lookup and click waits out the driver's 5s window-state
+    // probe, which never answers in this app, so a long flow (create an
+    // account, sign out, sign back in) needs far more than the default.
+    timeout: 240_000,
   },
   waitforTimeout: 15_000,
   connectionRetryTimeout: 120_000,

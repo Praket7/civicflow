@@ -45,6 +45,7 @@ const requiredTables = [
   "app_settings",
   "users",
   "auth_sessions",
+  "auth_attempts",
   "volunteers",
   "volunteer_skills",
   "availability_rules",
@@ -74,7 +75,8 @@ const requiredTables = [
   "backup_snapshots",
 ];
 
-const expectedSchemaVersion = 4;
+// Keep in step with SCHEMA_VERSION in src-tauri/core/src/db.rs.
+const expectedSchemaVersion = 6;
 const db = new DatabaseSync(dbPath, { readOnly: true });
 
 try {

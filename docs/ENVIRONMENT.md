@@ -31,6 +31,8 @@ runner needs.
 
 ## Offline demo
 
-The app needs no network at runtime: fonts and photography are bundled under
-`public/fonts` and `public/images`, and the database is local. The only network use is
-optional GitHub Actions CI during development.
+The app needs no network to run: fonts and photography are bundled under `public/fonts`
+and `public/images`, and the database is local. The one exception is opt-in: a build with
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set sends sign-in, password-reset and
+email-link requests to Supabase. Leave both empty for a local-only build and the app makes
+no runtime request at all.

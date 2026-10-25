@@ -234,7 +234,7 @@ scope.
 
 ### Annual and monthly totals
 
-The organisation totals (`hoursYtd`, `uniqueVolunteersYtd`, `shiftsCompleted`,
+The organization totals (`hoursYtd`, `uniqueVolunteersYtd`, `shiftsCompleted`,
 `attendanceRate`, and the outcome fallback fields) live in the single `impact_totals` row.
 Mission Control reads that row for the annual cards. The React Impact Analytics and Impact
 Report screens read `workspace.impact`, which is the bundled
@@ -269,7 +269,7 @@ cause percent = round(cause minutes / total minutes × 100)
 ```
 
 `events` is the distinct opportunity count. There is no per-volunteer meals/families
-conversion; those outcomes are organisation-level records, not hours multiplied by a
+conversion; those outcomes are organization-level records, not hours multiplied by a
 factor.
 
 ## 4. Retention

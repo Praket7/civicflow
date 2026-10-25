@@ -39,9 +39,9 @@ recorded in [VISUAL_QA.md](VISUAL_QA.md).
 
 ## 005 — Chart rendered with CSS bars, not Recharts
 
-**Decision:** the weekly coverage chart is a CSS grid of labelled bars with a details table.
+**Decision:** the weekly coverage chart is a CSS grid of labeled bars with a details table.
 **Rejected:** Recharts for this one visual.
-**Why:** seven labelled values need no scale library, and CSS keeps the visual exactly on
+**Why:** seven labeled values need no scale library, and CSS keeps the visual exactly on
 the reference while shipping a real table alternative. Recharts remains the plan's choice
 for the reporting phase, where axes and tooltips earn their weight.
 
@@ -92,7 +92,7 @@ still the source for the initial rows, so the demo is deterministic.
 **Decision:** every workflow write — saved opportunities, attendance, waitlist promotion,
 registrations, hours review, applicant stages, settings, program creation, and volunteer
 profile — is a `civicflow-core` command that writes SQLite and appends its audit event, then
-returns a full `WorkspaceSnapshot`. The React provider caches that snapshot and serialises
+returns a full `WorkspaceSnapshot`. The React provider caches that snapshot and serializes
 write responses.
 **Rejected:** keeping the localStorage session as a second writer alongside Mission Control
 and notifications. That made a reload resurrect stale local copies and split the audit trail
@@ -119,7 +119,7 @@ project is not part of the build.
 **Rejected:** adding a hosted Postgres project beside SQLite. It would create two sources of
 truth, require credentials and network access at a venue where wifi may fail, and need an
 auth/RLS model the product does not have. None of that improves a single-tenant offline demo.
-**Why:** the schema already has 31 related tables, foreign keys, transactions, audit events,
+**Why:** the schema already has 32 related tables, foreign keys, transactions, audit events,
 validated backups and a restore path. The NYS rubric scores appropriate, secure data storage
 and a dynamic backup feature; the local database supplies both without a network dependency.
 The browser preview remains an explicitly selected fallback, never a second writer inside the
@@ -128,14 +128,14 @@ desktop shell.
 ## 014 — Interface copy is translated at build time, not at runtime
 
 **Decision:** a Babel pre-plugin rewrites static JSX text and copy props to `t("English")`
-keys, and the app loads one committed JSON catalogue for the chosen locale. Dates come from
+keys, and the app loads one committed JSON catalog for the chosen locale. Dates come from
 date-fns or an Intl fallback; document direction flips for Arabic, Hebrew, Persian, and Urdu.
 **Rejected:** translating in the browser on every load, or wrapping only a handful of
 navigation labels and calling the product localised.
 **Why:** runtime translation needs a network at a venue where wifi may fail, adds latency to
 every render, and produces different copy for the same screen on different runs. Build-time
-catalogues are deterministic, reviewable in the repository, and keep proper nouns, addresses,
-and user-entered notes untouched. The 60 catalogues ship inside the bundle, so the language
+catalogs are deterministic, reviewable in the repository, and keep proper nouns, addresses,
+and user-entered notes untouched. The 60 catalogs ship inside the bundle, so the language
 switch works offline.
 
 ## 015 — Local accounts are enforced in Rust, not just in the router

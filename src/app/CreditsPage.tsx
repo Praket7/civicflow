@@ -60,7 +60,7 @@ export function CreditsPage() {
         <p className={styles.note}>
           Pexels photographs are used under the Pexels License (attribution not required). Crops
           made for layout are adaptations; CC BY-SA 4.0 images stay under that license and are
-          credited above. The portrait files are square centre crops of the listed Pexels photos.
+          credited above. The portrait files are square center crops of the listed Pexels photos.
         </p>
       </section>
 

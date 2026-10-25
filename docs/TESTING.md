@@ -11,11 +11,12 @@ reproduce.
 pnpm typecheck    # tsc --noEmit, 0 errors
 pnpm lint         # eslint ., 0 problems
 pnpm format       # prettier --check, clean
-pnpm test         # 124 tests, 12 files
+pnpm check:copy   # American spelling, known typos, doubled words
+pnpm test         # 180 tests, 18 files
 pnpm build:web    # tsc && vite build
 pnpm audit:print  # headless Chrome; certificate and report must print content
-pnpm audit:a11y   # Chromium accessibility tree, all 43 routes
-pnpm audit:zoom   # 800 × 500 CSS viewport (200% zoom), all 43 routes
+pnpm audit:a11y   # Chromium accessibility tree, all 50 routes
+pnpm audit:zoom   # 800 × 500 CSS viewport (200% zoom), all 50 routes
 pnpm test:native  # WebdriverIO inside the real macOS window
 ```
 
@@ -28,20 +29,21 @@ pnpm test:native  # WebdriverIO inside the real macOS window
 | `HelpPage.test.tsx`        | Renders both role journeys, the keyboard reference and a working route link, with no serious or critical axe violations                                                                                                                                                                                                                                                                                                                                                       |
 | `CustomReportPage.test.ts` | Groups report rows by ISO date and orders the trend axis chronologically, even when the ledger arrives out of order                                                                                                                                                                                                                                                                                                                                                           |
 | `accessibility.test.tsx`   | Mounts every registered route, waits for its content, and runs axe on each one; fails on serious or critical ARIA, landmark, list, or control violations                                                                                                                                                                                                                                                                                                                      |
-| `print.test.tsx`           | Mounts all 43 registered routes and asserts each renders content; the certificate sets `body[data-print-view="verification"]` only while mounted and clears it on unmount; the impact report renders its printed sections without that gate; the certificate's print-hiding selector is scoped to that attribute                                                                                                                                                              |
+| `answers.test.ts`          | Ask CivicFlow: every offered question resolves to its own intent for both roles; the replacement answer excludes rostered, booked and unavailable people; credentials match the seed's expiry dates; a volunteer cannot reach a coordinator intent; an uncovered question is refused with answerable ones; the same question returns the same answer                                                                                                                          |
+| `print.test.tsx`           | Mounts all 50 registered routes and asserts each renders content; the certificate sets `body[data-print-view="verification"]` only while mounted and clears it on unmount; the impact report renders its printed sections without that gate; the certificate's print-hiding selector is scoped to that attribute                                                                                                                                                              |
 
 The axe suite disables the `color-contrast` rule because jsdom cannot compute composited
-colours. Colour is verified in a real engine instead:
+colors. Color is verified in a real engine instead:
 
 ```bash
 pnpm dev               # leaves the app on localhost:5173
-pnpm audit:contrast    # headless Chrome, all 43 routes, light + dark
+pnpm audit:contrast    # headless Chrome, all 50 routes, light + dark
 ```
 
 `scripts/audit-contrast.mjs` launches headless Chrome over the DevTools protocol, walks every
 element that draws text, composites it over its ancestor background stack, and fails the run
 for anything under 4.5:1 (3:1 for large text). It sets both themes per route and writes a
-report with selectors, colours, and ratios. The last run reported no violations outside
+report with selectors, colors, and ratios. The last run reported no violations outside
 photography, where the background cannot be computed; those panels were checked visually.
 The token decisions behind the result are recorded in [VISUAL_QA.md](VISUAL_QA.md).
 
@@ -55,7 +57,7 @@ when no Chrome binary is installed. The suite in `src/app/print.test.tsx` guards
 contract without a browser.
 
 `scripts/audit-accessibility-tree.mjs` (`pnpm audit:a11y`) is the screen-reader-facing
-check. It enables Chromium Accessibility, navigates all 43 routes with the preview tokens,
+check. It enables Chromium Accessibility, navigates all 50 routes with the preview tokens,
 reads the full accessibility tree, and fails when a route has no `main` landmark, no level-one
 heading, or an interactive control with no accessible name. The last run passed 42/42.
 `scripts/audit-zoom.mjs` (`pnpm audit:zoom`) emulates a 1600 × 1000 window at 200% browser
@@ -91,12 +93,29 @@ fallback repository, which mirrors the same snapshot contract.
    6 KB), saved Community Food Distribution on Discover (Saved 4 → 5), returned, armed
    Restore, and confirmed. The page reported 195 rows restored with a safety snapshot kept;
    Discover read Saved (4) again and Audit listed `backup.restore` with the safety id.
-9. **All 43 routes.** Captured at 1600 × 1000, checked for console errors, failed images,
-   blank renders, missing `h1`/`main` landmarks, and horizontal overflow. All 42 rendered
+9. **All 50 routes.** Captured at 1600 × 1000, checked for console errors, failed images,
+   blank renders, missing `h1`/`main` landmarks, and horizontal overflow. All 50 rendered
    primary content with no console errors and no failed images. The sweep found one missing
    favicon request, two standalone setup pages without a `main` landmark, and one live-roster
    hero using `h2`; those were fixed and the sweep re-ran clean. The defect and correction
    list is in [VISUAL_QA.md](VISUAL_QA.md).
+
+## Copy gate
+
+`scripts/check-copy.mjs` reads the interface strings, the screen source, and Markdown. It
+fails on a British spelling, a known typo, or a doubled word. It is not a dictionary
+spell-checker; it guards the two failures that recur here: British forms creeping into
+American copy, and typos in text no behavioral test would read. Catalogs for other
+languages are skipped because they legitimately contain non-English words. `pnpm verify` and
+CI both run it, so a spelling fix cannot regress.
+
+## Ask CivicFlow
+
+`src/lib/ask/answers.test.ts` pins the question box: every offered question resolves to its
+own intent for both roles, the replacement ranking names people who are free and not already
+booked, the credential answer agrees with expired dates in the seed, a coordinator-only intent
+is unreachable from a volunteer session, a question outside the records is refused with the
+questions that can be answered, and the same question returns the same answer twice.
 
 ## Native host
 
@@ -183,7 +202,7 @@ one initial automatic snapshot, with an empty stderr log.
 
 ```bash
 cd src-tauri/core
-cargo test      # 62 tests: 18 unit + 44 integration
+cargo test      # 71 tests: 19 unit + 52 integration
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cd ..
@@ -209,7 +228,7 @@ cargo check     # Tauri shell compiles
   Windows and Linux packaging is handled by the release workflow; their UI is not yet in a
   native E2E matrix.
 - Print output for Service Verification and Impact Report is only checked in Chromium.
-- jsdom axe covers every registered route. It does not evaluate colour contrast; the
+- jsdom axe covers every registered route. It does not evaluate color contrast; the
   Chromium audit covers that in both themes.
 - The accessibility-tree audit proves structure and names, not whether a spoken
   announcement makes sense. A human VoiceOver or NVDA pass is still required.

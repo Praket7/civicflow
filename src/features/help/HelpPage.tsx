@@ -204,6 +204,15 @@ export function HelpPage() {
       <Card className={styles.faqCard}>
         <p className={styles.kicker}>Common questions</p>
         <h2 className={styles.cardTitle}>Answers without leaving the demo</h2>
+        <p className={styles.bodyCopy}>
+          You can also ask in your own words. Ask CivicFlow reads the same records and names the
+          rows it used, so the answer can be checked.
+        </p>
+        <p className={styles.linkRow}>
+          <Link className={styles.stepLink} to="/ask">
+            Open Ask CivicFlow <ArrowRight size={12} aria-hidden="true" />
+          </Link>
+        </p>
         <div className={styles.faqGrid}>
           <details>
             <summary>Why can a shift be 75% full and still show “No role gaps”?</summary>
@@ -215,7 +224,7 @@ export function HelpPage() {
           <details>
             <summary>What happens when a volunteer cancels?</summary>
             <p>
-              The registration moves to cancelled, the first eligible waitlisted volunteer is
+              The registration moves to canceled, the first eligible waitlisted volunteer is
               promoted, and the cancellation, promotion and roster update are written as audited
               events.
             </p>

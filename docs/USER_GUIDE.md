@@ -55,6 +55,20 @@ items, live arrivals, and recent activity. Every card links to the surface that 
 underlying record. The bell in the top bar opens notifications; unread items also appear as a
 badge in the sidebar.
 
+### Ask CivicFlow — `/ask`
+
+Both roles can open the question box. It offers six questions and accepts typed ones in plain
+language. Every answer is computed from the records saved on this device, so it never guesses:
+it names the rows it read, shows how many, and links to the screen where you act.
+
+- Coordinator questions: which shifts are short this week, who can replace a named volunteer,
+  whose credentials expire soon, which program has the lowest fill rate, what needs attention
+  today, how many hours were approved this month.
+- Volunteer questions: the next shift, opportunities that match saved skills, hours served, and
+  how to join another organization.
+- A question outside those records returns a refusal plus the questions it can answer, and those
+  rows are clickable.
+
 ### Coverage and AutoRoster — `/coordinator/coverage`, `/coordinator/autoroster`
 
 **Coverage** shows where role slots and seats are thin across the selected date range. Open a

@@ -22,6 +22,7 @@ import {
   Inbox,
   Lightbulb,
   LogOut,
+  MessageCircleQuestion,
   PanelLeftClose,
   Pin,
   Sparkles,
@@ -37,6 +38,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import type { ShellRole } from "../../app/routes";
 import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
+import { initialsOf } from "../../lib/initials";
 import { setCurrentOrganization } from "../../lib/organizations/store";
 import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
 import { useNotifications } from "../../lib/workspace/queries";
@@ -57,24 +59,13 @@ interface NavGroup {
   items: NavItem[];
 }
 
-function initialsOf(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => word[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "CF"
-  );
-}
-
 const coordinatorGroups: NavGroup[] = [
   {
     label: "Work",
     items: [
       { label: "AutoRoster", to: "/coordinator/autoroster", icon: Sparkles, accent: true },
       { label: "Mission Control", to: "/coordinator/mission-control", icon: Gauge },
+      { label: "Ask CivicFlow", to: "/ask", icon: MessageCircleQuestion },
       { label: "Schedule", to: "/coordinator/schedule", icon: CalendarDays },
       { label: "Volunteers", to: "/coordinator/volunteers", icon: Users },
       { label: "Opportunities", to: "/coordinator/opportunities", icon: BriefcaseBusiness },
@@ -115,6 +106,7 @@ const volunteerGroups: NavGroup[] = [
     label: "Explore",
     items: [
       { label: "Home", to: "/volunteer/home", icon: Home },
+      { label: "Ask CivicFlow", to: "/ask", icon: MessageCircleQuestion },
       { label: "Discover", to: "/volunteer/discover", icon: Compass },
       { label: "My Schedule", to: "/volunteer/schedule", icon: CalendarDays },
       { label: "My Hours", to: "/volunteer/hours", icon: Clock3 },
@@ -152,14 +144,11 @@ export function Sidebar({
   const organizationName = currentOrganization?.name ?? "No workspace yet";
   const organizationInitials = initialsOf(organizationName);
   const volunteer = workspace.volunteers.find((row) => row.id === user?.volunteerId);
+  const personName =
+    user?.name ?? (isCoordinator ? "Praket Gauri" : (volunteer?.name ?? "Volunteer"));
   const person = {
-    name: user?.name ?? (isCoordinator ? "Praket Gauri" : (volunteer?.name ?? "Volunteer")),
-    initials: (user?.name ?? (isCoordinator ? "Praket Gauri" : "Volunteer"))
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase(),
+    name: personName,
+    initials: initialsOf(personName),
     tone: isCoordinator ? "teal" : (volunteer?.tone ?? "cobalt"),
     role: isCoordinator ? t("Coordinator") : t("Volunteer"),
     photo: isCoordinator ? undefined : (volunteer?.photo ?? session.volunteerProfile.photo),

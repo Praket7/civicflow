@@ -493,7 +493,7 @@ export function SettingsPage() {
                 />
                 <Toggle
                   label="Underline all links"
-                  hint="Makes link targets identifiable without relying on colour."
+                  hint="Makes link targets identifiable without relying on color."
                   checked={session.settings.underlineLinks}
                   onChange={(checked) => actions.updateSettings({ underlineLinks: checked })}
                 />

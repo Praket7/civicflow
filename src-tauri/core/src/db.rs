@@ -350,6 +350,7 @@ impl Database {
              DELETE FROM audit_events;
              DELETE FROM hour_entries;
              DELETE FROM auth_sessions;
+             DELETE FROM auth_attempts;
              DELETE FROM notifications;
              DELETE FROM activity_events;
              DELETE FROM shift_roles;

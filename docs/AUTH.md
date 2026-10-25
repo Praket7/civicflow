@@ -145,8 +145,8 @@ https://imzdblvljdcbnxtwbmbw.supabase.co/auth/v1/callback
   failing with `redirect_uri_mismatch`.
 - Both buttons in the web build reach Google's account screen for this client,
   and the chosen role is still in local storage when the browser comes back.
-- A cancelled consent screen (`access_denied`) lands on the callback page with
-  "Google sign-in was cancelled", not the expired-link wording.
+- A canceled consent screen (`access_denied`) lands on the callback page with
+  "Google sign-in was canceled", not the expired-link wording.
 
 Not verified end to end: delivery to a real inbox, clicking a confirmation or
 recovery link from a mail client, and choosing a Google account in the browser.

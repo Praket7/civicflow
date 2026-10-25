@@ -1,7 +1,7 @@
 /* CivicFlow design tokens.
    The palette is built like a community service ledger: warm paper, ink,
    brick-red pencil, moss, and ochre. One accent carries action; the rest are
-   status and cause colours. Art-directed surfaces can pin data-theme="light". */
+   status and cause colors. Art-directed surfaces can pin data-theme="light". */
 :root,
 [data-theme="light"] {
   color-scheme: light;

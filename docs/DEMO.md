@@ -49,6 +49,17 @@ Demo identities:
 | 6:25 | `/coordinator/backup`                            | “A snapshot is a transactionally consistent SQLite copy taken with the backup API. Restore validates first and keeps a safety copy.”                                 | Point at the pre-demo snapshot. Do not restore during the demo unless asked.                         | Snapshot history, row count, size, retention note.                                     |
 | 6:50 | Any                                              | “That is the whole loop: plan, assign, arrive, verify, report, recover. All of it is local.”                                                                         | Stop.                                                                                                | —                                                                                      |
 
+### The question beat (40 seconds, any point after Mission Control)
+
+Open `/ask` and press **Which shifts are short this week?**. The answer names each shift, the
+role that is short, and the rows it read; the last line links to the schedule.
+
+Say: “This is the same snapshot, read by a fixed rule. There is no model and no network, so it
+cannot invent a shift. Ask something it does not cover and it says so.”
+
+If a judge wants the hard version, ask **Who can replace Maya on Saturday?**. The ranking
+explains availability, conflicts, skills and attendance, and each name opens that volunteer.
+
 ## The service lifecycle story
 
 Use this as the spoken spine, even when the clock forces you to skip a click:
@@ -85,7 +96,7 @@ waitlist the seed does not contain.
 
 ## If a judge asks
 
-- **“Is the optimiser real?”** Open `src-tauri/core/src/matching.rs`. The flow graph,
+- **“Is the optimizer real?”** Open `src-tauri/core/src/matching.rs`. The flow graph,
   scoring, min-cost flow, brute-force oracle, proptest, and 500-candidate performance test
   are all there. `docs/MATCHING_ENGINE.md` has the worked example.
 - **“Can the UI invent a number?”** The workflow commands in `src-tauri/core/src/workflows.rs`
@@ -97,7 +108,10 @@ waitlist the seed does not contain.
 - **“Where is the audit trail?”** `audit_events` is written in the same transaction as the
   change. `/coordinator/audit` reads it.
 - **“Can I see the schema?”** `docs/DATA_MODEL.md` and
-  `src-tauri/core/migrations/0001_initial.sql` through `0003_service_lifecycle.sql`.
+  `src-tauri/core/migrations/0001_initial.sql` through `0006_auth_attempts.sql`.
+- **“Is the question box an AI?”** No. `src/lib/ask/answers.ts` is a keyword matcher over a
+  small intent registry; every number comes from the same selectors the screens use, and each
+  answer prints the count of records it read. That is deliberate: a judge can check it.
 - **“What is not finished?”** Multi-user sync, code signing, and a separate kiosk webview.
   Accounts and role checks are implemented in Rust; the QR payload is a real
   `civicflow://checkin/<token>` value that the core validates. Say both without hedging.

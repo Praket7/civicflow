@@ -83,7 +83,7 @@ export function ShiftRosterPage() {
       <Page width="narrow">
         <EmptyState
           title="That shift could not be found"
-          copy="It may have been cancelled, or the roster link is out of date. The schedule has every current shift."
+          copy="It may have been canceled, or the roster link is out of date. The schedule has every current shift."
           action={<ButtonLink to="/coordinator/schedule">Back to schedule</ButtonLink>}
         />
       </Page>

@@ -456,6 +456,15 @@ export const routes: RouteMeta[] = [
     spec: "Comfort and access",
     keywords: ["accessibility", "contrast", "text size", "motion"],
   },
+  {
+    id: "ask",
+    number: 50,
+    title: "Ask CivicFlow",
+    path: "/ask",
+    role: "coordinator",
+    spec: "Questions answered from local records",
+    keywords: ["ask", "question", "answers", "help", "q and a"],
+  },
 ];
 
 function scoreRoute(route: RouteMeta, query: string): number {

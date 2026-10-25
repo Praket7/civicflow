@@ -36,7 +36,7 @@ const CAUSE_COPY: Record<Cause, string> = {
   animals: "Animal welfare",
 };
 
-/** Labels stay keys in code, but read through the active catalogue on screen. */
+/** Labels stay keys in code, but read through the active catalog on screen. */
 export const CAUSE_LABELS: Record<Cause, string> = new Proxy(CAUSE_COPY, {
   get(target, property: string) {
     const value = target[property as Cause];
@@ -913,13 +913,4 @@ export function getVolunteerImpact(volunteerId: string, session: SessionOverride
       percent: Math.round((minutes / total) * 100),
     })),
   };
-}
-
-export function getVolunteerInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }

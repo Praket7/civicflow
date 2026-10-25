@@ -1,6 +1,6 @@
 # Coverage health and attention rules
 
-Coverage is not one number with a nice colour. CivicFlow reports two separate measures so
+Coverage is not one number with a nice color. CivicFlow reports two separate measures so
 the dashboard cannot contradict itself:
 
 ## 1. Role coverage (the metric card)
@@ -25,7 +25,7 @@ The demo-week values are 100 %, 92 %, 100 %, 83 %, 76 %, 62 %, 90 % (Mon 12 → 
 They are computed from shift rows, not stored as a chart series. A day with two shifts
 (Saturday) sums both.
 
-The chart is labelled “Seat fill” precisely because it is not the role coverage metric.
+The chart is labeled “Seat fill” precisely because it is not the role coverage metric.
 
 ## 3. Needs Attention
 

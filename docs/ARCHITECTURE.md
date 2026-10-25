@@ -37,6 +37,16 @@ token on every workspace command, checks the role, and delegates to `workflows` 
 when that directory is empty. No SQL or business rule lives in the shell beyond the access
 check.
 
+### Ask CivicFlow (`src/lib/ask`)
+
+The question box is a read-only view over the same snapshot. `answers.ts` holds a small
+registry of intents: each declares the keywords that select it, the roles that may ask it,
+and a function that computes the answer from `DemoWorkspace` and `SessionSnapshot` through
+the shared selectors. The matcher scores keywords, requires three points before it claims an
+answer, and falls back to a refusal that lists the questions it can answer. Answers carry the
+records they read and a route to act on, and the page renders them without a network call or
+a model.
+
 ### Frontend (`src`)
 
 ```text
@@ -72,7 +82,7 @@ persist their own copies.
 | Notifications                        | `notifications`                      | Inbox, Mission Control badge                  |
 | Audit trail                          | `audit_events`                       | Audit, Activity, confirmation copy            |
 
-Seed-only catalogues (volunteers, shifts, roles, opportunities, impact totals, curated hours)
+Seed-only catalogs (volunteers, shifts, roles, opportunities, impact totals, curated hours)
 remain in `shared/demo-workspace.json`; mutable state starts in `shared/session-seed.json`.
 Both are loaded by the Rust seeder and the browser fallback.
 
@@ -100,7 +110,7 @@ Both are loaded by the Rust seeder and the browser fallback.
 
 ## Design tokens
 
-`src/styles/tokens.css` owns every colour and type decision. Components consume semantic
+`src/styles/tokens.css` owns every color and type decision. Components consume semantic
 aliases (`--surface-paper`, `--action-primary`, `--cause-food`) rather than raw hex.
 
 ## Navigation and routing

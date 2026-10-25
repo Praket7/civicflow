@@ -64,14 +64,15 @@ The last pass treated the whole product as one surface rather than a set of scre
 - **Reporting.** The custom report trend grouped display labels in insertion order, so its
   axis jumped between dates. It now groups by ISO date, sorts before slicing, and the preview
   table is newest-first. A unit test pins the ordering.
-- **Verification.** `pnpm verify` passes: typecheck, ESLint, Prettier, **110 tests** in eight
-  files, the production web build, and the Rust workspace tests. The 42 registered routes plus
+- **Verification.** `pnpm verify` passes: typecheck, ESLint, Prettier, **180 tests** in 18
+  files, the production web build, and the Rust workspace tests. The 50 registered routes plus
   `/help` were swept at 1600 × 1000, 1280 × 800, 1024 × 720, 820 × 1180 and 390 × 844 with no
-  overflow, console errors or blank renders. Axe reported no findings on 43 routes; the
+  overflow, console errors or blank renders. Axe reported no findings on the 50 routes
+  registered today; the
   rendered-pixel contrast sweep reported no text violations in light or dark theme. **22**
   scripted interaction checks and **9** persistence checks passed, including save/reload,
   hours approval, kiosk check-in, CSV export, and demo reset. `pnpm db:verify` reads the live
-  desktop file and checks integrity, schema v4, 32 tables, foreign keys and record counts.
+  desktop file and checks integrity, schema v6, 32 tables, foreign keys and record counts.
 
 ## Collapsed navigation rail
 
@@ -93,7 +94,7 @@ them.
    as one photo, one greeting, an impact quote, and derived metrics.
 2. **Coverage card vs bars (01/19):** a 91 % card sat above bars averaging roughly 86 %. The
    card is now **role coverage** (filled required slots / required slots) and the bars are
-   **seat fill** (confirmed / capacity), each labelled and documented in `COVERAGE_HEALTH.md`.
+   **seat fill** (confirmed / capacity), each labeled and documented in `COVERAGE_HEALTH.md`.
 3. **Screenshots as photography (04, 16, 17, 20, 37):** replaced with licensed community
    photos. App screenshots never stand in for people or programs.
 4. **Ghosted/duplicated headings (05, 07, 12, 13, 15, 21, 29):** one title block per page,
@@ -110,7 +111,7 @@ them.
 7. **Hours/impact totals (03/12/13):** the mocks mix 84.5, 327, 82, 73, and 418 without
    saying which is year-to-date, active, or this month. Every screen now labels the scope and
    reads from one record. “Unique volunteers this year” and “currently active” are separate.
-8. **Colour-only status:** all statuses pair colour with text and a dot/icon.
+8. **Color-only status:** all statuses pair color with text and a dot/icon.
 9. **Fixed 1000 px pages:** 1600 × 1000 remains the review target; screens with more content
    scroll inside the window rather than shrinking type below readable sizes.
 
@@ -122,24 +123,24 @@ Text tokens target at least 4.5:1 on the warm canvas and paper surfaces
 3 px cobalt outline with 2 px offset. The accessibility screen offers higher contrast and
 underlined links for anyone who needs more.
 
-Tinted statuses use ink/soft pairs rather than the raw signal colour: `--tone-green-ink`,
+Tinted statuses use ink/soft pairs rather than the raw signal color: `--tone-green-ink`,
 `--tone-amber-ink`, `--tone-red-ink`, `--tone-cobalt-ink`, `--tone-violet-ink`,
 `--tone-cyan-ink`, and `--tone-teal-ink` each clear 4.5:1 on their own soft surface in both
 themes. Inline `--color-green`/`--color-red`/`--color-orange` are reserved for fills, dots,
 and bars, never for text.
 
 Two Chrome DevTools Protocol sweeps computed contrast for every text-bearing element on all
-42 registered routes plus `/help` in light and dark theme (2026-10-24). `scripts/audit-contrast.mjs` composites each
+50 registered routes plus `/help` in light and dark theme (2026-10-24). `scripts/audit-contrast.mjs` composites each
 element over its computed ancestor background stack; the stricter pass samples the rendered
 PNG only where the glyphs actually paint, by diffing the frame against the same frame with
 text hidden, so decoration, rounded-badge corners, and disclosure content cannot produce
 false readings. Both report no violations outside photography.
 
 That pass found and fixed hard-coded light-theme inks that leaked into dark mode, a hero
-scrim tinted with `--ink-rgb` (which flips light in dark theme, turning white text grey),
+scrim tinted with `--ink-rgb` (which flips light in dark theme, turning white text gray),
 photo badges using translucent tints, muted table headers on tinted rows, small white
 metadata at 40–66 % opacity over photography, and several green/amber/red numbers drawn in
-raw signal colours. It also caught the AutoRoster and Check-In “worlds”, which paint cream
+raw signal colors. It also caught the AutoRoster and Check-In “worlds”, which paint cream
 panes but inherit theme tokens: they are now pinned with `data-theme="light"` on their root,
 so both the pane and its ink stay in the same palette in either app theme. Overlapping
 avatar stacks no longer clip initials, kiosk exit links are 44 px targets, and the
@@ -150,7 +151,7 @@ Badges that sit on a photo use `<Badge onMedia>`, which swaps the translucent ti
 solid `--scrim-rgb` glass, so the label stays legible whatever the image is doing.
 
 jsdom cannot evaluate composited contrast, so the axe test disables the contrast rule; the
-CDP sweep above is the automated evidence for colour, and this document records the token
+CDP sweep above is the automated evidence for color, and this document records the token
 decision behind it.
 
 ## Print and kiosk verification
@@ -161,7 +162,7 @@ shell removed. The certificate stylesheet no longer leaks into other routes. Web
 (Tauri on macOS) still needs a manual pass; the rules use standard `@page`, `break-inside`,
 and visibility declarations, but no automated WebKit printer is available here.
 
-`src/app/print.test.tsx` is the regression guard: it mounts all 43 routes, checks the
+`src/app/print.test.tsx` is the regression guard: it mounts all 50 routes, checks the
 certificate sets and clears its print gate, checks the impact report still renders the
 sections it prints, and asserts the certificate's print-hiding selector stays scoped to that
 gate. jsdom does not evaluate `@media print`, so the rendered-PDF result above remains the

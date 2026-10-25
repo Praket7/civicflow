@@ -78,13 +78,13 @@ ordered display lists, not records queried independently.
 
 ### Participation and recruitment
 
-| Table                     | Purpose and important columns                                                                                                                                                                                        |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `saved_opportunities`     | Volunteer shortlist, primary key `(volunteer_id, opportunity_id)`, plus `saved_at`.                                                                                                                                  |
-| `applications`            | Recruitment pipeline row with stage (`applied`, `review`, `onboarding`, `active`), source, cause, note, and `skills_json`.                                                                                           |
-| `volunteer_stage_history` | Immutable stage transitions for an application: from/to stage, time, actor, note. Exists so stage changes are not just overwrites.                                                                                   |
-| `registrations`           | A volunteer’s place on a shift: role, created/updated time, and status (`registered` by default; cancelled, completed, and no-show are written by workflows). Status is enforced in Rust, not by a CHECK constraint. |
-| `waitlist_entries`        | Ordered recovery queue: shift, volunteer, created time, status (`waiting`, `promoted`, `declined`, `expired`, `removed`), positive position, and eligible role. Unique per shift and volunteer.                      |
+| Table                     | Purpose and important columns                                                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `saved_opportunities`     | Volunteer shortlist, primary key `(volunteer_id, opportunity_id)`, plus `saved_at`.                                                                                                                                 |
+| `applications`            | Recruitment pipeline row with stage (`applied`, `review`, `onboarding`, `active`), source, cause, note, and `skills_json`.                                                                                          |
+| `volunteer_stage_history` | Immutable stage transitions for an application: from/to stage, time, actor, note. Exists so stage changes are not just overwrites.                                                                                  |
+| `registrations`           | A volunteer’s place on a shift: role, created/updated time, and status (`registered` by default; canceled, completed, and no-show are written by workflows). Status is enforced in Rust, not by a CHECK constraint. |
+| `waitlist_entries`        | Ordered recovery queue: shift, volunteer, created time, status (`waiting`, `promoted`, `declined`, `expired`, `removed`), positive position, and eligible role. Unique per shift and volunteer.                     |
 
 Waitlist order is deterministic: `(shift_id, position)`, and promotion checks the role
 requirement before moving an entry to `promoted` and creating its registration in the same

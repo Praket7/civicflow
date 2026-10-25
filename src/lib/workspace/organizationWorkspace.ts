@@ -5,6 +5,7 @@ import type {
   Organization,
   Volunteer,
 } from "../../types/domain";
+import { initialsOf } from "../initials";
 import type { OrganizationProfile } from "../organizations/store";
 import { demoWorkspace } from "./dataset";
 
@@ -33,13 +34,6 @@ export const DEMO_ORGANIZATION = {
   id: demoWorkspace.organization.id,
   name: demoWorkspace.organization.name,
 };
-
-function initialsFor(name: string): string {
-  const words = name.split(/\s+/).filter(Boolean);
-  const letters =
-    words.length > 1 ? `${words[0][0]}${words[words.length - 1][0]}` : words[0]?.slice(0, 2);
-  return (letters ?? "CF").toUpperCase();
-}
 
 function firstNameFor(name: string): string {
   return name.split(" ")[0] || name;
@@ -77,7 +71,7 @@ function workspaceForAccount(account: Account | null): DemoWorkspace {
     id: volunteerId,
     name: account.name,
     firstName: firstNameFor(account.name),
-    initials: initialsFor(account.name),
+    initials: initialsOf(account.name),
     role: "Volunteer",
     tone: "violet",
     email: account.email,
@@ -111,7 +105,7 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
   const organization: Organization = {
     id: org?.id ?? "org-local",
     name: org?.name ?? "Your organization",
-    initials: initialsFor(org?.name ?? "Your organization"),
+    initials: initialsOf(org?.name ?? "Your organization"),
     mission: org?.description ?? "",
     city: org?.city ?? "",
     state: org?.state ?? "",
@@ -126,7 +120,7 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
     id: account?.role === "coordinator" ? account.id : "coordinator-local",
     name: account?.role === "coordinator" ? account.name : "",
     firstName: account?.role === "coordinator" ? firstNameFor(account.name) : "",
-    initials: account?.role === "coordinator" ? initialsFor(account.name) : "",
+    initials: account?.role === "coordinator" ? initialsOf(account.name) : "",
     role: "Coordinator",
     tone: "amber",
     email: account?.role === "coordinator" ? account.email : organization.email,
@@ -137,7 +131,7 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
           id: account.volunteerId,
           name: account.name,
           firstName: firstNameFor(account.name),
-          initials: initialsFor(account.name),
+          initials: initialsOf(account.name),
           role: "Volunteer",
           tone: "violet",
           email: account.email,

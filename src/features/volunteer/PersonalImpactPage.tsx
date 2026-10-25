@@ -22,6 +22,7 @@ import {
   SectionHeader,
   StatCard,
 } from "../../components/ui";
+import { CAUSE_COLORS } from "../../lib/causes";
 import { t } from "../../lib/i18n";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
@@ -33,17 +34,7 @@ import {
   getImpactStories,
   getVolunteerImpact,
 } from "../../lib/workspace/selectors";
-import type { Cause } from "../../types/domain";
 import styles from "./PersonalImpactPage.module.css";
-
-const CAUSE_COLORS: Record<Cause, string> = {
-  food: "var(--color-coral)",
-  education: "var(--color-violet)",
-  environment: "var(--color-teal)",
-  health: "var(--color-cyan)",
-  community: "var(--color-orange)",
-  animals: "var(--color-rose, #f2748c)",
-};
 
 function displayHours(minutes: number): string {
   const hours = minutes / 60;

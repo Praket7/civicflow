@@ -23,15 +23,7 @@ import {
   type ReportTemplate,
 } from "../../lib/workspace/selectors";
 import styles from "./Reports.module.css";
-
-const CAUSE_COLORS: Record<string, string> = {
-  food: "var(--color-coral)",
-  education: "var(--color-violet)",
-  environment: "var(--color-teal)",
-  health: "var(--color-cyan)",
-  community: "var(--color-orange)",
-  animals: "var(--color-rose, #f2748c)",
-};
+import { CAUSE_COLORS } from "../../lib/causes";
 
 type Category = "all" | ReportTemplate["category"];
 

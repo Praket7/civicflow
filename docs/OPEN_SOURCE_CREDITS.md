@@ -31,18 +31,18 @@ are design mocks and are not loaded by the application. All photography in
 | `volunteers/gloria-weber.jpg`                     | Pexels, photo 30004320 — <https://www.pexels.com/photo/30004320/>                                                                                                                                       | Pexels License                                                   | AutoRoster volunteer portrait                 |
 
 Files were cropped and resized for layout, and the Impact Analytics skyline is
-colour-graded and scrimmed in the interface. Cropping and grading are
+color-graded and scrimmed in the interface. Cropping and grading are
 adaptations: the CC BY-SA images remain under CC BY-SA 4.0, with the attribution
-above. The portraits are square centre crops of the listed Pexels photos. Pexels
+above. The portraits are square center crops of the listed Pexels photos. Pexels
 does not require attribution; credits are recorded anyway.
 
-Licence check for redistribution: the [Pexels License](https://www.pexels.com/license/)
+License check for redistribution: the [Pexels License](https://www.pexels.com/license/)
 allows free commercial and non-commercial use and modification, and does not
 require attribution. Its limits are selling unmodified copies, redistributing on
 another stock or wallpaper platform, and implying endorsement by the people
 pictured. Bundling the portraits inside this application is within those terms.
 The skyline is CC BY-SA 4.0, which permits redistribution and adaptation with
-attribution and share-alike; the cropped asset stays under that licence.
+attribution and share-alike; the cropped asset stays under that license.
 
 Accessed 23 October 2026. Pexels license: <https://www.pexels.com/license/>.
 

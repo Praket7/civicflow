@@ -15,6 +15,7 @@ import {
   StatCard,
   Tabs,
 } from "../../components/ui";
+import { CAUSE_COLORS } from "../../lib/causes";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
   CAUSE_LABELS,
@@ -23,15 +24,6 @@ import {
   getRetentionRows,
   getUpcomingShiftRows,
 } from "../../lib/workspace/selectors";
-
-const CAUSE_COLORS: Record<string, string> = {
-  food: "var(--color-coral)",
-  education: "var(--color-violet)",
-  environment: "var(--color-teal)",
-  health: "var(--color-cyan)",
-  community: "var(--color-orange)",
-  animals: "var(--color-rose, #f2748c)",
-};
 
 export function RetentionPage() {
   const { workspace, session } = useWorkspace();

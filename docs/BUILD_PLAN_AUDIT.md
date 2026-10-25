@@ -9,12 +9,17 @@ was changed. The temporary probe used to exercise the Rust boundary was removed.
 > accessibility-tree and 200% zoom audits, and packaged macOS plus cross-platform release
 > builds. The audit is kept as the record of the 23rd; see
 > [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the current state.
+>
+> **Read the counts as of 2026-10-23.** Every number in this document describes the tree on
+> that date (42 routes, 17 tables, 65 frontend and 30 Rust tests). The current tree has 50
+> routes, a 32-table schema at version 6, 180 frontend tests and 71 Rust tests. The findings
+> are the record; [TESTING.md](TESTING.md) is the live gate.
 
 ## Verdict
 
 **No. CivicFlow is not finished against the build plan.**
 
-The screen layer is essentially complete: all 42 routes resolve to real screens, the
+The screen layer is essentially complete: all 42 registered routes resolve to real screens, the
 design system is coherent, `pnpm verify` is green, and there are working SQLite writes,
 audit events, backups and restores. That is a strong competition demo surface.
 
@@ -22,7 +27,7 @@ The plan's engineering spine is not complete. Three phases miss their defining o
 (6, 7 and 10), and the remaining seven are partial. Most importantly:
 
 - AutoRoster is a client-side greedy picker, not the planned Rust min-cost max-flow
-  optimiser, and has no invariants, brute-force oracle, property tests or benchmark.
+  optimizer, and has no invariants, brute-force oracle, property tests or benchmark.
 - The Rust core does not enforce registration eligibility, capacity or timing.
 - The service lifecycle stops at check-out: no hours request is created, no verification
   record is issued, no notification is generated, and cancellation/recovery does not exist.
@@ -104,7 +109,7 @@ No phase currently meets its full definition of done.
 **Exists**
 
 - Central tokens, bundled Geist/Source Serif fonts, coordinator/volunteer/public shells,
-  route metadata, command palette, skip link, labelled controls, text+icon statuses,
+  route metadata, command palette, skip link, labeled controls, text+icon statuses,
   reduced motion, high contrast, text scaling and chart tables.
 - All 42 registered screens are built; the route registry has 42 views plus a fallback.
 - Contrast and print audits run against real Chromium; the print audit is part of `verify`.
@@ -175,7 +180,7 @@ canceled / completed / no_show` state machine does not exist.
 
 **Not met.** This is the plan's technical centerpiece.
 
-- The optimiser is implemented in `src/features/coverage/AutoRosterPage.tsx`, in
+- The optimizer is implemented in `src/features/coverage/AutoRosterPage.tsx`, in
   TypeScript. The Rust crate has no `matching/`, eligibility, scoring, flow or explain
   module.
 - `suggestedPlan` walks each gap and takes the highest-scoring remaining candidate. That is
@@ -189,7 +194,7 @@ canceled / completed / no_show` state machine does not exist.
   `proptest` suite.
 - There is no benchmark for 100/250/500 volunteers; `MATCHING_ENGINE.md` does not exist.
 - Applying a plan fires one registration/promotion command per candidate. Registrations are
-  serialised by the session queue, but there is no single transaction and no capacity check,
+  serialized by the session queue, but there is no single transaction and no capacity check,
   so a full shift can be overfilled.
 
 ### Phase 7 — Attendance, waitlist recovery, hours and verification
@@ -244,7 +249,7 @@ canceled / completed / no_show` state machine does not exist.
   path handling required by the plan are absent.
 - PDF export is browser print-to-PDF (Chromium audited, WebKit untested). There is no Rust
   PDF renderer or file output, which the plan explicitly requires.
-- Impact metrics are not stored per opportunity/shift. The organisation totals are one
+- Impact metrics are not stored per opportunity/shift. The organization totals are one
   seeded row; volunteer impact meals/families are arithmetic estimates.
 - Retention is fabricated: `getRetentionRows` returns `18 + (index * 7) % 26` eligible and
   `58 + (index * 13) % 23` percent returned, not a cohort calculation. `METRICS.md` does not
@@ -280,7 +285,7 @@ canceled / completed / no_show` state machine does not exist.
 - No `docs/ACCESSIBILITY.md` recording supported features, manual date and limitations.
 - Failure injection is partial: no read-only data directory, missing DB, failed PDF
   destination, long/Unicode data or large-text tests.
-- No coverage evidence organized around the required behavioural areas.
+- No coverage evidence organized around the required behavioral areas.
 
 ### Phase 10 — NLC release, documentation and presentation
 
@@ -332,7 +337,7 @@ These are worth protecting while the plan gaps are closed.
 
 1. **Stop calling it feature-complete.** Record the current state honestly in README and
    IMPLEMENTATION_STATUS so the demo does not promise verification, notifications or
-   AutoRoster behaviour that is not there.
+   AutoRoster behavior that is not there.
 2. **Build the AutoRoster core in Rust** (eligibility, scoring, role slots, min-cost flow,
    explanation, invariants, brute-force oracle, proptest, benchmark). This is the largest
    rubric differentiator.

@@ -27,6 +27,7 @@ import {
   StatCard,
   Tabs,
 } from "../../components/ui";
+import { initialsOf } from "../../lib/initials";
 import type { TabItem } from "../../components/ui";
 import {
   CAUSE_LABELS,
@@ -38,7 +39,6 @@ import {
   getOpportunities,
   getRoster,
   getShiftRowsForOpportunity,
-  getVolunteerInitials,
   timeRange,
 } from "../../lib/workspace/selectors";
 import type { HourRow, ShiftRow } from "../../lib/workspace/selectors";
@@ -346,7 +346,7 @@ export function OpportunityManagementPage() {
 
               <div className={styles.coordinatorRow}>
                 <Avatar
-                  initials={getVolunteerInitials(opportunity.coordinator)}
+                  initials={initialsOf(opportunity.coordinator)}
                   tone="amber"
                   size={34}
                   label={opportunity.coordinator}

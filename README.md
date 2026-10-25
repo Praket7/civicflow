@@ -4,9 +4,9 @@
 service opportunities and gives coordinators a local-first picture of who is serving,
 where coverage is thin, and why every assignment was made.
 
-This repository implements the approved CivicFlow build plan and all 42 approved design
-surfaces. Mission Control, every workflow write, and the audit trail are backed by Rust and
-SQLite. Accounts sign people in — locally, or through Supabase Auth with Google and email —
+This repository implements the approved CivicFlow build plan and every one of the 42 approved
+design references. Fifty routes are registered today, and each one resolves to a real screen.
+Mission Control, every workflow write, and the audit trail are backed by Rust and SQLite. Accounts sign people in — locally, or through Supabase Auth with Google and email —
 and the core enforces coordinator and volunteer roles before it returns a row. The React
 session layer is a cache of one snapshot returned by the core.
 
@@ -14,15 +14,20 @@ session layer is a cache of one snapshot returned by the core.
 
 ## What is here
 
-- **42 reference screens, one design system.** Every registered route resolves to a real
-  screen, plus one added account-sign-up surface. No placeholder pages remain. The mapping
-  from reference image to route is in [SCREEN_MAP.md](docs/SCREEN_MAP.md).
+- **50 registered screens, one design system.** Every route resolves to a real screen, plus
+  the added account, organization and question-box surfaces. No placeholder pages remain. The
+  mapping from reference image to route is in [SCREEN_MAP.md](docs/SCREEN_MAP.md).
 - **Coordinator operations.** Mission Control, coverage and AutoRoster, schedule, programs,
   live rosters, attendance, the kiosk, hours review, credentials, recruitment, analytics,
   reports, records, audit, backups, settings, accounts, and accessibility.
 - **Volunteer service.** Home, discovery and opportunity detail, saved shortlist, schedule,
   shift preparation, check-in, hours, verification, personal impact, notifications, and
   profile.
+- **Ask CivicFlow.** A question box over the same snapshot: "Which shifts are short this
+  week?", "Who can replace Maya on Saturday?", "Whose credentials expire soon?". Answers are
+  computed by fixed rules in `src/lib/ask/answers.ts`, cite the rows they read, and link to
+  the screen where the coordinator acts. No model, no network, and a plain refusal when the
+  records do not cover the question.
 - **One read model.** Volunteers, shifts, roles, coverage, hours, credentials, applicants,
   and audit events come from `src/lib/workspace/selectors.ts`; screens do not keep private
   mock arrays. Saved opportunities, attendance, waitlist, registrations, hours decisions,
@@ -35,7 +40,7 @@ session layer is a cache of one snapshot returned by the core.
 - **Free-licensed photography.** Pexels and Wikimedia images under `public/media`, credited
   in [OPEN_SOURCE_CREDITS.md](docs/OPEN_SOURCE_CREDITS.md). Reference mocks are never
   bundled.
-- **Accessibility and language.** Semantic landmarks and headings, a skip link, labelled
+- **Accessibility and language.** Semantic landmarks and headings, a skip link, labeled
   controls and tables, text-plus-icon statuses, visible focus, reduced motion, high
   contrast, underlined links, text scaling, a table alternative under every chart, and a
   60-language interface with translated dates and right-to-left layout. The accessibility
@@ -67,13 +72,14 @@ pnpm tauri build      # .app and .dmg on macOS; installers on Windows/Linux
 Demo accounts: `praket@feedmorewny.org` (coordinator) and `maya.chen@gmail.com`
 (volunteer), both with the password `civicflow-demo`. Entry points: `/launch`, `/welcome`,
 `/sign-in`, `/create-account`, `/coordinator/mission-control`, `/volunteer/home`,
-`/coordinator/kiosk`, and the
-in-app guide at `/help`. After the desktop app has run, `pnpm db:verify` checks the real
-SQLite file: integrity, schema v4, all 32 tables, foreign keys and record counts. The kiosk
+`/coordinator/kiosk`, `/ask`, and the in-app guide at `/help`. After the desktop app has run,
+`pnpm db:verify` checks the real SQLite file: integrity, schema v6, all 32 tables, foreign
+keys and record counts. The kiosk
 displays the current six-digit code; it rotates every 15 minutes and is validated by the
 Rust core, so there is no fixed code to memorize. The volunteer screen also renders a
-`civicflow://checkin/<token>` QR code that the kiosk can scan. All data is local; the app
-makes no network request at runtime.
+`civicflow://checkin/<token>` QR code that the kiosk can scan. Workspace data never leaves
+the device. The app is fully usable offline; hosted sign-in with Google or email is optional
+and only speaks to Supabase when its two keys are configured.
 
 ## Architecture
 
@@ -99,10 +105,11 @@ and the NYS event audit in [FBLA_NYS_RUBRIC_AUDIT.md](docs/FBLA_NYS_RUBRIC_AUDIT
 ## Verification
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm build:web`: clean.
-- 157 frontend tests: axe checks across all 43 routes, coverage maths, selector consistency,
+- 180 frontend tests: axe checks across all 50 routes, coverage maths, selector consistency,
   the IPC command/argument map including the session token, preview cancellation recovery,
-  the preview fallback, hosted identity and email-link parsing, and preview snapshot restore.
-- 64 Rust tests: migrations/seed, foreign keys, account creation and its refusals, hosted
+  the preview fallback, hosted identity and email-link parsing, preview snapshot restore, and
+  the Ask CivicFlow matcher and totals.
+- 71 Rust tests: migrations/seed, foreign keys, account creation and its refusals, hosted
   account linking, coverage
   totals, attention ordering,
   notifications and their audience scoping, sign-in/sign-out, role refusal, volunteer
@@ -112,11 +119,11 @@ and the NYS event audit in [FBLA_NYS_RUBRIC_AUDIT.md](docs/FBLA_NYS_RUBRIC_AUDIT
 - WebdriverIO drives the embedded WebDriver server inside the real macOS window: sign-in,
   coordinator Mission Control, volunteer route refusal, sign-out, volunteer home, and
   coordinator route refusal. `pnpm test:native` is part of CI.
-- The accessibility-tree audit reads Chromium's accessibility tree for all 42 routes and
+- The accessibility-tree audit reads Chromium's accessibility tree for all 50 routes and
   requires a main landmark, one `h1`, and names on every interactive control. The 200% zoom
   audit renders an 800 × 500 CSS viewport and fails on horizontal overflow or a lost heading.
-- 42 registered routes plus `/help` captured at 1600 × 1000 and compared against their
-  references during the visual sweep; the same set was checked at 1280, 1024, 820 and 390.
+- All 50 registered routes plus `/help` and `/credits` captured at 1600 × 1000 and compared
+  against their references during the visual sweep; the same set was checked at 1280, 1024, 820 and 390.
   Representative captures are in `screenshots/`; notes and reference defects are in
   [VISUAL_QA.md](docs/VISUAL_QA.md).
 - `pnpm db:verify` reports the live desktop database path, integrity, schema version, table

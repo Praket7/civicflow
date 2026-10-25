@@ -11,7 +11,7 @@ event before returning a fresh snapshot.
 
 - Tauri 2 desktop shell, React 19 + TypeScript + Vite, Rust core crate, SQLite through
   `rusqlite`.
-- Embedded migrations at schema version 4, deterministic seed, foreign keys, integrity
+- Embedded migrations at schema version 6, deterministic seed, foreign keys, integrity
   checks, and reset-to-seed.
 - Structured IPC errors with `code`, `message`, `field`, and optional `action`.
 - One `WorkspaceRepository` boundary with a desktop implementation and a browser fallback
@@ -75,7 +75,7 @@ no account request. See [AUTH.md](AUTH.md).
 
 ### Screens
 
-All 42 registered routes resolve to built screens. The main working surfaces:
+All 50 registered routes resolve to built screens. The main working surfaces:
 
 - **Coordinator:** Mission Control, Coverage, AutoRoster, Schedule, Opportunities, Create
   Opportunity, Opportunity Management, Live Roster, Volunteers, Volunteer Detail,
@@ -96,9 +96,9 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
 
 ### Evidence and documentation
 
-- 157 frontend tests, 64 Rust tests, typecheck, lint, format, web build, contrast audit,
+- 180 frontend tests, 71 Rust tests, typecheck, lint, format, web build, contrast audit,
   print audit, accessibility-tree audit, and 200% zoom audit.
-- The accessibility-tree audit reads Chromium's accessibility tree on all 43 routes and
+- The accessibility-tree audit reads Chromium's accessibility tree on all 50 routes and
   requires a main landmark, one level-one heading, and a name on every interactive control.
 - The zoom audit renders an 800 × 500 CSS viewport (a 1600 × 1000 window at 200%) and fails
   on horizontal overflow or a lost heading.
@@ -112,7 +112,7 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
   `ENVIRONMENT.md`, `DECISIONS.md`, and `OPEN_SOURCE_CREDITS.md`.
 - Reference comparisons and visual QA notes, with representative captures under
   `screenshots/`; the full route sweep lives in [VISUAL_QA.md](VISUAL_QA.md).
-- `pnpm db:verify` reads the running desktop database and checks integrity, schema v4, 32
+- `pnpm db:verify` reads the running desktop database and checks integrity, schema v6, 32
   tables, foreign keys and record counts.
 
 ### Release artifacts
@@ -144,4 +144,4 @@ cross-compiling from macOS.
   not distort the denominator. The demo seed includes six months of service history for it.
 - Historical mock imagery is replaced with licensed Pexels and Wikimedia photography,
   credited in `OPEN_SOURCE_CREDITS.md`.
-- Status is never colour-only. Every badge carries text and a shape or icon.
+- Status is never color-only. Every badge carries text and a shape or icon.

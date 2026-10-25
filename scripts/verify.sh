@@ -4,6 +4,7 @@ set -euo pipefail
 pnpm typecheck
 pnpm lint
 pnpm format
+pnpm check:copy
 pnpm test
 pnpm build:web
 

@@ -1,4 +1,7 @@
-# Screen map — 42 references to 46 routes
+# Screen map — 42 references to 50 registered routes
+
+The 42 design references map onto 42 screens; eight more routes cover accounts, password
+recovery, the hosted email link, and the Ask CivicFlow question box.
 
 All paths are registered in `src/app/routes.ts`; mounting lives in `src/app/router.tsx`.
 “Shell” means the coordinator or volunteer navigation frame; “standalone” renders its own
@@ -52,6 +55,10 @@ canvas.
 | 44  | — (added, no reference)                     | `/coordinator/start`                                     | Coordinator Onboarding  | standalone        |
 | 45  | — (added, no reference)                     | `/coordinator/organization/new`                          | Create Organization     | standalone        |
 | 46  | — (added, no reference)                     | `/volunteer/start`                                       | Find an Organization    | standalone        |
+| 47  | — (added, no reference)                     | `/forgot-password`                                       | Forgot Password         | standalone        |
+| 48  | — (added, no reference)                     | `/reset-password`                                        | Reset Password          | standalone        |
+| 49  | — (added, no reference)                     | `/auth/callback`                                         | Email Link              | standalone        |
+| 50  | — (added, no reference)                     | `/ask`                                                   | Ask CivicFlow           | both shells       |
 
 ## Notes
 
@@ -65,3 +72,5 @@ canvas.
   surfaces stay identical.
 - Routes 44–46 continue that account path: coordinators join a team with a 10-digit code or
   create a workspace, volunteers discover public organizations or join with a 6-digit code.
+- Route 50 renders in both shells. The question box filters its suggestions by role, and the
+  coordinator-only questions are absent from a volunteer session.

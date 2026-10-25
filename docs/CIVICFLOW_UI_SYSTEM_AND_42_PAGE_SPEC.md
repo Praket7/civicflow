@@ -123,7 +123,7 @@ Use:
 
 - warnings
 - light editorial illustrations
-- optimistic accents
+- optimiztic accents
 
 ---
 

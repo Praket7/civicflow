@@ -1,0 +1,318 @@
+/* Ask CivicFlow. The surface follows the ledger system: paper cards, one action
+   color, and mono metadata. The answer is the only element with a left rule,
+   so the eye lands on the sentence before the citations. */
+
+.headerNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.composerCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background:
+    linear-gradient(180deg, rgba(var(--raised-rgb) / 0.6), transparent 62%), var(--surface-raised);
+}
+
+.composer {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.input {
+  height: 46px;
+  font-size: 15px;
+}
+
+.composer > button {
+  height: 46px;
+  padding: 0 20px;
+  flex: none;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.suggestLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface-paper);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard);
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.answerCard {
+  position: relative;
+  padding: 22px 24px 20px 26px;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--action-primary);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.answerMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.asked {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.headline {
+  margin: 12px 0 0;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.18;
+  color: var(--text-primary);
+}
+
+.summary {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.citations {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-soft);
+}
+
+.citation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.citationDot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+
+.citationDot[data-tone="green"] {
+  background: var(--status-success);
+}
+
+.citationDot[data-tone="amber"] {
+  background: var(--status-warning);
+}
+
+.citationDot[data-tone="red"] {
+  background: var(--status-critical);
+}
+
+.citationLink,
+.citationStatic {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.citationLink {
+  color: var(--text-primary);
+}
+
+.citationLink:hover .citationLabel {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.citationLabel {
+  font-weight: 560;
+}
+
+/* Offered questions are buttons, so the whole row is the target. */
+.citationAsk {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.citationAsk:hover .citationLabel {
+  color: var(--action-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.citationDetail {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.citationArrow {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.answerFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.provenance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--action-primary);
+  text-decoration: none;
+}
+
+.action:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.intro {
+  border-style: dashed;
+}
+
+.introKicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.introList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.introList strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .composer {
+    flex-direction: column;
+  }
+
+  .composer > button {
+    width: 100%;
+  }
+
+  .headline {
+    font-size: 22px;
+  }
+
+  .citationLink,
+  .citationStatic {
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .answerCard {
+    padding: 18px 18px 16px 20px;
+  }
+}

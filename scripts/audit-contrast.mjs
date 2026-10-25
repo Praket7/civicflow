@@ -2,8 +2,8 @@
 /**
  * WCAG contrast audit for every route, in light and dark theme.
  *
- * jsdom cannot composite colours, so the axe test in vitest disables the
- * colour-contrast rule. This script does the compositing for real: it loads the
+ * jsdom cannot composite colors, so the axe test in vitest disables the
+ * color-contrast rule. This script does the compositing for real: it loads the
  * running app in headless Chrome, walks every element that draws text, composites
  * it over its ancestor background stack, and reports anything below 4.5:1
  * (3:1 for text at 24px or 18.66px bold).

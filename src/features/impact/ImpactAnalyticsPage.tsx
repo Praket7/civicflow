@@ -3,6 +3,7 @@ import { ArrowUpRight, CalendarDays, ChevronDown } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "react-router-dom";
 import { ButtonLink, Page, PageHeader } from "../../components/ui";
+import { CAUSE_COLORS } from "../../lib/causes";
 import { t } from "../../lib/i18n";
 import { isDemoOrganization } from "../../lib/workspace/organizationWorkspace";
 import { useWorkspace } from "../../lib/workspace/session";
@@ -17,15 +18,6 @@ import {
 } from "../../lib/workspace/selectors";
 import type { Cause } from "../../types/domain";
 import styles from "./ImpactAnalytics.module.css";
-
-const CAUSE_COLORS: Record<Cause, string> = {
-  food: "#b4563d",
-  education: "#6e5a75",
-  environment: "#3d7168",
-  health: "#4f6f80",
-  community: "#b97a2c",
-  animals: "#a25663",
-};
 
 export function ImpactAnalyticsPage() {
   const { workspace, session } = useWorkspace();

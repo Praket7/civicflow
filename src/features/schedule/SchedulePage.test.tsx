@@ -26,7 +26,7 @@ function renderPage() {
 }
 
 describe("Schedule", () => {
-  it("summarises the demo week and its role gaps by day", async () => {
+  it("summarizes the demo week and its role gaps by day", async () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Schedule" })).toBeInTheDocument();

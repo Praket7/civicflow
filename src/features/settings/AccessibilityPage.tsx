@@ -157,7 +157,7 @@ export function AccessibilityPage() {
                 </Badge>
               }
             />
-            <div className={styles.themeGrid} role="group" aria-label="Colour theme">
+            <div className={styles.themeGrid} role="group" aria-label="Color theme">
               {THEME_OPTIONS.map((option) => {
                 const Icon = option.icon;
                 const active = preferences.theme === option.id;
@@ -236,7 +236,7 @@ export function AccessibilityPage() {
             />
             <Toggle
               label="Higher contrast"
-              hint="Stronger supporting text and border contrast. Colour is never the only status signal."
+              hint="Stronger supporting text and border contrast. Color is never the only status signal."
               checked={session.settings.highContrast}
               onChange={(checked) =>
                 apply(
@@ -258,7 +258,7 @@ export function AccessibilityPage() {
             />
             <Toggle
               label="Underline links"
-              hint="Makes links identifiable without relying on colour perception."
+              hint="Makes links identifiable without relying on color perception."
               checked={session.settings.underlineLinks}
               onChange={(checked) =>
                 apply(
@@ -269,14 +269,14 @@ export function AccessibilityPage() {
             />
             <Toggle
               label="Text + shape status"
-              hint="Status badges keep their text label and dot alongside colour."
+              hint="Status badges keep their text label and dot alongside color."
               checked={session.settings.colourIndependent}
               onChange={(checked) =>
                 apply(
                   { colourIndependent: checked },
                   checked
                     ? "Text and shape signals stay on."
-                    : "Colour-independent signals are off.",
+                    : "Color-independent signals are off.",
                 )
               }
             />
@@ -520,7 +520,7 @@ export function AccessibilityPage() {
             </p>
             <p style={{ marginTop: 8, fontSize: 12.5, color: "rgba(255,255,255,0.58)" }}>
               Defaults: {DEFAULT_SETTINGS.textScale} text, high-contrast off, motion on,
-              colour-independent status on, system-agnostic light theme.
+              color-independent status on, system-agnostic light theme.
             </p>
             <p
               style={{

@@ -315,7 +315,7 @@ export function AutoRosterPage() {
     [data.candidates, options.blockConflicts, options.capWeekly],
   );
 
-  // The optimiser lives in Rust. This screen renders the returned plan and
+  // The optimizer lives in Rust. This screen renders the returned plan and
   // never invents an assignment of its own; the candidate list is only the
   // explainable pool that feeds the request.
   const activePlan = useMemo<PlanRow[]>(() => {
@@ -442,7 +442,7 @@ export function AutoRosterPage() {
           <div className={styles.titleCopy}>
             <h1 className={styles.title}>AutoRoster</h1>
             <p className={styles.lede}>
-              Fill the open roles on this shift from people already on your books. The optimiser
+              Fill the open roles on this shift from people already on your books. The optimizer
               weighs skills, availability, clashes, and how often someone turns up.
             </p>
           </div>
@@ -453,7 +453,7 @@ export function AutoRosterPage() {
               disabled={planning}
               icon={<Wand2 size={15} />}
             >
-              {t(planning ? "Working…" : "Run optimiser")}
+              {t(planning ? "Working…" : "Run optimizer")}
             </Button>
             <ButtonLink
               to={`/coordinator/shifts/${shift.id}`}
@@ -481,7 +481,7 @@ export function AutoRosterPage() {
           </p>
         </div>
         <label className={styles.shiftPicker}>
-          <span className={styles.srOnly}>Shift to optimise</span>
+          <span className={styles.srOnly}>Shift to optimize</span>
           <select
             value={shift.id}
             onChange={(event) => {
@@ -663,7 +663,7 @@ export function AutoRosterPage() {
                           { count: plannedCandidates.length },
                         )
                       : t("Nobody clears the current rules for this shift.")
-                    : t("Run the optimiser to see who fits each open role, and why.")}
+                    : t("Run the optimizer to see who fits each open role, and why.")}
               </p>
             </div>
             <div

@@ -47,7 +47,7 @@ const TASKS: Record<Cause, string[]> = {
   food: [
     "Pack produce and shelf-stable boxes for the day's pickups.",
     "Welcome families and help them choose what they need.",
-    "Keep tables stocked, labelled, and easy to reach.",
+    "Keep tables stocked, labeled, and easy to reach.",
     "Reset the distribution floor and break down boxes at the end.",
   ],
   education: [
@@ -156,7 +156,7 @@ export function VolunteerShiftPage() {
       <Page width="narrow">
         <EmptyState
           title="That shift is no longer available"
-          copy="It may have been cancelled or the link may be out of date. Your schedule has the latest confirmed shifts."
+          copy="It may have been canceled or the link may be out of date. Your schedule has the latest confirmed shifts."
           action={<ButtonLink to="/volunteer/schedule">Back to my schedule</ButtonLink>}
         />
       </Page>
@@ -540,8 +540,7 @@ export function VolunteerShiftPage() {
                     <summary>Tasks and sensory needs</summary>
                     <p>
                       Seated intake, sorting, and greeting roles are available. A quieter break room
-                      is available; noise-cancelling headphones can be borrowed at the check-in
-                      desk.
+                      is available; noise-canceling headphones can be borrowed at the check-in desk.
                     </p>
                   </details>
                   <details>

@@ -4,6 +4,7 @@ import { accountHome, useAuth } from "../lib/auth/session";
 import { isTauri } from "../lib/platform";
 import { WorkspaceSessionProvider } from "../lib/workspace/session";
 import { AccessibilityPage } from "../features/settings/AccessibilityPage";
+import { AskPage } from "../features/ask/AskPage";
 import { ApplicationsPage } from "../features/recruitment/ApplicationsPage";
 import { AttendancePage } from "../features/attendance/AttendancePage";
 import { AuditPage } from "../features/records/AuditPage";
@@ -111,6 +112,7 @@ export const pages: Record<string, ReactNode> = {
   backup: <BackupPage />,
   settings: <SettingsPage />,
   accessibility: <AccessibilityPage />,
+  ask: <AskPage />,
 };
 
 /**
@@ -126,9 +128,10 @@ function HomeRedirect() {
 function guarded(route: (typeof routes)[number]) {
   const page = pages[route.id];
   if (route.role === "public") return page;
-  // Display preferences are a shared surface: both roles can adjust them.
+  // Display preferences and the question box read the same records for both
+  // roles, so both roles may open them.
   const roles =
-    route.id === "settings" || route.id === "accessibility"
+    route.id === "settings" || route.id === "accessibility" || route.id === "ask"
       ? (["coordinator", "volunteer"] as const)
       : undefined;
   return (

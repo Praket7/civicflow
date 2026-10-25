@@ -19,8 +19,8 @@ import styles from "./auth.module.css";
 
 type Failure = {
   message: string;
-  /** A cancelled provider screen is not a broken link. */
-  cancelled?: boolean;
+  /** A canceled provider screen is not a broken link. */
+  canceled?: boolean;
   unconfigured?: boolean;
 };
 
@@ -39,8 +39,8 @@ function providerFailure(): Failure | null {
   const text = details.join(" ").toLowerCase();
   if (["access_denied", "access denied", "cancel"].some((signal) => text.includes(signal))) {
     return {
-      message: "Google sign-in was cancelled. Nothing changed on this device.",
-      cancelled: true,
+      message: "Google sign-in was canceled. Nothing changed on this device.",
+      canceled: true,
     };
   }
   return { message: details[0] };
@@ -142,7 +142,7 @@ export function AuthCallbackPage() {
 
           <div className={styles.localNote}>
             {failure ? (
-              failure.cancelled ? (
+              failure.canceled ? (
                 <X size={15} strokeWidth={1.9} aria-hidden="true" />
               ) : (
                 <AlertCircle size={15} strokeWidth={1.9} aria-hidden="true" />
@@ -153,7 +153,7 @@ export function AuthCallbackPage() {
             <div>
               <p className={styles.localTitle}>
                 {failure
-                  ? failure.cancelled
+                  ? failure.canceled
                     ? "You closed the browser"
                     : failure.unconfigured
                       ? "Not available here"
@@ -162,7 +162,7 @@ export function AuthCallbackPage() {
               </p>
               <p className={styles.localBody}>
                 {failure
-                  ? failure.cancelled
+                  ? failure.canceled
                     ? "Start again whenever you are ready. Pick the same account on the sign-in screen."
                     : failure.unconfigured
                       ? "This build runs on local accounts only. Sign in with an email and password."

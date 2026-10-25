@@ -82,7 +82,7 @@ The UI routes are guarded as a convenience, but the Rust layer is authoritative:
   (other than display preferences), reports and exports, account listing and resets, backups
   and restore, reset-to-seed, and the audit trail.
 - Volunteer-or-coordinator: reading a snapshot, saving an opportunity, reading a shift's
-  check-in code, registering, joining a waitlist, cancelling, checking in and out, and
+  check-in code, registering, joining a waitlist, canceling, checking in and out, and
   changing display preferences.
 - A volunteer command that names a `volunteer_id` must match the id attached to the session.
   A volunteer cannot act on another volunteer's record.

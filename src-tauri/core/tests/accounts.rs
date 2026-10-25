@@ -374,3 +374,34 @@ fn an_unknown_email_is_counted_without_revealing_whether_it_exists() {
         .unwrap();
     assert_eq!(locked, 1, "unknown emails are throttled the same way");
 }
+
+#[test]
+fn resetting_the_demo_workspace_clears_a_sign_in_lock() {
+    let mut database = seeded();
+    for _ in 0..6 {
+        let _ = sign_in(
+            database.connection(),
+            "praket@feedmorewny.org",
+            "not-the-password",
+            false,
+        );
+    }
+    let error = sign_in(
+        database.connection(),
+        "praket@feedmorewny.org",
+        "civicflow-demo",
+        false,
+    )
+    .expect_err("the account is waiting out repeated misses");
+    assert_eq!(rule_code(error), "TOO_MANY_ATTEMPTS");
+
+    database.reset_demo().expect("the demo workspace resets");
+
+    sign_in(
+        database.connection(),
+        "praket@feedmorewny.org",
+        "civicflow-demo",
+        false,
+    )
+    .expect("a reset clears the wait with the rest of the demo state");
+}

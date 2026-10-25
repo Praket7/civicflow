@@ -103,7 +103,7 @@ function findLocale(code: string): LocaleMeta | undefined {
   return LOCALES.find((locale) => locale.code === code);
 }
 
-/** The catalogue currently in memory. Used by date and number formatters. */
+/** The catalog currently in memory. Used by date and number formatters. */
 export function activeLocaleCode(): string {
   return activeLocale;
 }
@@ -265,14 +265,14 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const loadedLocale = useRef("en");
 
   useEffect(() => {
-    let cancelled = false;
+    let aborted = false;
     const meta = findLocale(locale);
     if (!meta) return;
 
     async function apply() {
       const catalog = await loadCatalog(locale);
       await applyDateLocale(locale);
-      if (cancelled) return;
+      if (aborted) return;
       activeLocale = locale;
       activeCatalog = catalog;
       applyDocumentLocale(meta as LocaleMeta);
@@ -286,7 +286,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
     void apply();
     return () => {
-      cancelled = true;
+      aborted = true;
     };
   }, [locale]);
 

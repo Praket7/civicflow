@@ -40,9 +40,9 @@ Items are sorted by shift start and capped at 3. A 75 % shift is normal pipeline
 alarm. This is why the Tuesday pantry gap (3 of 4 seats) does not appear, while Saturday's
 62 % garden and food shifts do.
 
-## Why the reference mock was wrong
+## Why the card and the bars disagree
 
-The reference shows a 91 % “Coverage this week” card while its own daily bars average
+The design shows a 91 % “Coverage this week” card while its own daily bars average
 approximately 86 %. It also lists “3 items” while implying more gaps. The implementation
 keeps one rule set for the card, the chart, the footer, and the Rust tests, so the numbers
 agree everywhere and can be explained live.

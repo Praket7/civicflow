@@ -9,12 +9,12 @@ Recorded from this machine at the end of the foundation pass.
 | pnpm      | 10.34.7                        | `packageManager` pins 10.34.7                       |
 | Rust      | 1.99.0 (2026-07-21)            | stable, aarch64-apple-darwin                        |
 | Cargo     | 1.99.0                         |                                                     |
-| Tauri CLI | 2.10.x (npm `@tauri-apps/cli`) |                                                     |
-| SQLite    | via `rusqlite` 0.38 (bundled)  | no system sqlite required                           |
+| Tauri CLI | 2.12.x (npm `@tauri-apps/cli`) |                                                     |
+| SQLite    | via `rusqlite` 0.37 (bundled)  | no system sqlite required                           |
 | Xcode CLT | installed                      | required to link the desktop binary                 |
 
 Dependency versions are resolved by `pnpm-lock.yaml` and `src-tauri/Cargo.lock`; both are
-committed. Do not upgrade them casually before a competition.
+committed. Do not upgrade them casually before a release.
 
 ## Reproduce from scratch
 
@@ -26,7 +26,7 @@ cd src-tauri/core && cargo test && cd ..
 ```
 
 `pnpm verify` chains typecheck → lint → format check → vitest → web build → `cargo test`.
-It fails on the first red check. `scripts/verify.sh` is the single command a judge or CI
+It fails on the first red check. `scripts/verify.sh` is the single command a reviewer or CI
 runner needs.
 
 ## Offline demo

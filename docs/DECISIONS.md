@@ -1,16 +1,15 @@
 # Decision log
 
 Short entries, newest last. Each records the alternative that was rejected, because that
-is what a judge or maintainer will ask about.
+is what a maintainer will ask about.
 
 ## 001 — Tauri 2 instead of a web-only app
 
 **Decision:** ship a Tauri 2 desktop app with a Rust core.
 **Rejected:** Electron (bundles Chromium, ~100 MB, heavier memory) and a hosted web app
 (a venue wifi failure ends the demo).
-**Why:** the build plan's offline-first requirement and the Coding & Programming rubric's
-emphasis on a real backend. Rust is also where coverage rules are tested, so the UI cannot
-invent numbers.
+**Why:** offline-first is a product requirement, and a real backend keeps the rules
+testable. Rust is also where coverage rules are tested, so the UI cannot invent numbers.
 
 ## 002 — Browser preview reuses the committed seed
 
@@ -33,8 +32,8 @@ list, and the empty state consistent, and gives the Rust tests something meaning
 **Decision:** the top metric is role coverage (filled role slots / required role slots for
 upcoming shifts). The chart is seat fill (confirmed seats / capacity per day).
 **Rejected:** deriving the card from the bars so the card could say 86 %.
-**Why:** the reference mock's 91 % card does not match its own bars. Rather than fake
-agreement, each number gets a precise definition and a label that says which it is. Defect
+**Why:** the card's 91 % figure does not match its own bars. Rather than fake agreement,
+each number gets a precise definition and a label that says which it is. The defect is
 recorded in [VISUAL_QA.md](VISUAL_QA.md).
 
 ## 005 — Chart rendered with CSS bars, not Recharts
@@ -51,7 +50,7 @@ for the reporting phase, where axes and tooltips earn their weight.
 transaction; the browser preview mirrors this in localStorage.
 **Rejected:** a `useState` toggle.
 **Why:** a coordinator reopening the app should not see handled alerts again, and every
-write must be auditable (build-plan rule 4).
+write must be auditable.
 
 ## 007 — No page-level scrollbar on Mission Control at 1600×1000
 
@@ -97,8 +96,7 @@ write responses.
 **Rejected:** keeping the localStorage session as a second writer alongside Mission Control
 and notifications. That made a reload resurrect stale local copies and split the audit trail
 between two stores.
-**Why:** the build plan requires the core to be authoritative and every change to be
-auditable. A single snapshot also makes cross-screen consistency testable in one place.
+**Why:** the core is authoritative and every change has to be auditable. A single snapshot also makes cross-screen consistency testable in one place.
 
 ## 012 — Browser fallback is a separate, selected module
 
@@ -120,8 +118,7 @@ project is not part of the build.
 truth, require credentials and network access at a venue where wifi may fail, and need an
 auth/RLS model the product does not have. None of that improves a single-tenant offline demo.
 **Why:** the schema already has 32 related tables, foreign keys, transactions, audit events,
-validated backups and a restore path. The NYS rubric scores appropriate, secure data storage
-and a dynamic backup feature; the local database supplies both without a network dependency.
+validated backups and a restore path. The local database supplies secure storage and backups without a network dependency.
 The browser preview remains an explicitly selected fallback, never a second writer inside the
 desktop shell.
 
@@ -168,8 +165,8 @@ plugin is compiled out of release builds, and the suite points the app at a thro
 Provider URLs open in the system browser; the answer returns on the `civicflow://` scheme.
 **Rejected:** moving workspace data to Postgres, and loading Google's consent screen inside
 the Tauri webview.
-**Why:** the rubric and the product both rest on a local-first, offline workspace, and the
-Rust core needs a local account to enforce roles against. Keeping identity hosted and records
+**Why:** the product rests on a local-first, offline workspace, and the Rust core needs a
+local account to enforce roles against. Keeping identity hosted and records
 local means email confirmation, password reset by email, and Google sign-in work without
 turning the app into a thin client. Google blocks OAuth inside embedded webviews, so the
 hand-off has to leave the app. With no keys configured, nothing changes and no account

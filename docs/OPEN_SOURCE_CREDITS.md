@@ -1,8 +1,7 @@
 # Open-source and asset credits
 
-CivicFlow ships no AI-generated imagery. The 42 PNG files in `docs/references/images/`
-are design mocks and are not loaded by the application. All photography in
-`public/media/` is free-licensed and documented below.
+CivicFlow ships no AI-generated imagery. All photography in `public/media/` is
+free-licensed and documented below.
 
 ## Photography
 
@@ -22,7 +21,6 @@ are design mocks and are not loaded by the application. All photography in
 | `community-strip-3.jpg`                           | Pexels, photo 39779034 (crop)                                                                                                                                                                           | Pexels License                                                   | Mission Control photo strip                   |
 | `opp-community-event.jpg`                         | Irvin Parco Sto. Tomas, "Wiki Loves Arts mural painting at Manapao Elementary School 05" — <https://commons.wikimedia.org/wiki/File:Wiki_Loves_Arts_mural_painting_at_Manapao_Elementary_School_05.jpg> | CC BY-SA 4.0 — <https://creativecommons.org/licenses/by-sa/4.0/> | Neighborhood Mural Project                    |
 | `buffalo-skyline.jpg`                             | Peter S, "Buffalo skyline 2014" — <https://commons.wikimedia.org/wiki/File:Buffalo_skyline_2014.jpg>                                                                                                    | CC BY-SA 4.0 — <https://creativecommons.org/licenses/by-sa/4.0/> | Report cover                                  |
-| `buffalo-skyline-dusk.jpg`                        | Philip G Coman, "Buffalo Moonrise" — <https://commons.wikimedia.org/wiki/File:Buffalo-Moonrise.jpg>                                                                                                     | CC BY-SA 4.0 — <https://creativecommons.org/licenses/by-sa/4.0/> | Impact Analytics dusk hero                    |
 | `volunteers/olive-carter.jpg`                     | Pexels, photo 40062802 — <https://www.pexels.com/photo/40062802/>                                                                                                                                       | Pexels License                                                   | AutoRoster volunteer portrait                 |
 | `volunteers/rafael-martin.jpg`                    | Pexels, photo 13120070 — <https://www.pexels.com/photo/13120070/>                                                                                                                                       | Pexels License                                                   | AutoRoster volunteer portrait                 |
 | `volunteers/jasmine-bennett.jpg`                  | Pexels, photo 6976400 — <https://www.pexels.com/photo/6976400/>                                                                                                                                         | Pexels License                                                   | AutoRoster volunteer portrait                 |
@@ -61,9 +59,7 @@ Accessed 23 October 2026. Pexels license: <https://www.pexels.com/license/>.
 | React / React DOM                 | UI runtime                        | MIT                 |
 | React Router                      | Routing                           | MIT                 |
 | TanStack Query                    | Read-model cache and invalidation | MIT                 |
-| Recharts                          | Accessible chart rendering        | MIT                 |
 | date-fns                          | Date formatting and calendar math | MIT                 |
-| Zod / React Hook Form             | Client-side form validation       | MIT                 |
 | Lucide                            | Icon set                          | ISC                 |
 | Tauri                             | Desktop shell                     | MIT / Apache-2.0    |
 | rusqlite / SQLite                 | Local database and backup API     | MIT / public domain |
@@ -71,11 +67,4 @@ Accessed 23 October 2026. Pexels license: <https://www.pexels.com/license/>.
 | Vitest, Testing Library, jest-axe | Tests and accessibility checks    | MIT / MPL-2.0       |
 
 The AutoRoster algorithm (successive shortest augmenting paths) is implemented in
-this repository; the research references used to design it are listed in the build
-plan, not copied as code.
-
-## Design references
-
-The 42 mock images were supplied with the project brief and are AI-generated.
-They are retained only as visual targets under `docs/references/`; no reference
-image is bundled into the application build.
+this repository from published descriptions, not copied as code.

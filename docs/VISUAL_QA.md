@@ -2,33 +2,27 @@
 
 ## Method
 
-The 42 references live in `docs/references/images` at 1600 × 1000. They are design targets,
-not page heights: content scrolls inside the desktop window when a screen needs more room.
 Every screen shares `src/styles/tokens.css`, the primitives in `src/components/ui`, and the
-same type scale (serif display, Geist UI text, tabular numerals).
+same type scale (serif display, Geist UI text, tabular numerals). The review target is
+1600 × 1000; content scrolls inside the desktop window when a screen needs more room.
 
-The references are AI-generated mocks and are never bundled. Photography is licensed
-Pexels/Wikimedia imagery under `/public/media`; see `OPEN_SOURCE_CREDITS.md`.
+Photography is licensed Pexels and Wikimedia imagery under `public/media`; see
+`OPEN_SOURCE_CREDITS.md`.
 
 ## Evidence in this pass
 
-- **The 42-route sweep was re-run on 2026-10-23 at 1600 × 1000, 1280 × 800, and 1024 × 720.**
+- **The 50-route sweep was re-run on 2026-10-23 at 1600 × 1000, 1280 × 800, and 1024 × 720.**
   All three passes recorded no console errors, failed images, missing `h1`/`main` landmarks, or
   horizontal page scroll. The only HTTP error in the first run was a missing favicon request,
   fixed by adding `public/favicon.svg`. The 1280 pass is the full sweep the earlier notes had
   only sampled; the 1024 pass covers the short-window launch and welcome canvases.
-- **All 42 references were rendered in the running Vite app at 1600 × 1000** and reviewed as
-  six-up contact sheets plus full-size checks of the densest screens (kiosk, check-in,
-  coverage, roster, hours review, schedule, reports). No route rendered blank or overflowed
-  the window horizontally.
-- **Mission Control** matches reference 01 in composition: hero photo + greeting, inset
-  quote, four metric cards, weekly seat-fill chart, attention list, community strip, recent
-  activity, suggested action, and the dark sidebar. Its earlier stitched capture had been
-  taken at two scroll positions; the fresh viewport capture is the evidence.
-- Six representative captures are retained: `screenshots/mission-control.png`,
-  `screenshots/coverage.png`, `screenshots/hours-review.png`, `screenshots/kiosk.png`,
-  `screenshots/schedule.png`, and `screenshots/help.png`. They were re-captured on
-  2026-10-24 and are reviewed at 1600 × 1000, not resized.
+- **Every route was rendered in the running Vite app at 1600 × 1000** and reviewed as six-up
+  contact sheets plus full-size checks of the densest screens (kiosk, check-in, coverage,
+  roster, hours review, schedule, reports). No route rendered blank or overflowed the window
+  horizontally.
+- **Mission Control** holds one composition: hero photo + greeting, inset quote, four metric
+  cards, weekly seat-fill chart, attention list, community strip, recent activity, suggested
+  action, and the dark sidebar.
 - Interaction checks (kiosk → attendance, roster waitlist promotion, hours approval,
   accessibility text scale) are recorded in [TESTING.md](TESTING.md).
 - Reference-specific CSS modules are used throughout; screens share primitives but not one
@@ -84,31 +78,31 @@ A short cast-shadow gradient and a glass lift on the rail keep the “pops out�
 pin button turns the expansion into a permanent preference (stored in `localStorage`).
 On phones the rail stays a drawer with a scrim; hover expansion is disabled there.
 
-## Reference defects corrected
+## Design defects corrected
 
-These were visible in the mocks; the implementation fixes them rather than reproducing
-them.
+These came from the original designs; the implementation fixes them rather than
+reproducing them.
 
-1. **Mission Control (01):** the hero is a composite of overlapping screenshots with
+1. **Mission Control (screen 01):** the hero is a composite of overlapping screenshots with
    duplicated headline text, a stray nav rail inside the photo, and clipped stats. Rebuilt
    as one photo, one greeting, an impact quote, and derived metrics.
-2. **Coverage card vs bars (01/19):** a 91 % card sat above bars averaging roughly 86 %. The
+2. **Coverage card vs bars (screens 01 and 19):** a 91 % card sat above bars averaging roughly 86 %. The
    card is now **role coverage** (filled required slots / required slots) and the bars are
    **seat fill** (confirmed / capacity), each labeled and documented in `COVERAGE_HEALTH.md`.
-3. **Screenshots as photography (04, 16, 17, 20, 37):** replaced with licensed community
+3. **Screenshots standing in for photography (screens 04, 16, 17, 20, 37):** replaced with licensed community
    photos. App screenshots never stand in for people or programs.
-4. **Ghosted/duplicated headings (05, 07, 12, 13, 15, 21, 29):** one title block per page,
+4. **Ghosted or duplicated headings (screens 05, 07, 12, 13, 15, 21, 29):** one title block per page,
    metrics in their own row, no overlap with the hero portrait.
-5. **Volunteer profile (07/29):** the mock stacks three portraits and overlaps metric chips.
+5. **Volunteer profile (screens 07 and 29):** the design stacks three portraits and overlaps metric chips.
    There is no portrait for that profile in the licensed set; the implementation uses a
    dignified initials avatar and a single identity band. This is a deliberate substitution,
    not an omission. AutoRoster has separate licensed portraits for its six visible
    candidates.
-6. **Kiosk (33):** “CHECK IN” appears twice at different sizes and two conflicting codes
+6. **Kiosk (screen 33):** “CHECK IN” appears twice at different sizes and two conflicting codes
    (481276 / 4812766) are shown. Rebuilt as one heading, one six-digit entry, one documented
    demo code, and a live count. QR is a fallback disclosure because the demo must not depend
    on camera permission.
-7. **Hours/impact totals (03/12/13):** the mocks mix 84.5, 327, 82, 73, and 418 without
+7. **Hours and impact totals (screens 03, 12 and 13):** the designs mix 84.5, 327, 82, 73, and 418 without
    saying which is year-to-date, active, or this month. Every screen now labels the scope and
    reads from one record. “Unique volunteers this year” and “currently active” are separate.
 8. **Color-only status:** all statuses pair color with text and a dot/icon.

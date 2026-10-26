@@ -73,14 +73,6 @@ export const OPEN_SOURCE_CREDITS: { photos: PhotoCredit[] } = {
       license: "CC BY-SA 4.0",
       licenseUrl: CC_BY_SA,
     },
-    {
-      file: "buffalo-skyline-dusk.jpg",
-      usage: "Impact Analytics dusk hero",
-      creator: "Philip G Coman, Wikimedia Commons",
-      sourceUrl: "https://commons.wikimedia.org/wiki/File:Buffalo-Moonrise.jpg",
-      license: "CC BY-SA 4.0",
-      licenseUrl: CC_BY_SA,
-    },
     pexels(
       "volunteers/olive-carter.jpg",
       "40062802",

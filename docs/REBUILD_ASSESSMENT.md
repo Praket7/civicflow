@@ -8,8 +8,8 @@ already on.
 Do not rebuild. CivicFlow is already a React + Vite + Tauri application, in
 TypeScript, with a Rust core. A "carbon copy rebuild" would produce the same
 stack, the same screens, and the same features, and would throw away the parts
-that are hardest to get right: the security hardening, the 210 tests, the
-accessibility audits, and the browser preview that judges use to look at the app
+that are hardest to get right: the security hardening, the 251 tests, the
+accessibility audits, and the browser preview that lets anyone look at the app
 without installing anything.
 
 If the real goal is "my teammate knows React and Vite and should be able to work
@@ -35,7 +35,7 @@ Measured from the tree, not from memory.
 | Storage    | SQLite through Rust (`rusqlite`)  | 0.37    | `src-tauri/core/src/db.rs`               |
 | Fallback   | localStorage over the shared seed | n/a     | `src/lib/workspace/previewRepository.ts` |
 | Tests      | Vitest, Testing Library, jest-axe | 5.0.5   | 180 tests in 18 files                    |
-| Rust tests | `cargo test`                      | n/a     | 30 tests across six suites               |
+| Rust tests | `cargo test`                      | n/a     | 71 tests across eight suites             |
 | End to end | WebdriverIO + Tauri service       | 9.32.0  | `tests/e2e/`, macOS CI job               |
 
 Every requirement in the request is met by the current code: React (19), Vite
@@ -53,7 +53,7 @@ Hand-written lines in the tree today:
 | Rust test suites                  |     8 |     2,029 |
 | Interface strings, 59 locales     |    59 | generated |
 | Registered screens                |    50 |         — |
-| Automated tests (frontend + Rust) |     — |       210 |
+| Automated tests (frontend + Rust) |     — |       251 |
 
 The locale catalogs are generated translation data, not authored code, so they
 should not be held up as a complexity cost.
@@ -69,14 +69,14 @@ Effort to reach feature parity, honestly estimated:
 
 Gains at the end: none on the stack axis, because the stack does not change.
 
-Risks, all of them on the surface this competition scores:
+Risks, all of them in the areas a reviewer checks first:
 
 - **Security.** Argon2id hashing, a per-email lockout with a visible wait,
   32-byte OS-random session tokens, the `civicflow://` hand-off check, the
   packaged CSP, CSV formula neutralization, and backup validation were built and
   reviewed over several commits. A rewrite re-opens each one, and the first
   version of any of them is usually wrong.
-- **Judged defects.** The last four commits fixed a sign-in that stranded users,
+- **Review-visible defects.** The last four commits fixed a sign-in that stranded users,
   setup screens that looked like a sign-out, a browser callback that could be
   replayed, and exports that a spreadsheet would execute. Those fixes live in the
   code that would be deleted.
@@ -84,12 +84,12 @@ Risks, all of them on the surface this competition scores:
   print, 200% zoom, and accessibility-tree audits in CI. A fresh codebase starts
   at zero on all of them.
 - **The demo path.** The browser build runs the same seed as the desktop app, so
-  a judge can open a URL and see the real app. A native-only rebuild loses that,
+  anyone can open a URL and see the real app. A native-only rebuild loses that,
   which is exactly what `DECISIONS.md` entry 002 was written to avoid.
 
-One more thing worth saying plainly: the rubric's complexity point does not
-reward a low line count. It rewards a product whose complexity is justified. A
-rewrite reduces nothing a judge measures and risks several things a judge does.
+One more thing worth saying plainly: a low line count is not a goal on its own.
+What matters is a product whose complexity is justified. A rewrite reduces
+nothing that gets measured and risks several things that do get measured.
 
 ## When a rewrite would be the right call
 
@@ -121,9 +121,9 @@ Ranked by lines saved against risk. The first item is already done.
    and 390 before it merges.
 3. **The dual data layer stays.** `previewRepository.ts` is 1,527 lines that
    mirror the Rust reads over localStorage. It is also what lets the app run in a
-   plain browser for design review and for judges. Removing it saves lines and
+   plain browser for design review and for anyone without the desktop build. Removing it saves lines and
    costs the demo path. Keep it, and keep the boundary documented.
-4. **The locale catalogs stay.** They are generated, they are a rubric win, and
+4. **The locale catalogs stay.** They are generated, they are a real accessibility win, and
    trimming them saves no authored code.
 5. **The Rust tests stay.** 2,029 lines that prove coverage rules, auth, backups,
    and workflows. They are the security story in the pitch.
@@ -192,6 +192,6 @@ That split keeps merge conflicts rare because the boundary is one file wide.
 ## Recommendation
 
 Keep the codebase. Spend the rebuild time on the two things that still move the
-score: a timed demo script and a judge-facing one-pager. If the code still feels
+score: a timed demo script and a one-page product overview. If the code still feels
 heavy after that, do the CSS consolidation in item 2 above, one feature folder
 per pull request, with a visual diff on every screen.

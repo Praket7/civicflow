@@ -1,7 +1,6 @@
 # Implementation status
 
-Last reviewed 2026-10-25. This page describes what is in the repository now, not what the
-build plan hoped for. Screens are real routes with working controls. Workflow writes go
+Last reviewed 2026-10-25. This page describes what is in the repository now. Screens are real routes with working controls. Workflow writes go
 through `civicflow-core`, which validates them, stores them in SQLite, and appends an audit
 event before returning a fresh snapshot.
 
@@ -108,10 +107,9 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
   uses a throwaway `CIVICFLOW_DATA_DIR`.
 - `README.md`, `ARCHITECTURE.md`, `AUTH.md`, `DATA_MODEL.md`, `MATCHING_ENGINE.md`,
   `COVERAGE_HEALTH.md`, `METRICS.md`, `SECURITY.md`, `SIGNING.md`, `ACCESSIBILITY.md`,
-  `TESTING.md`, `USER_GUIDE.md`, `RUBRIC_MAP.md`, `FBLA_NYS_RUBRIC_AUDIT.md`, `DEMO.md`,
-  `ENVIRONMENT.md`, `DECISIONS.md`, and `OPEN_SOURCE_CREDITS.md`.
-- Reference comparisons and visual QA notes, with representative captures under
-  `screenshots/`; the full route sweep lives in [VISUAL_QA.md](VISUAL_QA.md).
+  `TESTING.md`, `USER_GUIDE.md`, `ENVIRONMENT.md`, `DECISIONS.md`, and
+  `OPEN_SOURCE_CREDITS.md`.
+- Visual QA notes and the full route sweep are in [VISUAL_QA.md](VISUAL_QA.md).
 - `pnpm db:verify` reads the running desktop database and checks integrity, schema v6, 32
   tables, foreign keys and record counts.
 
@@ -137,8 +135,8 @@ cross-compiling from macOS.
 
 ## Deliberate data choices
 
-- Role coverage and seat fill are different numbers with different labels. The reference
-  card and its bars disagreed; the implementation defines both instead of forcing agreement.
+- Role coverage and seat fill are different numbers with different labels. The card and its
+  bars disagree; the implementation defines both instead of forcing agreement.
 - Impact outcomes are stored `impact_results`, not volunteer hours multiplied by a factor.
 - Retention is a 30-day cohort calculation with an eligibility cutoff so recent starters do
   not distort the denominator. The demo seed includes six months of service history for it.

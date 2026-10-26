@@ -4,7 +4,7 @@
  * The JSON it writes is the single source of truth for demo data. Rust seeds
  * SQLite from the same file and the browser preview reads it directly, so both
  * runtimes show identical records. The demo clock is fixed so screenshots,
- * tests and the competition rehearsal never drift.
+ * tests and the demo rehearsal never drift.
  */
 import fs from "node:fs/promises";
 

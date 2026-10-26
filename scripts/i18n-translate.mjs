@@ -28,7 +28,6 @@ const TOKENS = [
   ["Maya Chen", "__CF4__"],
   ["Buffalo", "__CF5__"],
   ["NYS", "__CF6__"],
-  ["FBLA", "__CF7__"],
   ["Pexels", "__CF8__"],
   ["Geist Mono", "__CF9__"],
   ["Geist", "__CF10__"],

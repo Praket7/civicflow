@@ -1,8 +1,8 @@
 /**
  * Copy gate: American spelling, common typos, doubled words.
  *
- * The competition rubric rewards "no spelling errors" in the interface, and the
- * documentation is read by judges as part of the project. A spell checker that
+ * Interface copy and documentation are read as part of the product, so a misspelling
+ * costs credibility even when every test passes. A spell checker that
  * needs a system dictionary does not run on every machine, so this gate encodes
  * the two failure modes that actually happen here: British spellings creeping
  * back in, and typos in copy that no test would otherwise read.
@@ -144,8 +144,6 @@ const SKIP_PATHS = [
   "/target/",
   "/catalogs/",
   "polish.json",
-  "docs/build-plan/",
-  "/screenshots/",
   "package-lock.json",
   "pnpm-lock.yaml",
   "scripts/check-copy.mjs",

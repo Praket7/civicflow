@@ -623,9 +623,7 @@ export function NotificationsPage() {
                 onChange={(checked) => updatePreference(preference.key, checked)}
               />
             ))}
-            <p className={styles.preferenceNote}>
-              Preferences never leave this device. No email is sent from the competition demo.
-            </p>
+            <p className={styles.preferenceNote}>Notification preferences saved on this device.</p>
           </Card>
         </aside>
       </div>

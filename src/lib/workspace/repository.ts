@@ -239,5 +239,3 @@ export function getWorkspaceRepository(): WorkspaceRepository {
 export { previewRepository };
 
 export const demoOrganization = demoWorkspace.organization;
-export const demoCoordinator = demoWorkspace.coordinator;
-export const demoVolunteer = demoWorkspace.volunteers[0];

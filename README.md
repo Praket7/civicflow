@@ -4,19 +4,16 @@
 service opportunities and gives coordinators a local-first picture of who is serving,
 where coverage is thin, and why every assignment was made.
 
-This repository implements the approved CivicFlow build plan and every one of the 42 approved
-design references. Fifty routes are registered today, and each one resolves to a real screen.
+Fifty routes are registered today, and each one resolves to a real screen.
 Mission Control, every workflow write, and the audit trail are backed by Rust and SQLite. Accounts sign people in — locally, or through Supabase Auth with Google and email —
 and the core enforces coordinator and volunteer roles before it returns a row. The React
 session layer is a cache of one snapshot returned by the core.
-
-![Mission Control](screenshots/mission-control.png)
 
 ## What is here
 
 - **50 registered screens, one design system.** Every route resolves to a real screen, plus
   the added account, organization and question-box surfaces. No placeholder pages remain. The
-  mapping from reference image to route is in [SCREEN_MAP.md](docs/SCREEN_MAP.md).
+  screen inventory is in [SCREEN_MAP.md](docs/SCREEN_MAP.md).
 - **Coordinator operations.** Mission Control, coverage and AutoRoster, schedule, programs,
   live rosters, attendance, the kiosk, hours review, credentials, recruitment, analytics,
   reports, records, audit, backups, settings, accounts, and accessibility.
@@ -38,8 +35,7 @@ session layer is a cache of one snapshot returned by the core.
   validates the transition, writes SQLite, and appends its audit event before returning the
   fresh snapshot.
 - **Free-licensed photography.** Pexels and Wikimedia images under `public/media`, credited
-  in [OPEN_SOURCE_CREDITS.md](docs/OPEN_SOURCE_CREDITS.md). Reference mocks are never
-  bundled.
+  in [OPEN_SOURCE_CREDITS.md](docs/OPEN_SOURCE_CREDITS.md).
 - **Accessibility and language.** Semantic landmarks and headings, a skip link, labeled
   controls and tables, text-plus-icon statuses, visible focus, reduced motion, high
   contrast, underlined links, text scaling, a table alternative under every chart, and a
@@ -99,8 +95,7 @@ React 19 + TypeScript + Vite  →  WorkspaceRepository  →  Tauri IPC  →  civ
   database and the browser fallback, so reviews never run against a second set of numbers.
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [AUTH.md](docs/AUTH.md),
-[DECISIONS.md](docs/DECISIONS.md), [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md),
-and the NYS event audit in [FBLA_NYS_RUBRIC_AUDIT.md](docs/FBLA_NYS_RUBRIC_AUDIT.md).
+[DECISIONS.md](docs/DECISIONS.md), [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Verification
 
@@ -122,10 +117,8 @@ and the NYS event audit in [FBLA_NYS_RUBRIC_AUDIT.md](docs/FBLA_NYS_RUBRIC_AUDIT
 - The accessibility-tree audit reads Chromium's accessibility tree for all 50 routes and
   requires a main landmark, one `h1`, and names on every interactive control. The 200% zoom
   audit renders an 800 × 500 CSS viewport and fails on horizontal overflow or a lost heading.
-- All 50 registered routes plus `/help` and `/credits` captured at 1600 × 1000 and compared
-  against their references during the visual sweep; the same set was checked at 1280, 1024, 820 and 390.
-  Representative captures are in `screenshots/`; notes and reference defects are in
-  [VISUAL_QA.md](docs/VISUAL_QA.md).
+- All 50 registered routes plus `/help` and `/credits` were checked at 1600 × 1000, 1280,
+  1024, 820 and 390 during the visual sweep; notes are in [VISUAL_QA.md](docs/VISUAL_QA.md).
 - `pnpm db:verify` reports the live desktop database path, integrity, schema version, table
   count, foreign-key status and record counts without writing to it.
 

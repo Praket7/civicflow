@@ -538,9 +538,6 @@ export function OrganizationSetupPage() {
               <div className={styles.checklistHead}>
                 <div>
                   <h2 className={styles.cardTitle}>Workspace checklist</h2>
-                  <p className={styles.cardSub}>
-                    Everything a judge or new coordinator needs first.
-                  </p>
                 </div>
                 <Badge tone={completedCount === checklist.length ? "green" : "amber"} dot>
                   {completedCount}/{checklist.length} ready

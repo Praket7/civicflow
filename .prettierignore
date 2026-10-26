@@ -3,8 +3,6 @@ dist
 src-tauri/target
 src-tauri/core/target
 src-tauri/gen
-docs/build-plan
-docs/references
 shared/demo-workspace.json
 src/lib/i18n/catalogs
 pnpm-lock.yaml

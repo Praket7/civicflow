@@ -169,7 +169,7 @@ with `"Eligible candidates were already assigned"` or `"No eligible candidate"`.
 
 ## Explainability
 
-`PlannedAssignment` carries the data a judge can inspect:
+`PlannedAssignment` carries the data a reviewer can inspect:
 
 - `score` and the full `ScoreBreakdown` (skill, availability, interest, preference,
   fairness, reliability, total);
@@ -235,7 +235,7 @@ increased by the plan size.
 Let `C` be candidates, `S` slots, `D` distinct candidate-day pairs, and `E` eligible edges.
 The graph has `O(D + S)` nodes and `O(C·S)` candidate-slot checks during construction.
 Successive shortest paths performs at most `F <= min(C, S)` augmentations, and each SPFA
-pass is `O(V·E)` worst case, so the conservative bound is `O(F·V·E)`. Real competition
+pass is `O(V·E)` worst case, so the conservative bound is `O(F·V·E)`. Realistic
 inputs are small; the 500 × 100 test is the performance gate. The test asserts completion
 under five seconds and exactly 100 assignments. The repository records the gate, not a
 fabricated timing claim for another machine.

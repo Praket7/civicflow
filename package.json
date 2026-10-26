@@ -22,7 +22,8 @@
     "audit:a11y": "node scripts/audit-accessibility-tree.mjs",
     "test:native": "wdio run wdio.conf.mjs",
     "build:native:test": "tauri build --debug --no-bundle",
-    "verify": "bash scripts/verify.sh"
+    "verify": "bash scripts/verify.sh",
+    "check:i18n": "node scripts/i18n-extract.mjs && git diff --exit-code -- src/lib/i18n/strings.json"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

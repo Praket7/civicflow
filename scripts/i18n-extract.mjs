@@ -64,6 +64,17 @@ for (const file of collectFiles("src")) {
   }
 
   traverse(ast, {
+    // Copy is not only JSX: labels, empty states, and question text are also
+    // passed straight to t(). Collect those literals so the worklist matches
+    // what the interface can actually render.
+    CallExpression(path) {
+      const callee = path.node.callee;
+      if (callee.type !== "Identifier" || callee.name !== "t") return;
+      const [first] = path.node.arguments;
+      if (!first || first.type !== "StringLiteral") return;
+      const text = first.value.trim();
+      if (text && hasLetters(text)) strings.add(text);
+    },
     JSXText(path) {
       if (insideSkippedElement(path)) return;
       const value = normalizeJsxText(path.node.value);

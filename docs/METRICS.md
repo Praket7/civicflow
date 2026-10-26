@@ -12,6 +12,12 @@ When a screen instead reads a bundled seed field, that is called out.
 
 ## 1. Coverage
 
+Coverage is two measures, not one number with a color. The metric card reports role coverage
+(filled role slots over required role slots) and the weekly chart reports seat fill (confirmed
+seats over capacity). They are allowed to differ, because a shift can have every role slot
+filled and still have open general seats. One rule set drives the card, the chart, the footer,
+and the Rust tests, so the numbers agree everywhere and can be explained live.
+
 ### Role coverage
 
 `role_coverage_percent` in `src-tauri/core/src/domain.rs` and
@@ -41,7 +47,10 @@ seat fill = round(shift.confirmed / shift.capacity × 100)
 `confirmed` and `capacity` per day before dividing, rather than averaging daily
 percentages. A shift can have every role slot filled and still have open general seats,
 which is why Mission Control labels the card “role coverage” and the bars “seat fill”.
-See `docs/COVERAGE_HEALTH.md` for the product reasoning.
+The shipped design showed a 91 % card above bars that averaged about 86 %; rather than
+bend one number to flatter the other, each got a precise definition and a label that says
+which one it is. A 75 % seat fill is normal pipeline, not an alarm, which is why the
+attention rule escalates a missing role first and only then open seats.
 
 ### Weekly coverage
 

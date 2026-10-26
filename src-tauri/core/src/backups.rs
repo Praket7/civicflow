@@ -25,6 +25,9 @@ use crate::workflows;
 /// manual and automatic snapshots together so the directory stays bounded.
 pub const RETENTION_LIMIT: usize = 20;
 
+/// The floor a restorable snapshot has to meet. A snapshot taken by an older
+/// build is migrated forward after it is copied in, so this list stays at the
+/// tables every build has ever created rather than every table this build knows.
 const REQUIRED_TABLES: [&str; 32] = [
     "organizations",
     "app_settings",

@@ -22,11 +22,15 @@ database.
 migrations. On open, `Database::migrate` creates the ledger if needed, then checks each
 version before running it:
 
-| Version | File                         | Adds                                                                                                                             |
-| ------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 1       | `0001_initial.sql`           | Organization, people, programs, shifts, hours, audit, impact totals                                                              |
-| 2       | `0002_workflows.sql`         | Saved opportunities, applicants, waitlist, registrations, attendance                                                             |
-| 3       | `0003_service_lifecycle.sql` | Credentials, role requirements, attendance ledger, check-in, verification, outcomes, saved views, stage history, backup metadata |
+| Version | File                                           | Adds                                                                                                                             |
+| ------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `0001_initial.sql`                             | Organization, people, programs, shifts, hours, audit, impact totals                                                              |
+| 2       | `0002_workflows.sql`                           | Saved opportunities, applicants, waitlist, registrations, attendance                                                             |
+| 3       | `0003_service_lifecycle.sql`                   | Credentials, role requirements, attendance ledger, check-in, verification, outcomes, saved views, stage history, backup metadata |
+| 4       | `0004_accounts_and_notification_audiences.sql` | Password hash, account status, session table, notification audience                                                              |
+| 5       | `0005_volunteer_photo.sql`                     | Volunteer photo                                                                                                                  |
+| 6       | `0006_auth_attempts.sql`                       | Failed sign-in attempt throttling                                                                                                |
+| 7       | `0007_organizations_memberships_invites.sql`   | Organization profile columns, contacts, memberships, invitations, updates                                                        |
 
 Each new migration runs inside a transaction and inserts its version only after the SQL
 succeeds. Existing rows are preserved by nullable/defaulted `ALTER TABLE` columns. A database
@@ -37,14 +41,19 @@ silently upgraded.
 
 ### Organization, identity, and configuration
 
-| Table                | Purpose and important columns                                                                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `organizations`      | The single seeded organization: name, initials, mission, address, website, email, timezone. Parent of volunteers, opportunities, and impact totals.                                                                            |
-| `app_settings`       | Key/value store for runtime settings: the demo clock (`demo_now`), coordinator identity, current volunteer id, schema version, workflow-seed marker, backup note/time, and the workspace settings edited in Settings.          |
-| `users`              | Local sign-in identity: name, unique email, role (`coordinator` or `volunteer`), optional `volunteer_id`, Argon2id `password_hash`, `status`, and `last_login_at`. A volunteer account is linked to exactly one volunteer row. |
-| `auth_sessions`      | Opaque session records: user id, SHA-256 token hash, creation and expiry, and `revoked_at`. A password reset revokes every live session for the account.                                                                       |
-| `report_saved_views` | Persisted report filters keyed by owner, scope, and name. `filters_json` is a JSON object; owner is deliberately not a foreign key so reports survive staff changes.                                                           |
-| `backup_snapshots`   | Metadata for snapshots written into the backup directory: path, trigger, bytes, SHA-256, schema version, integrity, and a JSON count summary. The authoritative backup is the `.db` file, not this row.                        |
+| Table                       | Purpose and important columns                                                                                                                                                                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `organizations`             | An organization: name, initials, mission, description, address, website, email, timezone, visibility, image, and who created it. Parent of volunteers, opportunities, and impact totals. The seeded organization is one row.                                                                                   |
+| `organization_contacts`     | Contact emails for an organization, ordered. `(organization_id, email)` is the key, so the same address cannot be listed twice.                                                                                                                                                                                |
+| `organization_memberships`  | Who belongs to an organization and in what role. `(organization_id, user_id)` is the primary key; `role` is `coordinator` or `volunteer` and `status` is `active`, `invited`, or `disabled`. `require_membership` and `require_coordinator` read this table, so access is decided here and not by the screens. |
+| `organization_invites`      | One-time invitations: role, expiry, and the SHA-256 hash of the token. The token itself is shown once when it is issued and never stored. `redeemed_at` and `redeemed_by_user_id` record the single use.                                                                                                       |
+| `organization_updates`      | Coordinator announcements and events: kind, title, body, optional link, author.                                                                                                                                                                                                                                |
+| `organization_update_reads` | Per-account read state for an update, keyed by `(update_id, user_id)`.                                                                                                                                                                                                                                         |
+| `app_settings`              | Key/value store for runtime settings: the demo clock (`demo_now`), coordinator identity, current volunteer id, schema version, workflow-seed marker, backup note/time, and the workspace settings edited in Settings.                                                                                          |
+| `users`                     | Local sign-in identity: name, unique email, role (`coordinator` or `volunteer`), optional `volunteer_id`, Argon2id `password_hash`, `status`, and `last_login_at`. A volunteer account is linked to exactly one volunteer row.                                                                                 |
+| `auth_sessions`             | Opaque session records: user id, SHA-256 token hash, creation and expiry, and `revoked_at`. A password reset revokes every live session for the account.                                                                                                                                                       |
+| `report_saved_views`        | Persisted report filters keyed by owner, scope, and name. `filters_json` is a JSON object; owner is deliberately not a foreign key so reports survive staff changes.                                                                                                                                           |
+| `backup_snapshots`          | Metadata for snapshots written into the backup directory: path, trigger, bytes, SHA-256, schema version, integrity, and a JSON count summary. The authoritative backup is the `.db` file, not this row.                                                                                                        |
 
 ### People and eligibility
 
@@ -208,9 +217,12 @@ Control, attendance, and reports on the next read without a cache to invalidate.
 - `Database::integrity_check()` runs `PRAGMA integrity_check`;
   `foreign_key_violations()` runs `PRAGMA foreign_key_check`.
 - A backup is created with SQLite’s online backup API, then validated: `application_id`,
-  all 32 required tables including `auth_sessions`, maximum migration = 4, integrity `ok`,
-  no foreign-key violations, and a `demo_now` setting. Restore creates a safety snapshot
-  first and audits its own action. Sessions created after the snapshot cease to exist.
+  the 32 tables every build has always created, a migration version between 1 and the
+  current schema version, integrity `ok`, no foreign-key violations, and a `demo_now`
+  setting. A snapshot from an older build is migrated forward after it is copied in, which
+  is why the required-table floor does not grow with each migration. Restore creates a
+  safety snapshot first and audits its own action. Sessions created after the snapshot
+  cease to exist.
 - The live `backup_snapshots` table records metadata, but `backups::list` rebuilds the list
   from the actual files, so a stale metadata row cannot present a missing file as restorable.
 - Seeding is idempotent: the workspace is inserted only when `volunteers` is empty, and

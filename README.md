@@ -69,7 +69,7 @@ Demo accounts: `praket@feedmorewny.org` (coordinator) and `maya.chen@gmail.com`
 (volunteer), both with the password `civicflow-demo`. Entry points: `/launch`, `/welcome`,
 `/sign-in`, `/create-account`, `/coordinator/mission-control`, `/volunteer/home`,
 `/coordinator/kiosk`, `/ask`, and the in-app guide at `/help`. After the desktop app has run,
-`pnpm db:verify` checks the real SQLite file: integrity, schema v6, all 32 tables, foreign
+`pnpm db:verify` checks the real SQLite file: integrity, schema v7, all 38 tables, foreign
 keys and record counts. The kiosk
 displays the current six-digit code; it rotates every 15 minutes and is validated by the
 Rust core, so there is no fixed code to memorize. The volunteer screen also renders a

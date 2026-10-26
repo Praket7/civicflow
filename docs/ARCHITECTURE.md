@@ -14,19 +14,44 @@ mirrors the same snapshot contract.
 
 ### Rust core (`src-tauri/core`)
 
-| Module         | Responsibility                                                                                                                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db.rs`        | Connection setup (`foreign_keys = ON`, WAL, busy timeout), versioned migrations, deterministic workspace and workflow seed, demo reset, integrity checks                                 |
-| `domain.rs`    | Authoritative coverage rules: role coverage, attention derivation, weekly seat aggregation; unit tests for each rule                                                                     |
-| `auth.rs`      | Argon2id password hashing, session issuance and revocation, coordinator/volunteer guards, account seeding                                                                                |
-| `services.rs`  | Read models (Mission Control, notification inbox) and the audited notification write, scoped by audience and volunteer                                                                   |
-| `workflows.rs` | The single snapshot read model and every workflow command: saved opportunities, applications, attendance, waitlist, registrations, hours review, settings, opportunity creation, profile |
-| `backups.rs`   | Online-backup snapshots, artifact validation (application id, schema, integrity, foreign keys), pre-restore safety copy, and restore with an audit event                                 |
-| `models.rs`    | Serialized DTOs (`camelCase` for the TS client) and seed structs                                                                                                                         |
-| `error.rs`     | Validation, not-found, and infrastructure errors; commands stringify at the boundary                                                                                                     |
+| Module             | Responsibility                                                                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db.rs`            | Connection setup (`foreign_keys = ON`, WAL, busy timeout), versioned migrations, deterministic workspace and workflow seed, demo reset, integrity checks                                 |
+| `domain.rs`        | Authoritative coverage rules: role coverage, attention derivation, weekly seat aggregation; unit tests for each rule                                                                     |
+| `auth.rs`          | Argon2id password hashing, session issuance and revocation, coordinator/volunteer guards, account seeding                                                                                |
+| `organizations.rs` | Organization records, contacts, memberships, and the invitation lifecycle (issue, redeem, join, member list)                                                                             |
+| `authorization.rs` | `require_membership` and `require_coordinator`: the one place that decides whether an account may act on an organization                                                                 |
+| `matching.rs`      | The AutoRoster engine: eligibility gates, the named score breakdown, and the min-cost-flow planner                                                                                       |
+| `roster.rs`        | Adapter that loads candidates, slots, and committed time from SQLite, and applies an approved plan in one transaction                                                                    |
+| `reports.rs`       | Report templates, query and aggregation, CSV and PDF rendering                                                                                                                           |
+| `services.rs`      | Read models (Mission Control, notification inbox) and the audited notification write, scoped by audience and volunteer                                                                   |
+| `workflows.rs`     | The single snapshot read model and every workflow command: saved opportunities, applications, attendance, waitlist, registrations, hours review, settings, opportunity creation, profile |
+| `backups.rs`       | Online-backup snapshots, artifact validation (application id, schema, integrity, foreign keys), pre-restore safety copy, and restore with an audit event                                 |
+| `models.rs`        | Serialized DTOs (`camelCase` for the TS client) and seed structs                                                                                                                         |
+| `error.rs`         | Validation, not-found, and infrastructure errors; commands stringify at the boundary                                                                                                     |
 
 Each workflow command validates the transition, writes the row, appends its audit event,
 and returns the new `WorkspaceSnapshot`. Commands never return a partial success.
+
+### Code ownership map
+
+When two layers could plausibly implement something, this table says who owns it. It exists so
+a future change does not add a second copy of a rule that already has a home.
+
+| Concern                 | Owner                                    |
+| ----------------------- | ---------------------------------------- |
+| Authentication          | Rust core (`auth.rs`)                    |
+| Authorization           | Rust core (`authorization.rs`)           |
+| Organization membership | Rust core + SQLite (`organizations.rs`)  |
+| Business workflows      | Rust core (`workflows.rs`)               |
+| AutoRoster matching     | Rust core (`matching.rs`, `roster.rs`)   |
+| Reports and exports     | Rust core (`reports.rs`)                 |
+| Coverage and attention  | Rust core (`domain.rs`)                  |
+| Browser demo            | TypeScript (`previewRepository.ts`)      |
+| View state and layout   | React (`src/features`, `src/components`) |
+| Generated translations  | `scripts/i18n-*.mjs`                     |
+| Generated demo data     | `scripts/generate-demo-data.mjs`         |
+| Durable data            | SQLite                                   |
 
 ### Tauri shell (`src-tauri`)
 

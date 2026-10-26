@@ -42,6 +42,11 @@ if (!dbPath) {
 const requiredTables = [
   "schema_migrations",
   "organizations",
+  "organization_contacts",
+  "organization_memberships",
+  "organization_invites",
+  "organization_updates",
+  "organization_update_reads",
   "app_settings",
   "users",
   "auth_sessions",
@@ -76,7 +81,7 @@ const requiredTables = [
 ];
 
 // Keep in step with SCHEMA_VERSION in src-tauri/core/src/db.rs.
-const expectedSchemaVersion = 6;
+const expectedSchemaVersion = 7;
 const db = new DatabaseSync(dbPath, { readOnly: true });
 
 try {

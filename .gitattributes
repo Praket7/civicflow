@@ -1,0 +1,5 @@
+# Generated data, not hand-maintained source. Regenerate with the scripts named
+# below and let the diff prove it; `pnpm check:generated` fails when it does not.
+shared/demo-workspace.json linguist-generated=true
+src/lib/i18n/strings.json linguist-generated=true
+src/lib/i18n/catalogs/*.json linguist-generated=true

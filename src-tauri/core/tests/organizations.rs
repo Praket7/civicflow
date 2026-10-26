@@ -39,6 +39,39 @@ fn new_organization(name: &str) -> NewOrganization {
 }
 
 #[test]
+fn the_organization_tables_exist_after_migration() {
+    let database = seeded();
+    let conn = database.connection();
+    let mut statement = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .unwrap();
+    let names: Vec<String> = statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|row| row.unwrap())
+        .collect();
+
+    for table in [
+        "organizations",
+        "organization_contacts",
+        "organization_memberships",
+        "organization_invites",
+        "organization_updates",
+        "organization_update_reads",
+    ] {
+        assert!(
+            names.iter().any(|name| name == table),
+            "missing table {table}"
+        );
+    }
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, civicflow_core::db::SCHEMA_VERSION);
+}
+
+#[test]
 fn the_creator_of_an_organization_is_its_first_coordinator() {
     let database = seeded();
     let conn = database.connection();

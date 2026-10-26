@@ -182,3 +182,72 @@ organization names in the kiosk, notifications, invite mail, and impact report.
 **Why:** the same build is demoed for several kinds of organization, and a new coordinator
 who creates an organization should never see someone else's name in their workspace. The
 bundled sample organization keeps its own name because that is demo data, not interface copy.
+
+## 019 — Organization membership is authoritative in the database
+
+**Decision:** who belongs to an organization, and in what role, is a row in
+`organization_memberships`. Every protected operation resolves the session to an account and
+asks `authorization::require_membership` or `require_coordinator` for the membership it needs.
+**Rejected:** keeping membership in a frontend list, and trusting the organization id a screen
+sends without checking it.
+**Why:** a frontend list is a claim, not a fact: an account could point itself at an
+organization it never joined, and signup accepted the role the client asked for. The same
+account may also coordinate one organization and volunteer at another, which a single global
+role cannot express. Hiding a route is still useful, but it is now a convenience rather than
+the control.
+
+## 020 — Invitations are hashed, single-use and expiring
+
+**Decision:** `organization_invites` stores the SHA-256 hash of a random 256-bit token, an
+expiry, and the account that redeemed it. The token is shown once, when a coordinator issues
+it. Only a coordinator can issue one, and redeeming an invitation cannot revive a membership a
+coordinator disabled.
+**Rejected:** the reusable plaintext coordinator and volunteer codes the app used to print.
+**Why:** a short shared code ends up in chat threads and screenshots, never expires, and cannot
+be tied to one person. A hashed single-use token limits the damage of a leaked database and
+makes "who joined with this link" answerable.
+
+## 021 — AutoRoster conflicts are measured in time, not in days
+
+**Decision:** a volunteer is unavailable only for the time another shift covers. The flow
+model still gives each candidate one slot per day, which is safe; a second pass then offers
+the remaining same-day slots to candidates whose committed time does not overlap them,
+scarcest slot first.
+**Rejected:** equating "same calendar day" with "conflict", and forcing arbitrary interval
+conflicts into the min-cost flow model.
+**Why:** a volunteer booked from 9am to noon is genuinely free at 2pm, and refusing the second
+shift loses coverage the organization has. Pairwise interval conflicts are not representable in
+a single-commodity flow — a slot has to be filled by exactly one candidate while a candidate
+has to stay un-double-booked — so the exact part (nothing overlaps) is enforced where it can be
+and the remaining choice is a deterministic, explainable pass. Replacing the flow solver with a
+greedy loop was rejected too: the flow fills more seats, which is the property the tests pin.
+
+## 022 — Missing eligibility data fails closed
+
+**Decision:** a role with a minimum age rejects a volunteer with no birthdate, and a required
+credential rejects a volunteer with no record of it or one that lapsed, each with its own
+reason string. The automated planner and the registration path agree on this.
+**Rejected:** treating an absent value as "no objection" in the planner.
+**Why:** the two paths disagreed: registering refused a missing birthdate while the planner
+quietly treated it as eligible, so the plan offered a volunteer whose assignment the apply step
+then refused. For a role that exists because of a safety requirement, unknown is not the same
+as satisfied.
+
+## 023 — Generated data is labeled and reproducible
+
+**Decision:** the demo workspace and the locale catalogs are marked `linguist-generated` in
+`.gitattributes`, and `pnpm check:generated` regenerates them and fails on any diff.
+**Rejected:** reading them as hand-maintained source, and moving them to new paths mid-project.
+**Why:** a reviewer should be able to tell authored code from generated data at a glance, and a
+catalog that no longer matches its generator is a defect CI can catch for free. Paths stay put
+so no import has to change for a labeling decision.
+
+## 024 — The stack is not being rebuilt
+
+**Decision:** CivicFlow keeps React 19, Vite, and Tauri 2 with the Rust core. Work goes into
+unifying the data path and hardening the rules.
+**Rejected:** a "carbon copy rebuild" in the same stack, and moving the core to TypeScript.
+**Why:** a rebuild would reproduce the same screens and throw away what is hardest to redo —
+the security hardening, the passing test suites, the accessibility audits, and the browser
+preview that runs without an install. A rebuild is an onboarding answer to an architecture
+question, and the architecture question is answered by this log.

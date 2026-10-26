@@ -10,7 +10,7 @@ event before returning a fresh snapshot.
 
 - Tauri 2 desktop shell, React 19 + TypeScript + Vite, Rust core crate, SQLite through
   `rusqlite`.
-- Embedded migrations at schema version 6, deterministic seed, foreign keys, integrity
+- Embedded migrations at schema version 7, deterministic seed, foreign keys, integrity
   checks, and reset-to-seed.
 - Structured IPC errors with `code`, `message`, `field`, and optional `action`.
 - One `WorkspaceRepository` boundary with a desktop implementation and a browser fallback
@@ -27,6 +27,12 @@ event before returning a fresh snapshot.
   signed in”, and a password reset revokes every existing session for that account.
 - Coordinator and volunteer roles are enforced in Rust, not only by the router. Every
   workspace command resolves the token before touching data.
+- Organization membership is a database row. `organization_memberships` records who belongs to
+  an organization and in what role, `organization_invites` holds single-use expiring
+  invitations that store only a token hash, and `authorization::require_membership` /
+  `require_coordinator` decide access from the resolved session. The account's own role is
+  still what the older workspace commands read, so a newly created account keeps the access
+  level it asked for until the signup path moves to invitations (see `DECISIONS.md` 019).
 - A coordinator may read and write the whole workspace. A volunteer receives a redacted
   snapshot containing only their own registrations, attendance, hours decisions,
   credentials, service verifications and profile. The applicant pipeline, audit trail,
@@ -106,11 +112,10 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
   workspace, signs out, signs the volunteer in, and refuses coordinator routes. The suite
   uses a throwaway `CIVICFLOW_DATA_DIR`.
 - `README.md`, `ARCHITECTURE.md`, `AUTH.md`, `DATA_MODEL.md`, `MATCHING_ENGINE.md`,
-  `COVERAGE_HEALTH.md`, `METRICS.md`, `SECURITY.md`, `SIGNING.md`, `ACCESSIBILITY.md`,
-  `TESTING.md`, `USER_GUIDE.md`, `ENVIRONMENT.md`, `DECISIONS.md`, and
-  `OPEN_SOURCE_CREDITS.md`.
+  `METRICS.md`, `SECURITY.md`, `SIGNING.md`, `ACCESSIBILITY.md`, `TESTING.md`,
+  `USER_GUIDE.md`, `ENVIRONMENT.md`, `DECISIONS.md`, and `OPEN_SOURCE_CREDITS.md`.
 - Visual QA notes and the full route sweep are in [VISUAL_QA.md](VISUAL_QA.md).
-- `pnpm db:verify` reads the running desktop database and checks integrity, schema v6, 32
+- `pnpm db:verify` reads the running desktop database and checks integrity, schema v7, 38
   tables, foreign keys and record counts.
 
 ### Release artifacts

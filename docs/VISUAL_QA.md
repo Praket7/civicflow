@@ -66,7 +66,7 @@ The last pass treated the whole product as one surface rather than a set of scre
   rendered-pixel contrast sweep reported no text violations in light or dark theme. **22**
   scripted interaction checks and **9** persistence checks passed, including save/reload,
   hours approval, kiosk check-in, CSV export, and demo reset. `pnpm db:verify` reads the live
-  desktop file and checks integrity, schema v6, 32 tables, foreign keys and record counts.
+  desktop file and checks integrity, schema v7, 38 tables, foreign keys and record counts.
 
 ## Collapsed navigation rail
 
@@ -88,7 +88,7 @@ reproducing them.
    as one photo, one greeting, an impact quote, and derived metrics.
 2. **Coverage card vs bars (screens 01 and 19):** a 91 % card sat above bars averaging roughly 86 %. The
    card is now **role coverage** (filled required slots / required slots) and the bars are
-   **seat fill** (confirmed / capacity), each labeled and documented in `COVERAGE_HEALTH.md`.
+   **seat fill** (confirmed / capacity), each labeled and documented in `METRICS.md`.
 3. **Screenshots standing in for photography (screens 04, 16, 17, 20, 37):** replaced with licensed community
    photos. App screenshots never stand in for people or programs.
 4. **Ghosted or duplicated headings (screens 05, 07, 12, 13, 15, 21, 29):** one title block per page,

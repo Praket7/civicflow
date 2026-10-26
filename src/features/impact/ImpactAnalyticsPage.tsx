@@ -175,7 +175,7 @@ export function ImpactAnalyticsPage() {
           alt={
             ownWorkspace
               ? (organization.imageAlt ?? `${organization.name} community photo`)
-              : "Volunteers packing food boxes at a community pantry"
+              : t("Volunteers packing food boxes at a community pantry")
           }
         />
         <div className={styles.heroWash} aria-hidden="true" />

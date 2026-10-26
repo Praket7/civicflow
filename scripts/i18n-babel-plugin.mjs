@@ -1,5 +1,6 @@
 import {
   hasLetters,
+  isRenderedCopy,
   keepsBoundarySpace,
   normalizeJsxText,
   shouldSkipElement,
@@ -62,6 +63,26 @@ function translateCall(types, value) {
 }
 
 /**
+ * True when a literal is one of the values the container can render as text:
+ * the expression itself, a ternary branch, or a side of `&&`/`||`. A literal
+ * inside a call, a lookup, or an array is a value, not copy.
+ */
+function rendersAsText(literalPath, containerPath) {
+  let current = literalPath;
+  while (current.parentPath && current.parentPath !== containerPath) {
+    const parent = current.parentPath.node;
+    const renders =
+      (parent.type === "ConditionalExpression" &&
+        (parent.consequent === current.node || parent.alternate === current.node)) ||
+      (parent.type === "LogicalExpression" &&
+        (parent.left === current.node || parent.right === current.node));
+    if (!renders) return false;
+    current = current.parentPath;
+  }
+  return current.parentPath === containerPath;
+}
+
+/**
  * Compile-time copy extraction: static JSX text and known copy props are
  * replaced with `__cfT("...")`. Dynamic values and workspace records are left
  * alone, because volunteer names, addresses and program descriptions should
@@ -112,6 +133,20 @@ export default function civicflowI18nPlugin({ types }) {
 
         path.replaceWithMultiple(nodes);
         state.i18nChanged = true;
+      },
+      JSXExpressionContainer(path, state) {
+        if (!state.i18nEnabled || insideSkippedElement(path)) return;
+        const parent = path.parentPath.node;
+        if (parent.type === "JSXAttribute" || parent.type === "JSXSpreadAttribute") return;
+        path.traverse({
+          StringLiteral(literalPath) {
+            const value = literalPath.node.value;
+            if (!isRenderedCopy(value)) return;
+            if (!rendersAsText(literalPath, path)) return;
+            literalPath.replaceWith(translateCall(types, value.trim()));
+            state.i18nChanged = true;
+          },
+        });
       },
       JSXAttribute(path, state) {
         if (!state.i18nEnabled) return;

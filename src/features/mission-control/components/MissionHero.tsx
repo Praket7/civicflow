@@ -113,7 +113,7 @@ export function MissionHero({ data }: MissionHeroProps) {
           alt={
             ownWorkspace
               ? (organization.imageAlt ?? `${organization.name} community photo`)
-              : "Volunteers packing food boxes together at a community pantry"
+              : t("Volunteers packing food boxes together at a community pantry")
           }
           width={1600}
           height={760}

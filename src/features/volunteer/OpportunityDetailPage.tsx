@@ -326,7 +326,7 @@ export function OpportunityDetailPage() {
               className={styles.tabContent}
               role="tabpanel"
               aria-label={String(
-                TABS.find((item) => item.id === tab)?.label ?? "Opportunity section",
+                TABS.find((item) => item.id === tab)?.label ?? t("Opportunity section"),
               )}
             >
               {tab === "overview" ? (
@@ -403,14 +403,20 @@ export function OpportunityDetailPage() {
                             src={image}
                             alt={
                               [
-                                "Volunteers preparing food together at a community site",
-                                "A volunteer reading with a student at the library",
-                                "Garden volunteers tending raised beds",
+                                t("Volunteers preparing food together at a community site"),
+                                t("A volunteer reading with a student at the library"),
+                                t("Garden volunteers tending raised beds"),
                               ][index]
                             }
                           />
                           <figcaption>
-                            {["Food distribution", "Library tutoring", "Garden restoration"][index]}
+                            {
+                              [
+                                t("Food distribution"),
+                                t("Library tutoring"),
+                                t("Garden restoration"),
+                              ][index]
+                            }
                           </figcaption>
                         </figure>
                       ))}

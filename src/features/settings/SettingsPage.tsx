@@ -23,6 +23,7 @@ import {
   Toggle,
 } from "../../components/ui";
 import { useAuth } from "../../lib/auth/session";
+import { t } from "../../lib/i18n";
 import { restartSetup } from "../../lib/onboarding/store";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import { useWorkspace } from "../../lib/workspace/session";
@@ -154,7 +155,7 @@ export function SettingsPage() {
               }}
             >
               <item.icon size={14} aria-hidden="true" />
-              {item.label}
+              {t(item.label)}
             </button>
           ))}
         </nav>

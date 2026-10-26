@@ -51,6 +51,31 @@ function restore(text) {
   return output;
 }
 
+const PLACEHOLDER = /\{[^}]+\}/g;
+
+/**
+ * Placeholders are ordinary text to a translator, so `{hours}` comes back as
+ * `{ure}` and `{count}` can disappear outright. Swap each one for a sentinel
+ * before the request and put the original braces back afterwards.
+ */
+function maskPlaceholders(text) {
+  const names = [...new Set(text.match(PLACEHOLDER) ?? [])];
+  let masked = text;
+  names.forEach((name, index) => {
+    masked = masked.split(name).join(`%%${index}%%`);
+  });
+  return { masked, names };
+}
+
+function unmaskPlaceholders(text, names) {
+  return names.reduce((output, name, index) => output.split(`%%${index}%%`).join(name), text);
+}
+
+/** The distinct placeholders in a string, so a mangled translation is caught. */
+function placeholderSignature(text) {
+  return [...(text.match(PLACEHOLDER) ?? [])].sort().join("|");
+}
+
 function chunk(values) {
   const chunks = [];
   let current = [];
@@ -105,13 +130,27 @@ async function requestTranslation(texts, code) {
 }
 
 async function translateChunk(texts, code, attempt = 0) {
-  const protectedTexts = texts.map(protect);
+  const masks = texts.map((text) => maskPlaceholders(protect(text)));
   try {
-    const translated = await requestTranslation(protectedTexts, code);
+    const translated = await requestTranslation(
+      masks.map((entry) => entry.masked),
+      code,
+    );
     if (translated.length !== texts.length) {
       throw new Error(`expected ${texts.length} parts, received ${translated.length}`);
     }
-    return translated.map(restore);
+    const restored = translated.map((value, index) =>
+      unmaskPlaceholders(restore(value), masks[index].names),
+    );
+    // A translation that renamed or dropped a placeholder would render a
+    // literal `{count}` on screen, so retry the batch instead of keeping it.
+    const damaged = restored.findIndex(
+      (value, index) => placeholderSignature(value) !== placeholderSignature(texts[index]),
+    );
+    if (damaged >= 0) {
+      throw new Error(`placeholder damaged in ${JSON.stringify(texts[damaged])}`);
+    }
+    return restored;
   } catch (error) {
     if (attempt >= 8) throw error;
     const blocked = error.message.includes("blocked");

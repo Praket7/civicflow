@@ -35,3 +35,44 @@ export function keepsBoundarySpace(raw, previous, next) {
 export function shouldSkipElement(elementName) {
   return Boolean(elementName && SKIP_ELEMENTS.has(elementName));
 }
+
+/**
+ * Copy that is rendered straight from a JSX expression container, as in
+ * `{short ? "Role gap" : "Fully covered"}`. Boundary whitespace is left alone
+ * because dropping it would change the visible text, and a plural or unit
+ * fragment ("s", "ies") is not a sentence a translator can work from.
+ */
+/** Values in copy position that are records, not interface text. */
+const NOT_COPY = new Set([
+  // Venue fallback for an event with no recorded address.
+  "91 Holt St, Buffalo",
+]);
+
+export function isRenderedCopy(value) {
+  if (value !== value.trim()) return false;
+  if (!value || !hasLetters(value) || value.includes("@")) return false;
+  if (NOT_COPY.has(value)) return false;
+  return value.includes(" ") || value.length >= 4;
+}
+
+/**
+ * The literals an expression container can render as text: the expression
+ * itself, a ternary branch, or a side of `&&`/`||`. Anything else — a call, a
+ * lookup, an array — is a value, not copy.
+ */
+export function collectRenderedLiterals(node, add) {
+  if (!node) return;
+  if (node.type === "StringLiteral") {
+    add(node);
+    return;
+  }
+  if (node.type === "ConditionalExpression") {
+    collectRenderedLiterals(node.consequent, add);
+    collectRenderedLiterals(node.alternate, add);
+    return;
+  }
+  if (node.type === "LogicalExpression") {
+    collectRenderedLiterals(node.left, add);
+    collectRenderedLiterals(node.right, add);
+  }
+}

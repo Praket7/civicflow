@@ -207,7 +207,9 @@ export function CheckInPage() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!myRow) {
-      setError("You are not on today's roster. Ask the shift lead to add you before checking in.");
+      setError(
+        t("You are not on today's roster. Ask the shift lead to add you before checking in."),
+      );
       return;
     }
     if (!isOpen) {
@@ -216,7 +218,9 @@ export function CheckInPage() {
     }
     if (!eventCode || digits.join("") !== eventCode) {
       setError(
-        "That code does not match this event. Check the board at the check-in table and try again.",
+        t(
+          "That code does not match this event. Check the board at the check-in table and try again.",
+        ),
       );
       resetCode();
       return;

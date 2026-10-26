@@ -388,8 +388,8 @@ export function VolunteerShiftPage() {
                     {checks[item.id] ? <Check size={12} strokeWidth={2.6} /> : null}
                   </span>
                   <span className={styles.checkCopy}>
-                    <span className={styles.checkLabel}>{item.label}</span>
-                    <span className={styles.checkHint}>{item.hint}</span>
+                    <span className={styles.checkLabel}>{t(item.label)}</span>
+                    <span className={styles.checkHint}>{t(item.hint)}</span>
                   </span>
                 </label>
               </li>

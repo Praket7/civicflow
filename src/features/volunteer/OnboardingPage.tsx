@@ -15,6 +15,7 @@ import {
 } from "../../components/ui";
 import { SetupShell } from "../../components/layout/SetupShell";
 import { useAuth } from "../../lib/auth/session";
+import { t } from "../../lib/i18n";
 import { profilePhoto } from "../../lib/images";
 import { completeSetup } from "../../lib/onboarding/store";
 import { organizationsFor } from "../../lib/organizations/store";
@@ -200,7 +201,9 @@ export function OnboardingPage() {
   }
 
   return (
-    <SetupShell label={`Volunteer setup · Step ${step} of ${STEPS.length}`}>
+    <SetupShell
+      label={t("Volunteer setup · Step {step} of {total}", { step, total: STEPS.length })}
+    >
       <Page className={styles.page}>
         <ol className={styles.steps} aria-label="Onboarding progress">
           {STEPS.map((label, index) => {
@@ -211,7 +214,7 @@ export function OnboardingPage() {
                 <span className={styles.stepNumber} aria-hidden="true">
                   {state === "done" ? <Check size={12} strokeWidth={2.6} /> : number}
                 </span>
-                <span className={styles.stepLabel}>{label}</span>
+                <span className={styles.stepLabel}>{t(label)}</span>
                 {state === "done" ? <span className="visually-hidden">completed</span> : null}
                 {state === "active" ? <span className="visually-hidden">current step</span> : null}
               </li>

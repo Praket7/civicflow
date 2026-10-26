@@ -2,7 +2,13 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
-import { hasLetters, normalizeJsxText, shouldSkipElement } from "./i18n-normalize.mjs";
+import {
+  collectRenderedLiterals,
+  hasLetters,
+  isRenderedCopy,
+  normalizeJsxText,
+  shouldSkipElement,
+} from "./i18n-normalize.mjs";
 
 const COPY_ATTRIBUTES = new Set([
   "alt",
@@ -11,6 +17,10 @@ const COPY_ATTRIBUTES = new Set([
   "backLabel",
   "caption",
   "centerLabel",
+  // `copy` is body text for EmptyState, which translates it itself. It is
+  // collected here and left alone by the JSX transform so the sentence is
+  // never looked up twice.
+  "copy",
   "description",
   "empty",
   "eyebrow",
@@ -31,11 +41,27 @@ function collectFiles(directory) {
     if (entry.isDirectory()) {
       if (entry.name === "i18n" || entry.name === "node_modules") continue;
       files.push(...collectFiles(path));
-    } else if (entry.name.endsWith(".tsx") && !entry.name.includes(".test.")) {
+    } else if (/\.tsx?$/.test(entry.name) && !entry.name.includes(".test.")) {
       files.push(path);
     }
   }
   return files;
+}
+
+/**
+ * Modules without JSX keep their copy in t() calls, so a .ts file is only read
+ * when it imports the translator. An unrelated helper that happens to be named
+ * `t` cannot contribute strings.
+ */
+function importsTranslate(ast) {
+  return ast.program.body.some(
+    (node) =>
+      node.type === "ImportDeclaration" &&
+      String(node.source.value).includes("i18n") &&
+      node.specifiers.some(
+        (specifier) => specifier.type === "ImportSpecifier" && specifier.imported.name === "t",
+      ),
+  );
 }
 
 function elementName(node) {
@@ -86,6 +112,8 @@ for (const file of collectFiles("src")) {
     continue;
   }
 
+  if (file.endsWith(".ts") && !importsTranslate(ast)) continue;
+
   traverse(ast, {
     // Copy is not only JSX: labels, empty states, and question text are also
     // passed straight to t(). Collect literals anywhere inside that argument,
@@ -103,6 +131,17 @@ for (const file of collectFiles("src")) {
       if (insideSkippedElement(path)) return;
       const value = normalizeJsxText(path.node.value);
       if (value && hasLetters(value)) strings.add(value);
+    },
+    // `{short ? "Role gap" : "Fully covered"}` is copy like any other, but it
+    // is not JSX text and not an attribute value, so it needs its own pass.
+    JSXExpressionContainer(path) {
+      const parent = path.parentPath.node;
+      if (parent.type === "JSXAttribute" || parent.type === "JSXSpreadAttribute") return;
+      if (insideSkippedElement(path)) return;
+      collectRenderedLiterals(path.node.expression, (node) => {
+        if (!isRenderedCopy(node.value)) return;
+        strings.add(node.value.trim());
+      });
     },
     JSXAttribute(path) {
       const name = path.node.name;

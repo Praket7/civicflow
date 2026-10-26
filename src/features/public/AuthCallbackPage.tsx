@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, ArrowLeft, Check, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { accountHome, useAuth } from "../../lib/auth/session";
+import { t } from "../../lib/i18n";
 import { markSetupPending } from "../../lib/onboarding/store";
 import { organizationsFor } from "../../lib/organizations/store";
 import {
@@ -39,7 +40,7 @@ function providerFailure(): Failure | null {
   const text = details.join(" ").toLowerCase();
   if (["access_denied", "access denied", "cancel"].some((signal) => text.includes(signal))) {
     return {
-      message: "Google sign-in was canceled. Nothing changed on this device.",
+      message: t("Google sign-in was canceled. Nothing changed on this device."),
       canceled: true,
     };
   }
@@ -48,7 +49,7 @@ function providerFailure(): Failure | null {
 
 function initialFailure(): Failure | null {
   if (!hostedAuthConfigured) {
-    return { message: "Hosted sign-in is not configured in this build.", unconfigured: true };
+    return { message: t("Hosted sign-in is not configured in this build."), unconfigured: true };
   }
   const provider = providerFailure();
   if (provider) return provider;
@@ -58,7 +59,7 @@ function initialFailure(): Failure | null {
     !(tokens.accessToken && tokens.refreshToken)
   ) {
     return {
-      message: "This link is missing its sign-in token. Open the newest email and try again.",
+      message: t("This link is missing its sign-in token. Open the newest email and try again."),
     };
   }
   return null;
@@ -85,8 +86,9 @@ export function AuthCallbackPage() {
       // needs no such check.
       if (isTauri() && !consumePendingLink("callback")) {
         setFailure({
-          message:
+          message: t(
             "This link was not requested on this device. Start again from the sign-in screen.",
+          ),
         });
         return;
       }
@@ -99,7 +101,7 @@ export function AuthCallbackPage() {
             ? await setHostedSession(tokens.accessToken, tokens.refreshToken)
             : await exchangeHostedCode(code as string);
         const identity = identityFromUser(hostedSession.user);
-        if (!identity) throw new Error("That account has no email address.");
+        if (!identity) throw new Error(t("That account has no email address."));
         // A provider account with no organization yet is a new account: its
         // first stop is setup. An account that already belongs somewhere, or
         // that has finished setup, is left alone.

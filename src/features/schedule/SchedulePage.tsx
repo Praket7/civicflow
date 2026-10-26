@@ -377,8 +377,8 @@ export function SchedulePage() {
                           <span className={styles.dayName}>{formatWeekday(day)}</span>
                           {dayRows.length > 0 ? (
                             <span className={styles.dayCount} data-gap={dayGaps > 0}>
-                              {countLabel(dayRows.length, "shift", "shifts")}
-                              {dayGaps > 0 ? ` · ${countLabel(dayGaps, "gap", "gaps")}` : ""}
+                              {countLabel(dayRows.length, t("shift"), t("shifts"))}
+                              {dayGaps > 0 ? ` · ${countLabel(dayGaps, t("gap"), t("gaps"))}` : ""}
                             </span>
                           ) : null}
                         </span>

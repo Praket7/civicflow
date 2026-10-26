@@ -25,6 +25,7 @@ import { coverPhoto } from "../../lib/images";
 import { completeSetup } from "../../lib/onboarding/store";
 import { organizationById, updateOrganizationCover } from "../../lib/organizations/store";
 import { useWorkspace } from "../../lib/workspace/session";
+import { t } from "../../lib/i18n";
 import { CAUSE_LABELS } from "../../lib/workspace/selectors";
 import type { Cause } from "../../types/domain";
 import { US_STATES } from "../../lib/us-states";
@@ -172,13 +173,13 @@ export function OrganizationSetupPage() {
 
   const checklist = [
     {
-      label: "Organization profile created",
-      detail: "Name, mission, and public story",
+      label: t("Organization profile created"),
+      detail: t("Name, mission, and public story"),
       done: profileComplete,
     },
     {
-      label: "Public contact added",
-      detail: form.email || "No contact email yet",
+      label: t("Public contact added"),
+      detail: form.email || t("No contact email yet"),
       done: contactComplete,
     },
     {
@@ -189,7 +190,9 @@ export function OrganizationSetupPage() {
   ];
 
   return (
-    <SetupShell label={`Organization setup · Step ${step} of ${STEPS.length}`}>
+    <SetupShell
+      label={t("Organization setup · Step {step} of {total}", { step, total: STEPS.length })}
+    >
       <Page>
         <ol className={styles.steps} aria-label="Setup progress">
           {STEPS.map((label, index) => {
@@ -200,7 +203,7 @@ export function OrganizationSetupPage() {
                 <span className={styles.stepNumber} aria-hidden="true">
                   {state === "done" ? <Check size={11} strokeWidth={2.8} /> : number}
                 </span>
-                {label}
+                {t(label)}
               </li>
             );
           })}

@@ -20,8 +20,9 @@ Inputs:
 - every open seat on the selected shifts, expanded into unit-capacity role slots;
 - every active volunteer, with skills, availability, credentials, history, and existing
   registrations;
-- four options: prefer Spanish, block same-day conflicts, cap weekly load, and include
-  waitlisted volunteers.
+- four options: prefer Spanish, block conflicting times, cap weekly load, and include
+  waitlisted volunteers. Respecting conflicts is the default for both a constructed
+  `RosterOptions` and a deserialized one.
 
 Outputs (`RosterPlan`):
 
@@ -37,16 +38,16 @@ Outputs (`RosterPlan`):
 `is_eligible` returns `Err(reason)` before scoring. A slot and candidate pair gets a graph
 edge only when every check passes:
 
-| Constraint             | Rule                                                                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Same shift             | A volunteer already registered for the shift is rejected.                                                                             |
-| Same day               | With `blockConflicts` on, a volunteer with another assignment that calendar day is rejected.                                          |
-| Weekly cap             | With `capWeekly` on, a volunteer with `weekly_load >= 2` in the next seven days is rejected.                                          |
-| Availability on record | An empty availability set is rejected.                                                                                                |
-| Day and period         | The candidate must contain `"<day>:<period>"`, where period is `morning` before 12:00, `afternoon` before 17:00, otherwise `evening`. |
-| Required skill         | Case-insensitive skill match on the role requirement.                                                                                 |
-| Required credential    | A credential with the required name whose `valid_through` is on or after the shift date.                                              |
-| Minimum age            | When both a birthdate and a role minimum age exist, age on the shift date must meet the minimum.                                      |
+| Constraint             | Rule                                                                                                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Same shift             | A volunteer already registered for the shift is rejected.                                                                                                                                       |
+| Overlapping time       | With `blockConflicts` on, a volunteer with an assignment whose start and end overlap the shift is rejected. A shift that begins when another ends is not a conflict.                            |
+| Weekly cap             | With `capWeekly` on, a volunteer with `weekly_load >= 2` in the next seven days is rejected.                                                                                                    |
+| Availability on record | An empty availability set is rejected.                                                                                                                                                          |
+| Day and period         | The candidate must contain `"<day>:<period>"`, where period is `morning` before 12:00, `afternoon` before 17:00, otherwise `evening`.                                                           |
+| Required skill         | Case-insensitive skill match on the role requirement.                                                                                                                                           |
+| Required credential    | Fails closed. Current when a credential with the required name has `valid_through` on or after the shift date; expired when it lapsed; missing when there is no record. The reason names which. |
+| Minimum age            | Fails closed. A role minimum age is only satisfied by a birthdate that puts the volunteer at or over the minimum on the shift date; an unknown birthdate is rejected.                           |
 
 The database loader adds two more filters before matching: only volunteers with status
 `active` are loaded, and unless `includeWaitlist` is true, anyone with a `waiting` waitlist
@@ -79,18 +80,35 @@ builds this network:
 ```text
 source
   → candidate-day node      capacity 1, cost 0
-  → role-slot node          capacity 1, cost = (100 - score) * 100 + tie - priority
+  → role-slot node          capacity 1, cost = (100 - score) * 100 + tie
   → sink                    capacity 1, cost = -priority
 ```
 
 A candidate-day node exists once per candidate and calendar day. Its single unit of source
-capacity is what enforces "at most one shift per volunteer per day" without needing pairwise
-overlap edges. A candidate can therefore appear in several day nodes but only once on any
-given day.
+capacity is what keeps the flow pass at one shift per volunteer per day without needing
+pairwise overlap edges. A candidate can therefore appear in several day nodes but only once
+on any given day.
 
 Only eligible candidate-day nodes on the slot's day are connected to that slot. The
 candidate-day slice is built from every candidate/slot pair, so a day node exists only when
 there is a slot on that day.
+
+## Same-day slots after the flow pass
+
+One slot per candidate per day is safe but stricter than the real rule, which is about
+time overlap: a volunteer free from 2pm can take a 2pm shift after a 9am one. Arbitrary
+interval conflicts cannot be represented in a single-commodity flow, so `fill_same_day_slots`
+offers the slots the flow pass left unfilled, scarcest slot first:
+
+- mandatory slots before optional ones;
+- then the slot fewest eligible candidates can take;
+- then earliest start, then slot ID.
+
+Within a slot, the best-scoring candidate wins, and candidates are compared in ID order so
+an exact tie is deterministic. A candidate is offered the slot only when their committed
+time — the assignments the flow pass just made plus the assignments already on record — does
+not overlap it. The pass runs only when conflicts are being respected, so it can never add
+an overlapping pair.
 
 ### Cost formula and priority
 
@@ -102,15 +120,15 @@ there is a slot on that day.
 
 so one score point is worth 100 cost units and a perfect match costs 0. The extra terms are:
 
-- `tie = slot_index * 2`, a deterministic tie-breaker in canonical slot order;
-- `priority = 20_000` when the slot is mandatory, otherwise 0.
+- `tie = slot_index % 100`, a deterministic tie-breaker in canonical slot order, always
+  smaller than one score point so it can never outweigh match quality;
+- `priority = MANDATORY_SLOT_BONUS` (20,000) when the slot is mandatory, otherwise 0.
 
-A slot is `mandatory` when it has a required skill or a required credential. Priority is
-applied twice, once on the candidate-to-slot edge and once on the slot-to-sink edge, so a
-mandatory seat carries 40,000 units of advantage. That is four times the 10,000-unit range
-of a full score swing, which is why scarce volunteers fill required roles before optional
-ones. Because priority is negative cost, the network contains negative edges; the solver
-uses SPFA rather than Dijkstra.
+A slot is `mandatory` when it has a required skill or a required credential. The bonus is
+applied once, on the edge that fills the slot, so a mandatory seat carries 20,000 units of
+advantage — twice the 10,000-unit range of a full score swing. That is why scarce volunteers
+fill required roles before optional ones. Because priority is negative cost, the network
+contains negative edges; the solver uses SPFA rather than Dijkstra.
 
 ## Min-cost max-flow
 
@@ -242,14 +260,11 @@ fabricated timing claim for another machine.
 
 ## Known limitations
 
-- A volunteer may serve at most one shift per **calendar day**, not one arbitrary overlap
-  window. This is stricter than a pure time-overlap check for split shifts on the same day.
-- The age constraint is skipped when a candidate has no birthdate in the matching engine.
-  Normal registration rejects a missing birthdate for an age-gated role, so the apply step
-  still refuses the assignment; the preview can show the candidate as eligible first.
-- The tie term can outweigh a one- or two-point score difference for later slots. It is
-  deterministic but not score-neutral at extremely small score gaps.
-- The brute-force oracle validates count and score, not the mandatory-priority objective.
+- The flow pass is exact for its own rule (one slot per candidate per day) but on a very
+  crowded day the second pass is a scarcity-ordered greedy, not a second optimization: it
+  can fill fewer same-day extras than an exhaustive search would. It never double-books.
+- The brute-force oracle validates count and score, not the mandatory-priority objective,
+  and it models one slot per candidate per day, so it is an oracle for the flow pass only.
 - The planner requires at least one shift ID; the comment in `plan_roster` mentions every
   future shift, but the implementation intentionally returns a validation error for an
   empty list.

@@ -8,11 +8,17 @@
 //! source -> candidate-day (capacity 1) -> role slot (capacity 1) -> sink
 //! ```
 //!
-//! A candidate can serve at most one shift per calendar day, which prevents
-//! overlapping assignments without giving up the global optimum for the supplied
-//! slots. Edge cost is `MAX_SCORE - score`, so minimum cost is maximum match
-//! quality. Required roles receive a large priority bonus so scarce candidates
-//! fill mandatory gaps before optional ones.
+//! Edge cost is `MAX_SCORE - score`, so minimum cost is maximum match quality,
+//! and a required role carries one priority bonus so scarce candidates fill
+//! mandatory gaps before optional ones.
+//!
+//! A volunteer is never offered two shifts whose times overlap: eligibility
+//! compares the shift's actual start and end with every assignment the candidate
+//! already holds. The flow model itself allows one slot per calendar day, which
+//! is safe but conservative, so a second pass offers the remaining same-day
+//! slots to candidates whose time does not overlap them. Arbitrary interval
+//! conflicts cannot be represented in a single-commodity flow; the second pass
+//! keeps the one rule that matters exact: no volunteer is double-booked.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -21,7 +27,34 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_SCORE: i32 = 100;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+/// A mandatory slot is worth more than any difference in match quality, so the
+/// planner fills required roles before optional ones when candidates are scarce.
+/// Applied once, on the edge that fills the slot.
+pub const MANDATORY_SLOT_BONUS: i32 = 20_000;
+
+/// One score point in flow cost. The deterministic tiebreak stays below it so
+/// ordering preference can never outweigh match quality.
+const SCORE_UNIT: i32 = 100;
+
+/// The span of time a volunteer has already committed to.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimeBlock {
+    pub starts_at: DateTime<FixedOffset>,
+    pub ends_at: DateTime<FixedOffset>,
+}
+
+/// Half-open overlap: a shift that ends exactly when the next one starts is not
+/// a conflict.
+fn overlaps(
+    starts_at: DateTime<FixedOffset>,
+    ends_at: DateTime<FixedOffset>,
+    other_start: DateTime<FixedOffset>,
+    other_end: DateTime<FixedOffset>,
+) -> bool {
+    starts_at < other_end && other_start < ends_at
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterOptions {
     #[serde(default)]
@@ -32,6 +65,20 @@ pub struct RosterOptions {
     pub cap_weekly: bool,
     #[serde(default)]
     pub include_waitlist: bool,
+}
+
+/// Respecting conflicts is the safe default, and the deserialized default has to
+/// agree with the constructed one so a caller that omits the field and a caller
+/// that builds the struct get the same plan.
+impl Default for RosterOptions {
+    fn default() -> Self {
+        Self {
+            prefer_spanish: false,
+            block_conflicts: true,
+            cap_weekly: false,
+            include_waitlist: false,
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -57,7 +104,7 @@ pub struct Candidate {
     pub attendance_rate: i64,
     pub events_completed: i64,
     pub credentials: Vec<Credential>,
-    pub assigned_days: HashSet<String>,
+    pub assigned_blocks: Vec<TimeBlock>,
     pub assigned_shift_ids: HashSet<String>,
     pub waitlisted_shift_ids: HashSet<String>,
     pub weekly_load: i64,
@@ -275,19 +322,44 @@ fn has_skill(candidate: &Candidate, skill: &str) -> bool {
         .any(|value| value.eq_ignore_ascii_case(skill))
 }
 
-fn has_credential(candidate: &Candidate, credential: &str, on: NaiveDate) -> bool {
-    candidate
-        .credentials
-        .iter()
-        .any(|value| value.name.eq_ignore_ascii_case(credential) && value.valid_through >= on)
+/// A required credential fails closed: a volunteer with no record of it, or one
+/// whose record lapsed, cannot take the role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CredentialState {
+    Current,
+    Expired,
+    Missing,
+}
+
+fn credential_state(candidate: &Candidate, credential: &str, on: NaiveDate) -> CredentialState {
+    let mut expired = false;
+    for value in &candidate.credentials {
+        if !value.name.eq_ignore_ascii_case(credential) {
+            continue;
+        }
+        if value.valid_through >= on {
+            return CredentialState::Current;
+        }
+        expired = true;
+    }
+    if expired {
+        CredentialState::Expired
+    } else {
+        CredentialState::Missing
+    }
 }
 
 fn is_eligible(candidate: &Candidate, slot: &Slot, options: &RosterOptions) -> Result<(), String> {
     if candidate.assigned_shift_ids.contains(&slot.shift_id) {
         return Err("Already assigned to this shift".into());
     }
-    if options.block_conflicts && candidate.assigned_days.contains(&slot.day_key) {
-        return Err("Already assigned to another shift that day".into());
+    if options.block_conflicts
+        && candidate
+            .assigned_blocks
+            .iter()
+            .any(|block| overlaps(block.starts_at, block.ends_at, slot.starts_at, slot.ends_at))
+    {
+        return Err("Already assigned to a shift at that time".into());
     }
     if options.cap_weekly && candidate.weekly_load >= 2 {
         return Err("Weekly assignment cap reached".into());
@@ -305,13 +377,25 @@ fn is_eligible(candidate: &Candidate, slot: &Slot, options: &RosterOptions) -> R
         }
     }
     if let Some(required) = &slot.required_credential {
-        if !has_credential(candidate, required, slot.starts_at.date_naive()) {
-            return Err(format!("Missing or expired credential: {required}"));
+        match credential_state(candidate, required, slot.starts_at.date_naive()) {
+            CredentialState::Current => {}
+            CredentialState::Expired => return Err(format!("Expired credential: {required}")),
+            CredentialState::Missing => {
+                return Err(format!("Missing required credential: {required}"))
+            }
         }
     }
-    if let (Some(birthdate), Some(minimum_age)) = (candidate.birthdate, slot.minimum_age) {
-        if age_on(birthdate, slot.starts_at.date_naive()) < minimum_age {
-            return Err(format!("Must be at least {minimum_age} on the shift date"));
+    if let Some(minimum_age) = slot.minimum_age {
+        match candidate.birthdate {
+            Some(birthdate) if age_on(birthdate, slot.starts_at.date_naive()) >= minimum_age => {}
+            Some(_) => return Err(format!("Must be at least {minimum_age} on the shift date")),
+            // A role with a minimum age cannot be filled by a volunteer whose age
+            // is unknown, so a missing birthdate fails closed.
+            None => {
+                return Err(format!(
+                    "Age not verified for a role for ages {minimum_age}+"
+                ))
+            }
         }
     }
     Ok(())
@@ -390,11 +474,136 @@ fn reasons(candidate: &Candidate, slot: &Slot, score: &ScoreBreakdown) -> Vec<St
     result
 }
 
+/// Builds one assignment. Shared by both passes so a slot filled by either one
+/// reports the same score, reasons, and eligible roles.
+fn assignment_for(
+    candidate: &Candidate,
+    slot: &Slot,
+    options: &RosterOptions,
+    slots: &[&Slot],
+) -> PlannedAssignment {
+    let score = score_candidate(candidate, slot, options);
+    PlannedAssignment {
+        shift_id: slot.shift_id.clone(),
+        opportunity_id: slot.opportunity_id.clone(),
+        shift_title: slot.shift_title.clone(),
+        role: slot.role.clone(),
+        candidate_id: candidate.id.clone(),
+        candidate_name: candidate.name.clone(),
+        candidate_initials: candidate.initials.clone(),
+        starts_at: slot.starts_at.to_rfc3339(),
+        score: score.total,
+        breakdown: score.clone(),
+        reasons: reasons(candidate, slot, &score),
+        promote_waitlist: candidate.waitlisted_shift_ids.contains(&slot.shift_id),
+        eligible_roles: slots
+            .iter()
+            .filter(|other| other.shift_id == slot.shift_id)
+            .filter(|other| is_eligible(candidate, other, options).is_ok())
+            .map(|other| other.role.clone())
+            .collect(),
+    }
+}
+
+/// Offers the slots the flow pass left unfilled to candidates who still have the
+/// time, scarcest slot first and best-scoring candidate first within a slot. The
+/// flow pass allows one slot per candidate per day, so a volunteer who is free
+/// from 2pm can take a 2pm shift even after a 9am one; this is where that
+/// assignment is made. Only runs when conflicts are being respected, so it can
+/// never add an overlapping pair.
+fn fill_same_day_slots(
+    candidates: &[&Candidate],
+    slots: &[&Slot],
+    options: &RosterOptions,
+    committed: &mut HashMap<String, Vec<TimeBlock>>,
+    assignments: &mut Vec<PlannedAssignment>,
+    filled_slots: &mut HashSet<usize>,
+) {
+    if !options.block_conflicts {
+        return;
+    }
+    let mut pending: Vec<usize> = slots
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !filled_slots.contains(index))
+        .map(|(index, _)| index)
+        .collect();
+    if pending.is_empty() {
+        return;
+    }
+
+    let eligible_count = |index: usize| -> usize {
+        candidates
+            .iter()
+            .filter(|candidate| is_eligible(candidate, slots[index], options).is_ok())
+            .count()
+    };
+    pending.sort_by(|left, right| {
+        let (left_slot, right_slot) = (slots[*left], slots[*right]);
+        right_slot
+            .mandatory
+            .cmp(&left_slot.mandatory)
+            .then_with(|| eligible_count(*left).cmp(&eligible_count(*right)))
+            .then_with(|| left_slot.starts_at.cmp(&right_slot.starts_at))
+            .then_with(|| left_slot.id.cmp(&right_slot.id))
+    });
+
+    let mut run_load: HashMap<String, i64> = HashMap::new();
+    for assignment in assignments.iter() {
+        *run_load.entry(assignment.candidate_id.clone()).or_insert(0) += 1;
+    }
+
+    for index in pending {
+        let slot = slots[index];
+        let mut chosen: Option<(&Candidate, i32)> = None;
+        for candidate in candidates {
+            if options.cap_weekly {
+                let load =
+                    candidate.weekly_load + run_load.get(&candidate.id).copied().unwrap_or(0);
+                if load >= 2 {
+                    continue;
+                }
+            }
+            let busy = committed.get(&candidate.id).is_some_and(|blocks| {
+                blocks.iter().any(|block| {
+                    overlaps(block.starts_at, block.ends_at, slot.starts_at, slot.ends_at)
+                })
+            });
+            if busy || is_eligible(candidate, slot, options).is_err() {
+                continue;
+            }
+            let total = score_candidate(candidate, slot, options).total;
+            // Candidates arrive ordered by id, so keeping the first on a tie is
+            // deterministic without a second comparison.
+            let better = match chosen {
+                None => true,
+                Some((_, best)) => total > best,
+            };
+            if better {
+                chosen = Some((candidate, total));
+            }
+        }
+        let Some((candidate, _)) = chosen else {
+            continue;
+        };
+        filled_slots.insert(index);
+        committed
+            .entry(candidate.id.clone())
+            .or_default()
+            .push(TimeBlock {
+                starts_at: slot.starts_at,
+                ends_at: slot.ends_at,
+            });
+        *run_load.entry(candidate.id.clone()).or_insert(0) += 1;
+        assignments.push(assignment_for(candidate, slot, options, slots));
+    }
+}
+
 /// Solve the supplied slots for the supplied candidates.
 ///
 /// The returned assignments are deterministic for the same inputs. The solver
 /// maximizes the number of filled slots first, then total match quality, while
-/// required roles carry a large priority bonus when candidates are scarce.
+/// required roles carry a priority bonus when candidates are scarce.
 pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -> RosterPlan {
     let mut ordered_candidates: Vec<&Candidate> = candidates.iter().collect();
     ordered_candidates.sort_by(|a, b| a.id.cmp(&b.id));
@@ -438,7 +647,11 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
     }
     for (slot_index, slot) in ordered_slots.iter().enumerate() {
         let slot_node = slot_offset + slot_index;
-        let priority = if slot.mandatory { 20_000 } else { 0 };
+        let priority = if slot.mandatory {
+            MANDATORY_SLOT_BONUS
+        } else {
+            0
+        };
         flow.add_edge(slot_node, sink, 1, -priority);
         for ((candidate_id, day), node) in &day_nodes {
             if day != &slot.day_key {
@@ -451,8 +664,8 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
                 continue;
             }
             let score = score_candidate(candidate, slot, options);
-            let tie = (slot_index as i32) * 2;
-            let cost = (MAX_SCORE - score.total) * 100 + tie - priority;
+            let tie = (slot_index as i32) % SCORE_UNIT;
+            let cost = (MAX_SCORE - score.total) * SCORE_UNIT + tie;
             flow.add_edge(*node, slot_node, 1, cost);
         }
     }
@@ -461,6 +674,16 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
 
     let mut assignments = Vec::new();
     let mut filled_slots: HashSet<usize> = HashSet::new();
+    let mut committed: HashMap<String, Vec<TimeBlock>> = HashMap::new();
+    for candidate in &ordered_candidates {
+        if candidate.assigned_blocks.is_empty() {
+            continue;
+        }
+        committed
+            .entry(candidate.id.clone())
+            .or_default()
+            .extend(candidate.assigned_blocks.iter().cloned());
+    }
     for ((candidate_id, _), node) in &day_nodes {
         let Some(candidate) = candidate_by_id.get(candidate_id.as_str()) else {
             continue;
@@ -472,30 +695,26 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
             }
             let slot_index = edge.to - slot_offset;
             let slot = ordered_slots[slot_index];
-            let score = score_candidate(candidate, slot, options);
             filled_slots.insert(slot_index);
-            assignments.push(PlannedAssignment {
-                shift_id: slot.shift_id.clone(),
-                opportunity_id: slot.opportunity_id.clone(),
-                shift_title: slot.shift_title.clone(),
-                role: slot.role.clone(),
-                candidate_id: candidate.id.clone(),
-                candidate_name: candidate.name.clone(),
-                candidate_initials: candidate.initials.clone(),
-                starts_at: slot.starts_at.to_rfc3339(),
-                score: score.total,
-                breakdown: score.clone(),
-                reasons: reasons(candidate, slot, &score),
-                promote_waitlist: candidate.waitlisted_shift_ids.contains(&slot.shift_id),
-                eligible_roles: ordered_slots
-                    .iter()
-                    .filter(|other| other.shift_id == slot.shift_id)
-                    .filter(|other| is_eligible(candidate, other, options).is_ok())
-                    .map(|other| other.role.clone())
-                    .collect(),
-            });
+            committed
+                .entry(candidate.id.clone())
+                .or_default()
+                .push(TimeBlock {
+                    starts_at: slot.starts_at,
+                    ends_at: slot.ends_at,
+                });
+            assignments.push(assignment_for(candidate, slot, options, &ordered_slots));
         }
     }
+
+    fill_same_day_slots(
+        &ordered_candidates,
+        &ordered_slots,
+        options,
+        &mut committed,
+        &mut assignments,
+        &mut filled_slots,
+    );
 
     assignments.sort_by(|a, b| {
         a.starts_at
@@ -566,7 +785,7 @@ mod tests {
             attendance_rate: 95,
             events_completed: 5,
             credentials: Vec::new(),
-            assigned_days: HashSet::new(),
+            assigned_blocks: Vec::new(),
             assigned_shift_ids: HashSet::new(),
             waitlisted_shift_ids: HashSet::new(),
             weekly_load: 0,
@@ -629,7 +848,19 @@ mod tests {
     }
 
     #[test]
-    fn one_assignment_per_candidate_day_is_enforced() {
+    fn overlapping_shifts_cannot_share_a_volunteer() {
+        let candidates = vec![candidate("a", &["Driver"], &["sat:morning"])];
+        let slots = vec![
+            slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
+            slot("s2", "Driver", Some("Driver"), "2026-10-17T11:00:00-04:00"),
+        ];
+        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        assert_eq!(plan.assignments.len(), 1);
+        assert_eq!(plan.unfilled.len(), 1);
+    }
+
+    #[test]
+    fn two_shifts_on_one_day_fill_when_they_do_not_overlap() {
         let candidates = vec![candidate(
             "a",
             &["Driver"],
@@ -637,11 +868,163 @@ mod tests {
         )];
         let slots = vec![
             slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
-            slot("s2", "Driver", Some("Driver"), "2026-10-17T13:00:00-04:00"),
+            slot("s2", "Driver", Some("Driver"), "2026-10-17T14:00:00-04:00"),
+        ];
+        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        assert_eq!(plan.assignments.len(), 2);
+        assert!(plan.unfilled.is_empty());
+        assert!(plan
+            .assignments
+            .iter()
+            .all(|assignment| assignment.candidate_id == "a"));
+    }
+
+    #[test]
+    fn a_shift_that_starts_when_another_ends_is_not_a_conflict() {
+        let candidates = vec![candidate(
+            "a",
+            &["Driver"],
+            &["sat:morning", "sat:afternoon"],
+        )];
+        let slots = vec![
+            slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
+            slot("s2", "Driver", Some("Driver"), "2026-10-17T12:00:00-04:00"),
+        ];
+        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        assert_eq!(plan.assignments.len(), 2);
+    }
+
+    #[test]
+    fn a_committed_shift_only_blocks_the_time_it_covers() {
+        let mut busy = candidate("a", &["Driver"], &["sat:morning", "sat:afternoon"]);
+        busy.assigned_blocks = vec![TimeBlock {
+            starts_at: date("2026-10-17T09:00:00-04:00"),
+            ends_at: date("2026-10-17T12:00:00-04:00"),
+        }];
+
+        let overlapping = vec![slot(
+            "s1",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T11:00:00-04:00",
+        )];
+        assert!(plan(
+            std::slice::from_ref(&busy),
+            &overlapping,
+            &RosterOptions::default()
+        )
+        .assignments
+        .is_empty());
+
+        let later = vec![slot(
+            "s2",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T14:00:00-04:00",
+        )];
+        assert_eq!(
+            plan(
+                std::slice::from_ref(&busy),
+                &later,
+                &RosterOptions::default()
+            )
+            .assignments
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_role_with_a_minimum_age_rejects_an_unknown_birthdate() {
+        let mut unknown = candidate("a", &["Driver"], &["sat:morning"]);
+        unknown.birthdate = None;
+        let mut restricted = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
+        restricted.minimum_age = Some(18);
+
+        let reason = is_eligible(&unknown, &restricted, &RosterOptions::default()).unwrap_err();
+        assert!(reason.contains("Age not verified"), "{reason}");
+        let plan = plan(&[unknown], &[restricted], &RosterOptions::default());
+        assert!(plan.assignments.is_empty());
+        assert_eq!(plan.unfilled.len(), 1);
+    }
+
+    #[test]
+    fn the_age_boundary_is_the_shift_date() {
+        let shift_date = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
+        let mut exact = candidate("a", &["Driver"], &["sat:morning"]);
+        exact.birthdate = NaiveDate::from_ymd_opt(2008, 10, 17);
+        let mut a_day_short = candidate("b", &["Driver"], &["sat:morning"]);
+        a_day_short.birthdate = NaiveDate::from_ymd_opt(2008, 10, 18);
+        let mut restricted = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
+        restricted.minimum_age = Some(18);
+        let options = RosterOptions::default();
+
+        assert_eq!(age_on(exact.birthdate.unwrap(), shift_date), 18);
+        assert_eq!(age_on(a_day_short.birthdate.unwrap(), shift_date), 17);
+        assert!(is_eligible(&exact, &restricted, &options).is_ok());
+        assert!(is_eligible(&a_day_short, &restricted, &options).is_err());
+    }
+
+    #[test]
+    fn a_leap_day_birthday_ages_on_the_first_of_march() {
+        let born = NaiveDate::from_ymd_opt(2008, 2, 29).unwrap();
+        assert_eq!(
+            age_on(born, NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()),
+            17
+        );
+        assert_eq!(
+            age_on(born, NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()),
+            18
+        );
+    }
+
+    #[test]
+    fn a_required_credential_must_be_current() {
+        let shift_date = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
+        let mut restricted = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
+        restricted.required_credential = Some("Safe driver clearance".into());
+        let options = RosterOptions::default();
+
+        let unverified = candidate("a", &["Driver"], &["sat:morning"]);
+        let missing = is_eligible(&unverified, &restricted, &options).unwrap_err();
+        assert!(missing.contains("Missing required credential"), "{missing}");
+
+        let mut expired = candidate("b", &["Driver"], &["sat:morning"]);
+        expired.credentials = vec![Credential {
+            name: "Safe driver clearance".into(),
+            valid_through: shift_date - chrono::Duration::days(1),
+        }];
+        let lapsed = is_eligible(&expired, &restricted, &options).unwrap_err();
+        assert!(lapsed.contains("Expired credential"), "{lapsed}");
+
+        let mut current = candidate("c", &["Driver"], &["sat:morning"]);
+        current.credentials = vec![Credential {
+            name: "Safe driver clearance".into(),
+            valid_through: shift_date,
+        }];
+        assert!(is_eligible(&current, &restricted, &options).is_ok());
+
+        let plan = plan(&[unverified, expired], &[restricted], &options);
+        assert!(plan.assignments.is_empty());
+    }
+
+    #[test]
+    fn match_quality_still_decides_between_mandatory_slots() {
+        let candidates = vec![candidate("a", &["Spanish"], &["sat:morning"])];
+        let mut general = slot("s2", "General", None, "2026-10-17T09:00:00-04:00");
+        general.mandatory = true;
+        let slots = vec![
+            slot(
+                "s1",
+                "Spanish Support",
+                Some("Spanish"),
+                "2026-10-17T09:00:00-04:00",
+            ),
+            general,
         ];
         let plan = plan(&candidates, &slots, &RosterOptions::default());
         assert_eq!(plan.assignments.len(), 1);
-        assert_eq!(plan.unfilled.len(), 1);
+        assert_eq!(plan.assignments[0].role, "Spanish Support");
     }
 
     #[test]

@@ -12,7 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::WORKFLOW_SEED;
 use crate::error::{CoreError, Result};
-use crate::matching::day_key;
+use crate::matching::{age_on, day_key};
 use crate::models::{
     Applicant, AttendanceEntry, AuditEvent, AvailabilitySlot, CheckinCode, CreateOpportunityResult,
     CredentialRecord, HoursDecision, ImpactMetric, NewOpportunityInput, OpportunityRecord,
@@ -863,11 +863,7 @@ fn volunteer_age(
     let Ok(birthdate) = chrono::NaiveDate::parse_from_str(&raw, "%Y-%m-%d") else {
         return Ok(None);
     };
-    let mut age = on_date.year() as i64 - birthdate.year() as i64;
-    if (on_date.month(), on_date.day()) < (birthdate.month(), birthdate.day()) {
-        age -= 1;
-    }
-    Ok(Some(age))
+    Ok(Some(age_on(birthdate, on_date)))
 }
 
 fn ensure_available(conn: &Connection, volunteer_id: &str, shift_id: &str) -> Result<()> {

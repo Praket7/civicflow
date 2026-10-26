@@ -7,7 +7,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 
 use crate::error::{CoreError, Result};
-use crate::matching::{day_key, plan, Candidate, Credential, RosterOptions, RosterPlan, Slot};
+use crate::matching::{
+    day_key, plan, Candidate, Credential, RosterOptions, RosterPlan, Slot, TimeBlock,
+};
 use crate::models::WorkspaceSnapshot;
 use crate::services::demo_now;
 use crate::workflows::{append_audit, snapshot, validate_registration};
@@ -136,12 +138,14 @@ fn load_candidates(
         }
     }
 
-    let mut assigned_days: HashMap<String, HashSet<String>> = HashMap::new();
+    // Committed time, not committed days: a volunteer booked from 9am to noon
+    // is still free at 2pm, and only an overlapping shift is a conflict.
+    let mut assigned_blocks: HashMap<String, Vec<TimeBlock>> = HashMap::new();
     let mut assigned_shifts: HashMap<String, HashSet<String>> = HashMap::new();
     let mut weekly_load: HashMap<String, i64> = HashMap::new();
     {
         let mut statement = conn.prepare(
-            "SELECT r.volunteer_id, r.shift_id, s.starts_at
+            "SELECT r.volunteer_id, r.shift_id, s.starts_at, s.ends_at
              FROM registrations r
              JOIN shifts s ON s.id = r.shift_id
              WHERE r.status = 'registered'",
@@ -150,18 +154,23 @@ fn load_candidates(
         while let Some(row) = rows.next()? {
             let volunteer: String = row.get(0)?;
             let shift: String = row.get(1)?;
-            let raw: String = row.get(2)?;
-            let Some(starts) = parse_datetime(&raw) else {
+            let (Some(starts), Some(ends)) = (
+                parse_datetime(&row.get::<_, String>(2)?),
+                parse_datetime(&row.get::<_, String>(3)?),
+            ) else {
                 continue;
             };
             assigned_shifts
                 .entry(volunteer.clone())
                 .or_default()
                 .insert(shift);
-            assigned_days
+            assigned_blocks
                 .entry(volunteer.clone())
                 .or_default()
-                .insert(day_key(starts.date_naive()));
+                .push(TimeBlock {
+                    starts_at: starts,
+                    ends_at: ends,
+                });
             if starts >= now && starts <= now + chrono::Duration::days(7) {
                 *weekly_load.entry(volunteer).or_insert(0) += 1;
             }
@@ -223,7 +232,7 @@ fn load_candidates(
             attendance_rate: row.get(5)?,
             events_completed: row.get(6)?,
             credentials: credentials.remove(&id).unwrap_or_default(),
-            assigned_days: assigned_days.remove(&id).unwrap_or_default(),
+            assigned_blocks: assigned_blocks.remove(&id).unwrap_or_default(),
             assigned_shift_ids: assigned_shifts.remove(&id).unwrap_or_default(),
             waitlisted_shift_ids: waitlist,
             weekly_load: weekly_load.remove(&id).unwrap_or(0),

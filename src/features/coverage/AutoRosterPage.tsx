@@ -216,9 +216,10 @@ export function AutoRosterPage() {
           return rosters.get(row.shift.id)?.some((entry) => entry.volunteer.id === volunteer.id);
         }).length;
 
+        // Time overlap, not the calendar day: a volunteer booked until 10am is
+        // free at 2pm, and a shift that runs past midnight still conflicts.
         const conflictRow = allRows.find((row) => {
           if (row.shift.id === shift.id) return false;
-          if (row.shift.startsAt.slice(0, 10) !== shift.startsAt.slice(0, 10)) return false;
           const start = parseISO(row.shift.startsAt).getTime();
           const end = parseISO(row.shift.endsAt).getTime();
           const overlaps = start < shiftEnd && end > shiftStart;

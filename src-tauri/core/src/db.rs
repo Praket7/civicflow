@@ -14,7 +14,7 @@ pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
 /// start from the same state.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
 /// Bumped with every migration so backups can check they match this build.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 /// "CIFV" — marks a database as a CivicFlow workspace so restore can refuse
 /// an arbitrary SQLite file.
 pub const APPLICATION_ID: i64 = 0x4349_4656;
@@ -25,6 +25,8 @@ const ACCOUNT_SCHEMA: &str =
     include_str!("../migrations/0004_accounts_and_notification_audiences.sql");
 const VOLUNTEER_PHOTO_SCHEMA: &str = include_str!("../migrations/0005_volunteer_photo.sql");
 const AUTH_ATTEMPT_SCHEMA: &str = include_str!("../migrations/0006_auth_attempts.sql");
+const ORGANIZATION_SCHEMA: &str =
+    include_str!("../migrations/0007_organizations_memberships_invites.sql");
 const WORKFLOW_SEED_MARKER: &str = "workflow_seed_version";
 
 const CREDENTIAL_TYPES: [(&str, i64); 6] = [
@@ -36,7 +38,7 @@ const CREDENTIAL_TYPES: [(&str, i64); 6] = [
     ("Volunteer team lead", 24),
 ];
 
-fn slug_id(prefix: &str, value: &str) -> String {
+pub(crate) fn slug_id(prefix: &str, value: &str) -> String {
     let slug: String = value
         .chars()
         .map(|character| {
@@ -92,13 +94,14 @@ fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>)
 /// Every schema step, in order. Kept as a free function as well as a method
 /// because restoring an older snapshot replaces the live database in place and
 /// the restored copy then has to catch up to this build.
-const MIGRATIONS: [(i64, &str); 6] = [
+const MIGRATIONS: [(i64, &str); 7] = [
     (1, INITIAL_SCHEMA),
     (2, WORKFLOW_SCHEMA),
     (3, LIFECYCLE_SCHEMA),
     (4, ACCOUNT_SCHEMA),
     (5, VOLUNTEER_PHOTO_SCHEMA),
     (6, AUTH_ATTEMPT_SCHEMA),
+    (7, ORGANIZATION_SCHEMA),
 ];
 
 pub fn apply_migrations(conn: &Connection) -> Result<()> {
@@ -179,6 +182,9 @@ impl Database {
             self.insert_seed(&seed)?;
         }
         crate::auth::seed_demo_accounts(&self.conn, &seed.demo_now)?;
+        // The bundled accounts belong to the workspace organization, exactly as
+        // an upgraded database does after the membership migration.
+        crate::organizations::backfill_memberships(&self.conn)?;
         self.seed_workflow_defaults()?;
         Ok(seeded)
     }
@@ -365,6 +371,9 @@ impl Database {
         let seed = SeedWorkspace::parse(DEMO_SEED)?;
         self.insert_seed(&seed)?;
         crate::auth::seed_demo_accounts(&self.conn, &seed.demo_now)?;
+        // The bundled accounts belong to the workspace organization, exactly as
+        // an upgraded database does after the membership migration.
+        crate::organizations::backfill_memberships(&self.conn)?;
         self.seed_workflow_defaults()?;
         Ok(())
     }
@@ -374,8 +383,8 @@ impl Database {
 
         transaction.execute(
             "INSERT INTO organizations
-             (id, name, initials, mission, city, state, address, website, email, timezone)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             (id, name, initials, mission, city, state, address, website, email, timezone, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 seed.organization.id,
                 seed.organization.name,
@@ -387,6 +396,7 @@ impl Database {
                 seed.organization.website,
                 seed.organization.email,
                 seed.organization.timezone,
+                seed.demo_now,
             ],
         )?;
 

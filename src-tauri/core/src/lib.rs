@@ -3,12 +3,14 @@
 //! behaviour is testable without a webview.
 
 pub mod auth;
+pub mod authorization;
 pub mod backups;
 pub mod db;
 pub mod domain;
 pub mod error;
 pub mod matching;
 pub mod models;
+pub mod organizations;
 pub mod reports;
 pub mod roster;
 pub mod services;

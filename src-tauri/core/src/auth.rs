@@ -63,13 +63,13 @@ fn verify_password(hash: &str, password: &str) -> bool {
         .is_ok()
 }
 
-fn token_hash(token: &str) -> String {
+pub(crate) fn token_hash(token: &str) -> String {
     format!("{:x}", Sha256::digest(token.as_bytes()))
 }
 
-/// 256 bits from the OS generator. Only the hash of this value is stored, so a
-/// copy of the database cannot be replayed as a session.
-fn session_token() -> String {
+/// 256 bits from the OS generator. Only the hash of a value like this is stored,
+/// so a copy of the database cannot be replayed as a session or an invitation.
+pub(crate) fn random_token() -> String {
     let mut bytes = [0_u8; 32];
     OsRng.fill_bytes(&mut bytes);
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -320,7 +320,7 @@ fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result
         Duration::hours(SHORT_SESSION_HOURS)
     };
     let expires_at = (now + lifetime).to_rfc3339();
-    let token = session_token();
+    let token = random_token();
     conn.execute(
         "INSERT INTO auth_sessions (id, user_id, token_hash, created_at, expires_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -648,7 +648,7 @@ fn normalize_name(name: &str) -> Result<String> {
     Ok(clean)
 }
 
-fn initials_for(name: &str) -> String {
+pub(crate) fn initials_for(name: &str) -> String {
     let words: Vec<&str> = name.split_whitespace().collect();
     let mut initials: String = match (words.first(), words.last()) {
         (Some(first), Some(last)) if words.len() > 1 => {

@@ -50,7 +50,7 @@ a model.
 ### Frontend (`src`)
 
 ```text
-src/app/                 router, 42-route registry, shell, credits
+src/app/                 router, 50-screen registry, shell, credits
 src/components/          navigation and UI primitives
 src/features/            one folder per surface
 src/lib/workspace/

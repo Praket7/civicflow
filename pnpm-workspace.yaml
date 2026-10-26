@@ -1,2 +1,11 @@
 minimumReleaseAgeExclude:
   - "@wdio/tauri-service@1.5.1"
+
+# These three ship prebuilt binaries, so their install scripts are not needed.
+# Declaring them keeps `pnpm install` quiet on every pnpm version instead of
+# asking for approval on the machine that happens to run a newer one.
+strictDepBuilds: false
+ignoredBuiltDependencies:
+  - esbuild
+  - edgedriver
+  - geckodriver

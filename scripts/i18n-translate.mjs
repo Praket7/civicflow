@@ -93,6 +93,12 @@ async function requestTranslation(texts, code) {
     throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 160)}`);
   }
 
+  // A throttled endpoint answers with a redirect to a captcha page, so the
+  // status is 200 and the body is HTML. Treat that as a rate limit instead of
+  // letting JSON.parse fail and retrying a second later.
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) throw new Error("HTTP 429 (blocked)");
+
   const payload = await response.json();
   const joined = (payload[0] ?? []).map((part) => part[0] ?? "").join("");
   return joined.split("@@@").map((part) => part.trim());
@@ -107,8 +113,10 @@ async function translateChunk(texts, code, attempt = 0) {
     }
     return translated.map(restore);
   } catch (error) {
-    if (attempt >= 4) throw error;
-    const delay = error.message.includes("429") ? 8000 : 1200 * (attempt + 1);
+    if (attempt >= 8) throw error;
+    const blocked = error.message.includes("blocked");
+    const delay = blocked ? 45_000 : error.message.includes("429") ? 15_000 : 1200 * (attempt + 1);
+    if (blocked) console.log(`${code}: throttled, waiting ${Math.round(delay / 1000)}s`);
     await wait(delay);
     return translateChunk(texts, code, attempt + 1);
   }

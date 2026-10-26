@@ -52,6 +52,29 @@ function insideSkippedElement(path) {
   return false;
 }
 
+const SKIP_KEYS = new Set(["loc", "start", "end", "extra", "leadingComments", "trailingComments"]);
+
+/** Every plain string inside an expression, skipping interpolated templates. */
+function collectLiterals(node, add) {
+  if (!node || typeof node !== "object") return;
+  if (node.type === "StringLiteral") {
+    add(node.value);
+    return;
+  }
+  if (node.type === "TemplateLiteral") {
+    if (node.expressions.length > 0) return;
+    for (const quasi of node.quasis) add(quasi.value.cooked ?? quasi.value.raw);
+    return;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (SKIP_KEYS.has(key)) continue;
+    if (Array.isArray(value)) value.forEach((child) => collectLiterals(child, add));
+    else if (value && typeof value === "object" && typeof value.type === "string") {
+      collectLiterals(value, add);
+    }
+  }
+}
+
 const strings = new Set();
 for (const file of collectFiles("src")) {
   const source = readFileSync(file, "utf8");
@@ -65,15 +88,16 @@ for (const file of collectFiles("src")) {
 
   traverse(ast, {
     // Copy is not only JSX: labels, empty states, and question text are also
-    // passed straight to t(). Collect those literals so the worklist matches
-    // what the interface can actually render.
+    // passed straight to t(). Collect literals anywhere inside that argument,
+    // so `t(cond ? "A" : "B")` contributes both labels. A template with an
+    // interpolation is skipped: its runtime key is not the literal chunk.
     CallExpression(path) {
       const callee = path.node.callee;
       if (callee.type !== "Identifier" || callee.name !== "t") return;
-      const [first] = path.node.arguments;
-      if (!first || first.type !== "StringLiteral") return;
-      const text = first.value.trim();
-      if (text && hasLetters(text)) strings.add(text);
+      collectLiterals(path.node.arguments[0], (text) => {
+        const key = text.trim();
+        if (key && hasLetters(key)) strings.add(key);
+      });
     },
     JSXText(path) {
       if (insideSkippedElement(path)) return;

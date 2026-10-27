@@ -1,8 +1,16 @@
 import type {
   Account,
+  AvailabilitySlot,
+  Cause,
   Coordinator,
+  DayKey,
   DemoWorkspace,
   Organization,
+  PeriodKey,
+  RosterVolunteer,
+  SeriesShift,
+  Shift,
+  ShiftSeriesRecord,
   Volunteer,
 } from "../../types/domain";
 import { initialsOf } from "../initials";
@@ -167,6 +175,100 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
     notifications: [],
     savedViews: [],
   };
+}
+
+const DAY_KEYS: DayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const PERIOD_KEYS: PeriodKey[] = ["morning", "afternoon", "evening"];
+const CAUSE_KEYS: Cause[] = ["food", "education", "environment", "health", "community", "animals"];
+
+/** Windows arrive in the `mon:morning` form the export and the importer share. */
+function availabilityFrom(windows: string[]): AvailabilitySlot[] {
+  return windows.flatMap((window) => {
+    const [day, period] = window.split(":");
+    return DAY_KEYS.includes(day as DayKey) && PERIOD_KEYS.includes(period as PeriodKey)
+      ? [{ day: day as DayKey, period: period as PeriodKey }]
+      : [];
+  });
+}
+
+/**
+ * A database roster record as the volunteer shape the screens render. The seed
+ * authors its own display fields, so anything this does not carry reads as
+ * "nothing recorded yet" rather than as a borrowed number.
+ */
+function volunteerFromRoster(record: RosterVolunteer): Volunteer {
+  return {
+    id: record.id,
+    name: record.name,
+    firstName: record.name.split(/\s+/)[0] || record.name,
+    initials: initialsOf(record.name),
+    role: "Volunteer",
+    tone: "violet",
+    email: record.email,
+    phone: record.phone,
+    joinedAt: record.joinedAt,
+    status: record.status as Volunteer["status"],
+    skills: record.skills,
+    languages: [],
+    causes: record.causes.filter((cause): cause is Cause => CAUSE_KEYS.includes(cause as Cause)),
+    hoursVerified: 0,
+    attendanceRate: 0,
+    eventsCompleted: 0,
+    interests: "",
+    availability: availabilityFrom(record.availability),
+  };
+}
+
+/**
+ * Adds roster records the seed does not describe — the volunteers a coordinator
+ * imported — to the workspace a screen reads. A person the seed already knows
+ * keeps the seed's record, which carries their service history.
+ */
+export function withRoster(workspace: DemoWorkspace, roster: RosterVolunteer[]): DemoWorkspace {
+  if (roster.length === 0) return workspace;
+  const known = new Set(workspace.volunteers.map((volunteer) => volunteer.id));
+  const added = roster
+    .filter((record) => !known.has(record.id))
+    .map((record) => volunteerFromRoster(record));
+  if (added.length === 0) return workspace;
+  return { ...workspace, volunteers: [...workspace.volunteers, ...added] };
+}
+
+/**
+ * Adds the shifts a coordinator scheduled from a series. The browser fallback
+ * has no schedule table, so the instances a series produced are merged into the
+ * workspace the screens read; on the desktop they are ordinary shift rows.
+ */
+export function withCreatedShifts(
+  workspace: DemoWorkspace,
+  series: ShiftSeriesRecord[],
+  shifts: SeriesShift[],
+): DemoWorkspace {
+  if (shifts.length === 0) return workspace;
+  const known = new Set(workspace.shifts.map((shift) => shift.id));
+  const added: Shift[] = shifts
+    .filter((shift) => !known.has(shift.id))
+    .map((shift) => {
+      const owner = series.find((row) => shift.id.includes(row.id));
+      const roles = (owner?.roles ?? []).map((role) => ({
+        name: role.name,
+        required: role.required,
+        filled: 0,
+      }));
+      return {
+        id: shift.id,
+        opportunityId: owner?.opportunityId ?? "",
+        startsAt: shift.startsAt,
+        endsAt: shift.endsAt,
+        capacity: roles.reduce((total, role) => total + role.required, 0),
+        confirmed: 0,
+        waitlisted: 0,
+        status: "scheduled" as const,
+        roles,
+      };
+    });
+  if (added.length === 0) return workspace;
+  return { ...workspace, shifts: [...workspace.shifts, ...added] };
 }
 
 /** True when the workspace shown to this person is the bundled demo data. */

@@ -22,8 +22,9 @@ import {
   REPORT_TEMPLATES,
   type ReportTemplate,
 } from "../../lib/workspace/selectors";
-import styles from "./Reports.module.css";
 import { CAUSE_COLORS } from "../../lib/causes";
+import { DecisionReadoutCard } from "./DecisionReadoutCard";
+import styles from "./Reports.module.css";
 
 type Category = "all" | ReportTemplate["category"];
 
@@ -189,6 +190,8 @@ export function ReportsPage() {
               />
             </Card>
           </div>
+
+          <DecisionReadoutCard />
         </>
       ) : null}
 

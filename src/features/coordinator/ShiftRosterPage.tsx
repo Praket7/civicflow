@@ -47,6 +47,7 @@ import {
   timeRange,
 } from "../../lib/workspace/selectors";
 import type { RosterRow } from "../../lib/workspace/selectors";
+import { OpenSeatsCard } from "./OpenSeatsCard";
 import styles from "./ShiftRosterPage.module.css";
 
 type RosterTableRow = RosterRow & { id: string };
@@ -368,6 +369,8 @@ export function ShiftRosterPage() {
         </div>
 
         <aside className={styles.rail} aria-label="Coverage and waitlist">
+          <OpenSeatsCard shift={shift} />
+
           <Card padding="compact">
             <SectionHeader
               title="Coverage requirements"

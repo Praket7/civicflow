@@ -48,6 +48,7 @@ import {
   timeRange,
   type ShiftRow,
 } from "../../lib/workspace/selectors";
+import { SeriesManagerCard } from "./SeriesManagerCard";
 import styles from "./Schedule.module.css";
 
 /**
@@ -253,6 +254,8 @@ export function SchedulePage() {
           label="Schedule view"
         />
       </div>
+
+      <SeriesManagerCard />
 
       <section className={styles.attentionBlock} aria-labelledby="upcoming-gaps">
         <div className={styles.attentionHead}>

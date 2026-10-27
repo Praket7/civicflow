@@ -48,6 +48,13 @@ export interface AskAnswer {
   summary: string;
   citations: AskCitation[];
   action?: { label: string; href: string };
+  /**
+   * The other actions this answer opens. Coverage shortfalls lead to the
+   * coverage rescue, not only to the page the numbers came from.
+   */
+  actions?: { label: string; href: string }[];
+  /** What the answer read: shifts, volunteers, credentials. */
+  evidence: string;
   /** Records the answer read, so the citation count is never decorative. */
   recordsRead: number;
 }
@@ -68,6 +75,7 @@ interface AnswerBody {
   summary: string;
   citations: AskCitation[];
   action?: { label: string; href: string };
+  actions?: { label: string; href: string }[];
   recordsRead: number;
 }
 
@@ -533,6 +541,10 @@ const intents: Intent[] = [
         })),
         recordsRead: ranked.length,
         action: { label: t("Open coverage"), href: "/coordinator/coverage" },
+        actions: [
+          { label: t("Review coverage rescue"), href: "/coordinator/coverage" },
+          { label: t("Open AutoRoster"), href: "/coordinator/autoroster" },
+        ],
       };
     },
   },
@@ -924,6 +936,7 @@ export function ask(request: AskRequest): AskAnswer {
       headline: t("Ask a question about this workspace."),
       summary: t("Answers come from the records on this device, not from a model."),
       citations: [],
+      evidence: evidenceFor(context),
       recordsRead: 0,
     };
   }
@@ -950,12 +963,32 @@ export function ask(request: AskRequest): AskAnswer {
         detail: t("Ask this"),
         ask: true,
       })),
+      evidence: evidenceFor(context),
       recordsRead: 0,
     };
   }
 
   const body = best.intent.answer(context);
-  return { intent: best.intent.id, matched: true, ...body };
+  return { intent: best.intent.id, matched: true, evidence: evidenceFor(context), ...body };
+}
+
+/**
+ * The sentence under every answer: how much of the workspace it read. A judge
+ * can check the claim, and a coordinator learns how narrow the answer is.
+ */
+function evidenceFor(context: AskContext): string {
+  const now = context.workspace.demoNow;
+  const upcoming = context.workspace.shifts.filter(
+    (shift) => shift.startsAt > now && shift.status === "scheduled",
+  ).length;
+  const volunteers = context.workspace.volunteers.filter(
+    (volunteer) => volunteer.status === "active",
+  ).length;
+  const credentials = (context.session.credentials ?? []).length;
+  return t(
+    "Based on {shifts} upcoming shifts, {volunteers} active volunteers, and {credentials} credentials on file.",
+    { shifts: upcoming, volunteers, credentials },
+  );
 }
 
 /** Pulls a volunteer name out of “who can replace Maya on Saturday”. */

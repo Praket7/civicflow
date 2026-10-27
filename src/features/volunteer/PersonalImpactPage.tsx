@@ -34,6 +34,7 @@ import {
   getImpactStories,
   getVolunteerImpact,
 } from "../../lib/workspace/selectors";
+import { MilestoneCard } from "./MilestoneCard";
 import styles from "./PersonalImpactPage.module.css";
 
 function displayHours(minutes: number): string {
@@ -380,6 +381,9 @@ export function PersonalImpactPage() {
           ))}
         </div>
       </Card>
+      {volunteer ? (
+        <MilestoneCard volunteerId={volunteer.id} organization={workspace.organization.name} />
+      ) : null}
     </Page>
   );
 }

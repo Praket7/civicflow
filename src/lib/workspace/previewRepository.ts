@@ -17,30 +17,64 @@ import type {
   AuditEvent,
   BackupRestoreResult,
   BackupSnapshot,
+  CandidateAnswer,
+  Cause,
   CheckinCode,
+  ConstraintCheck,
   Credential,
   AuthSession,
+  DayKey,
   DemoWorkspace,
+  DisruptedRole,
+  DisruptedShift,
+  DisruptionReport,
+  ForcedComparison,
   HoursDecision,
   ImpactMetric,
+  MatchExplanation,
   NewOpportunityInput,
   Opportunity,
+  PeriodKey,
   PlannedAssignment,
+  PriorityLevel,
   ReportDocument,
   ReportRequest,
   ReportSummaryItem,
   RetentionCohort,
+  CredentialReadiness,
+  EngagementMetrics,
+  Milestone,
+  NotificationRule,
+  NotificationRulePatch,
+  RecurrenceRule,
+  RecoveryChange,
+  RecoveryChangeRequest,
+  RecoveryPlan,
+  RecoverySeat,
+  ReplacementRecommendation,
+  RetentionSignal,
   RosterApplyAssignment,
+  RosterOptions,
   RosterPlan,
+  RosterPolicy,
+  RosterPolicyView,
+  RosterVolunteer,
   SavedViewRecord,
+  ScoreComponent,
+  SeriesResult,
   ServiceVerification,
   SessionSnapshot,
+  ShiftSeriesRecord,
+  VolunteerInsight,
+  WaitlistCandidate,
+  Volunteer,
+  VolunteerImportPreview,
   WaitlistEntry,
   WorkspaceSettings,
 } from "../../types/domain";
 import { buildMissionControl } from "./compute";
 import { demoWorkspace } from "./dataset";
-import { blankWorkspaceForOrganization } from "./organizationWorkspace";
+import { blankWorkspaceForOrganization, withRoster } from "./organizationWorkspace";
 import type { OrganizationScope } from "./organizationWorkspace";
 import type { WorkspaceRepository } from "./repository";
 
@@ -310,6 +344,7 @@ export function createDefaultSnapshot(): SessionSnapshot {
     savedViews: defaultSavedViews(),
     retention: defaultRetention(),
     checkinCode: null,
+    roster: workspaceRoster(),
   };
 }
 
@@ -779,6 +814,277 @@ function buildPreviewReport(request: ReportRequest): ReportDocument {
   };
 }
 
+const IMPORTED_VOLUNTEERS_KEY = "civicflow.imported-volunteers.v1";
+
+/** The heads the importer reads, mirroring the desktop column list. */
+const IMPORT_COLUMNS: [string, string][] = [
+  ["name", "Name"],
+  ["email", "Email"],
+  ["phone", "Phone"],
+  ["status", "Status"],
+  ["skills", "Skills"],
+  ["availability", "Availability"],
+  ["interests", "Interests"],
+  ["causes", "Causes"],
+];
+
+const IMPORT_DAYS: DayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const IMPORT_PERIODS: PeriodKey[] = ["morning", "afternoon", "evening"];
+const IMPORT_STATUSES = ["active", "onboarding", "inactive"];
+const IMPORT_CAUSES: Cause[] = [
+  "food",
+  "education",
+  "environment",
+  "health",
+  "community",
+  "animals",
+];
+const IMPORT_EXAMPLE = [
+  "Maya Chen",
+  "maya.chen@example.org",
+  "(716) 555-0142",
+  "onboarding",
+  "Food handling; Tutoring",
+  "mon:morning; wed:evening",
+  "Weekend pantry shifts, school tutoring",
+  "food; education",
+];
+
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+/** Splits a cell that holds several values, matching what the importer accepts. */
+function splitCell(value: string, comma: boolean): string[] {
+  return value
+    .split(comma ? /[;|,]/ : /[;|]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+/** A minimal RFC 4180 reader: quoted cells may hold commas and newlines. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  const characters = [...text.replace(/^\ufeff/, "")];
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    if (character === '"') {
+      if (quoted && characters[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && characters[index + 1] === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  if (cell.trim().length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows.filter((cells) => cells.some((value) => value.trim().length > 0));
+}
+
+function importTemplate(): string {
+  return `${IMPORT_COLUMNS.map(([, label]) => csvCell(label)).join(",")}\r\n${IMPORT_EXAMPLE.map(csvCell).join(",")}\r\n`;
+}
+
+function importEmailProblem(raw: string): { email: string; problem: string } {
+  const email = raw.trim().toLowerCase();
+  const parts = email.split("@");
+  const domain = parts[1] ?? "";
+  const valid =
+    parts.length === 2 &&
+    (parts[0] ?? "").length > 0 &&
+    domain.includes(".") &&
+    !domain.startsWith(".") &&
+    !domain.endsWith(".") &&
+    !/\s/.test(email) &&
+    email.length <= 160;
+  return { email, problem: valid ? "" : "Use an email address like name@example.org." };
+}
+
+function readImportedRoster(): RosterVolunteer[] {
+  try {
+    const raw = localStorage.getItem(scoped(IMPORTED_VOLUNTEERS_KEY));
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as RosterVolunteer[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeImportedRoster(records: RosterVolunteer[]): void {
+  try {
+    localStorage.setItem(scoped(IMPORTED_VOLUNTEERS_KEY), JSON.stringify(records));
+  } catch {
+    // Storage can be unavailable in hardened webviews; the session still works.
+  }
+}
+
+function rosterRecord(volunteer: Volunteer): RosterVolunteer {
+  return {
+    id: volunteer.id,
+    name: volunteer.name,
+    email: volunteer.email,
+    phone: volunteer.phone,
+    status: volunteer.status,
+    joinedAt: volunteer.joinedAt,
+    skills: volunteer.skills,
+    availability: volunteer.availability.map((slot) => `${slot.day}:${slot.period}`),
+    causes: volunteer.causes,
+  };
+}
+
+/**
+ * What the roster holds: the seeded people plus the ones this device imported,
+ * which is the same thing the desktop snapshot reports from SQLite.
+ */
+function workspaceRoster(): RosterVolunteer[] {
+  const records = [...workspace.volunteers.map(rosterRecord), ...readImportedRoster()];
+  const seen = new Set<string>();
+  return records.filter((record) => {
+    if (seen.has(record.id)) return false;
+    seen.add(record.id);
+    return true;
+  });
+}
+
+/**
+ * The same check the desktop importer runs, so the browser preview refuses the
+ * same files rather than accepting what SQLite would reject.
+ */
+function previewVolunteers(text: string): VolunteerImportPreview {
+  const preview: VolunteerImportPreview = {
+    columns: [],
+    required: ["Name", "Email"],
+    template: importTemplate(),
+    total: 0,
+    valid: 0,
+    invalid: 0,
+    problems: [],
+    rows: [],
+  };
+  const rows = parseCsv(text);
+  const header = rows.shift();
+  if (!header) {
+    preview.problems.push("Choose a CSV file or paste its rows first.");
+    return preview;
+  }
+
+  const indexes = new Map<string, number>();
+  for (const [position, value] of header.entries()) {
+    const cleaned = value.trim().toLowerCase();
+    if (!cleaned) continue;
+    preview.columns.push(value.trim());
+    const column = IMPORT_COLUMNS.find(
+      ([key, label]) => key === cleaned || label.toLowerCase() === cleaned,
+    );
+    if (column && !indexes.has(column[0])) indexes.set(column[0], position);
+  }
+  const missing = ["name", "email"].filter((key) => !indexes.has(key));
+  if (missing.length > 0) {
+    const labels = missing.map((key) => IMPORT_COLUMNS.find(([id]) => id === key)?.[1] ?? key);
+    preview.problems.push(
+      `The first row must name these columns: ${labels.join(", ")}. No rows were read.`,
+    );
+    return preview;
+  }
+
+  const read = (cells: string[], key: string) => {
+    const position = indexes.get(key);
+    return position === undefined ? "" : (cells[position] ?? "").trim();
+  };
+  const known = new Set(workspaceRoster().map((record) => record.email.toLowerCase()));
+  const seen = new Set<string>();
+
+  for (const [offset, cells] of rows.entries()) {
+    const problems: string[] = [];
+    const notes: string[] = [];
+    const name = read(cells, "name").split(/\s+/).filter(Boolean).join(" ");
+    if (name.length < 2) problems.push("Enter the name to show on this account.");
+    if (name.length > 80) problems.push("Keep the name under 80 characters.");
+
+    const { email, problem } = importEmailProblem(read(cells, "email"));
+    if (problem) problems.push(problem);
+    else if (seen.has(email)) problems.push(`Two rows use ${email}.`);
+    else {
+      seen.add(email);
+      if (known.has(email)) problems.push(`${email} is already on this roster.`);
+    }
+
+    const statusCell = read(cells, "status").toLowerCase();
+    let status = "onboarding";
+    if (statusCell) {
+      if (IMPORT_STATUSES.includes(statusCell)) status = statusCell;
+      else problems.push(`"${statusCell}" is not a status. Use active, onboarding or inactive.`);
+    }
+
+    const skills = splitCell(read(cells, "skills"), false);
+    if (skills.length === 0) notes.push("No skills listed yet.");
+
+    const availability: string[] = [];
+    for (const token of splitCell(read(cells, "availability"), false)) {
+      const [day, period = ""] = token.toLowerCase().split(":");
+      if (IMPORT_DAYS.includes(day as DayKey) && IMPORT_PERIODS.includes(period as PeriodKey)) {
+        availability.push(`${day}:${period}`);
+      } else {
+        problems.push(`"${token}" needs a day and a period, like mon:morning.`);
+      }
+    }
+    if (availability.length === 0 && !problems.some((entry) => entry.includes("mon:morning"))) {
+      notes.push("No availability windows listed yet.");
+    }
+
+    const causes: string[] = [];
+    for (const token of splitCell(read(cells, "causes"), true)) {
+      const cause = token.toLowerCase();
+      if (IMPORT_CAUSES.includes(cause as Cause)) causes.push(cause);
+      else {
+        problems.push(
+          `"${cause}" is not a cause. Use food, education, environment, health, community or animals.`,
+        );
+      }
+    }
+
+    preview.rows.push({
+      line: offset + 2,
+      name,
+      email,
+      phone: read(cells, "phone"),
+      status,
+      skills,
+      availability,
+      interests: read(cells, "interests"),
+      causes,
+      outcome: problems.length === 0 ? "create" : "invalid",
+      problems,
+      notes,
+    });
+    preview.total += 1;
+    if (problems.length === 0) preview.valid += 1;
+    else preview.invalid += 1;
+  }
+
+  if (preview.total === 0) {
+    preview.problems.push("The file has a header but no volunteer rows yet.");
+  }
+  return preview;
+}
+
 export const previewRepository: WorkspaceRepository = {
   source: "preview",
   async selectOrganization(next) {
@@ -1096,78 +1402,23 @@ export const previewRepository: WorkspaceRepository = {
     };
   },
   async autoRoster(shiftIds, options): Promise<RosterPlan> {
-    const shifts = workspace.shifts.filter((shift) => shiftIds.includes(shift.id));
-    const candidates = workspace.volunteers.filter((volunteer) => volunteer.status === "active");
-    const assignments: PlannedAssignment[] = [];
-    const unfilled: RosterPlan["unfilled"] = [];
-    const booked = new Set<string>();
-    let slotsConsidered = 0;
-    let totalScore = 0;
-    for (const shift of shifts) {
-      const opportunity = workspace.opportunities.find((row) => row.id === shift.opportunityId);
-      for (const role of shift.roles) {
-        for (let seat = 0; seat < Math.max(0, role.required - role.filled); seat += 1) {
-          slotsConsidered += 1;
-          const key = `${shift.id}:${role.name}`;
-          const candidate = candidates.find((volunteer) => {
-            if (booked.has(`${volunteer.id}:${shift.startsAt}`)) return false;
-            if (options.capWeekly && booked.has(`${volunteer.id}:week`)) return false;
-            return volunteer.skills.some((skill) =>
-              skill.toLowerCase().includes(role.name.toLowerCase().split(" ")[0]),
-            );
-          });
-          if (!candidate) {
-            unfilled.push({
-              shiftId: shift.id,
-              role: role.name,
-              reason: "No eligible volunteer is available for this slot.",
-              requiredSkill: role.name,
-              requiredCredential: null,
-            });
-            continue;
-          }
-          booked.add(`${candidate.id}:${shift.startsAt}`);
-          booked.add(`${candidate.id}:week`);
-          const breakdown = {
-            skill: 30,
-            availability: 20,
-            interest: 15,
-            preference: 10,
-            fairness: 15,
-            reliability: 10,
-            total: 100,
-          };
-          totalScore += breakdown.total;
-          assignments.push({
-            shiftId: shift.id,
-            opportunityId: shift.opportunityId,
-            shiftTitle: opportunity?.title ?? "Shift",
-            role: role.name,
-            candidateId: candidate.id,
-            candidateName: candidate.name,
-            candidateInitials: candidate.initials,
-            startsAt: shift.startsAt,
-            score: breakdown.total,
-            breakdown,
-            reasons: [
-              `Skill match: ${role.name}`,
-              `${options.preferSpanish && candidate.languages.includes("Spanish") ? "Spanish-speaking" : "Available"} for ${key}`,
-              "Highest fairness score among eligible volunteers",
-            ],
-            promoteWaitlist: false,
-            eligibleRoles: [role.name],
-          });
-        }
-      }
-    }
+    return previewRosterPlan(shiftIds, options, readRosterPolicy());
+  },
+  async getRosterPolicy(): Promise<RosterPolicyView> {
     return {
-      assignments,
-      unfilled,
-      totalScore,
-      slotsConsidered,
-      candidatesConsidered: candidates.length,
-      deterministicSeed: 20260415,
+      policy: readRosterPolicy(),
+      levels: PREVIEW_PRIORITY_LEVELS,
+      organizationId: scopeId(),
     };
+  },
+  async updateRosterPolicy(policy): Promise<RosterPolicyView> {
+    validateRosterPolicy(policy);
+    const next: RosterPolicy = { ...policy, version: readRosterPolicy().version + 1 };
+    writeRosterPolicy(next);
+    return { policy: next, levels: PREVIEW_PRIORITY_LEVELS, organizationId: scopeId() };
+  },
+  async explainRosterChoice(shiftIds, options, candidateId, slotId): Promise<CandidateAnswer> {
+    return previewExplain(shiftIds, options, candidateId, slotId);
   },
   async applyRoster(shiftId, assignments: RosterApplyAssignment[]) {
     if (assignments.length === 0) {
@@ -1213,6 +1464,294 @@ export const previewRepository: WorkspaceRepository = {
       );
     }
     return persist({ ...next, audit: [...events, ...next.audit] });
+  },
+  async detectDisruptions(): Promise<DisruptionReport> {
+    return previewDisruptions();
+  },
+  async planRecovery(shiftIds, options): Promise<RecoveryPlan> {
+    return previewRecoveryPlan(shiftIds, options);
+  },
+  async applyRecovery(shiftId, changes: RecoveryChangeRequest[]) {
+    if (changes.length === 0) throw new Error("Select at least one change to apply");
+    const shift = workspace.shifts.find((row) => row.id === shiftId);
+    if (!shift || shift.status !== "scheduled") {
+      throw new Error("This shift is no longer accepting assignments.");
+    }
+    let next = state;
+    const events: AuditEvent[] = [];
+    for (const change of changes) {
+      const held = next.registrations.find(
+        (row) => row.shiftId === shiftId && row.volunteerId === change.volunteerId,
+      );
+      if (change.fromRole) {
+        if (!held || held.status !== "registered" || held.role !== change.fromRole) {
+          throw new Error("That volunteer is no longer on this shift, so there is nothing to move");
+        }
+        if (previewLocks.has(`${shiftId}:${change.volunteerId}`)) {
+          throw new Error("That assignment is locked. Unlock it first.");
+        }
+      }
+      next = {
+        ...next,
+        waitlist: change.promoteWaitlist
+          ? next.waitlist.map((row) =>
+              row.shiftId === shiftId &&
+              row.volunteerId === change.volunteerId &&
+              row.status === "waiting"
+                ? { ...row, status: "promoted" }
+                : row,
+            )
+          : next.waitlist,
+        registrations: [
+          ...next.registrations.filter(
+            (row) => !(row.shiftId === shiftId && row.volunteerId === change.volunteerId),
+          ),
+          { shiftId, volunteerId: change.volunteerId, role: change.role, status: "registered" },
+        ],
+      };
+      events.push(
+        audit(
+          "recovery.apply",
+          "shift",
+          shiftId,
+          change.fromRole
+            ? `Recovery moved ${volunteerName(change.volunteerId)} from ${change.fromRole} to ${change.role}`
+            : `Recovery assigned ${volunteerName(change.volunteerId)} as ${change.role}`,
+          "Approved from a coverage recovery plan",
+        ),
+      );
+    }
+    return persist({ ...next, audit: [...events, ...next.audit] });
+  },
+  async setAssignmentLock(shiftId, volunteerId, locked) {
+    const held = state.registrations.find(
+      (row) => row.shiftId === shiftId && row.volunteerId === volunteerId,
+    );
+    if (!held || held.status !== "registered") {
+      throw new Error("Only a live assignment can be locked");
+    }
+    const key = `${shiftId}:${volunteerId}`;
+    if (previewLocks.has(key) === locked) return state;
+    if (locked) previewLocks.add(key);
+    else previewLocks.delete(key);
+    return persist({
+      ...state,
+      audit: [
+        audit(
+          locked ? "assignment.lock" : "assignment.unlock",
+          "shift",
+          shiftId,
+          `${locked ? "Locked" : "Unlocked"} ${volunteerName(volunteerId)}'s assignment`,
+          locked
+            ? "Recovery and AutoRoster will not move a locked assignment"
+            : "The assignment can be replanned again",
+        ),
+        ...state.audit,
+      ],
+    });
+  },
+  async createShiftSeries(opportunityId, rule, roles): Promise<SeriesResult> {
+    const opportunity = [...workspace.opportunities, ...state.createdOpportunities].find(
+      (row) => row.id === opportunityId,
+    );
+    if (!opportunity) throw new Error("That program is not on file.");
+    if (roles.length === 0) throw new Error("Give the series at least one role to fill");
+    const needed = roles.reduce((total, role) => total + role.required, 0);
+    if (needed > opportunity.capacity) {
+      throw new Error(
+        `These roles need ${needed} volunteers, but ${opportunity.title} is listed for ${opportunity.capacity}`,
+      );
+    }
+    const dates = previewOccurrences(rule);
+    const series: ShiftSeriesRecord = {
+      id: `series-${Date.now().toString(36)}`,
+      opportunityId,
+      opportunityTitle: opportunity.title,
+      timezone: workspace.organization.timezone,
+      kind: rule.kind,
+      intervalWeeks: rule.intervalWeeks,
+      weekdays: rule.weekdays,
+      startsLocalTime: rule.startsLocalTime,
+      durationMinutes: rule.durationMinutes,
+      startsOn: rule.startsOn,
+      endsOn: rule.endsOn,
+      occurrenceCount: rule.occurrenceCount,
+      generated: dates.length,
+      roles,
+    };
+    const shifts = dates.map((date, index) => {
+      const startsAt = previewShiftStart(date, rule.startsLocalTime);
+      return {
+        id: `sh-series-${series.id}-${index + 1}`,
+        occurrenceDate: date,
+        startsAt,
+        endsAt: new Date(
+          new Date(startsAt).getTime() + rule.durationMinutes * 60_000,
+        ).toISOString(),
+      };
+    });
+    const next = persist({
+      ...state,
+      createdSeries: [...(state.createdSeries ?? []), series],
+      createdShifts: [...(state.createdShifts ?? []), ...shifts],
+      audit: [
+        audit(
+          "series.create",
+          "opportunity",
+          opportunityId,
+          `Scheduled ${shifts.length} shift(s) for ${opportunity.title}`,
+          `${series.kind === "weekly" ? "Weekly" : "Single"} series, ${roles.length} roles`,
+        ),
+        ...state.audit,
+      ],
+    });
+    return { series, shifts, snapshot: next };
+  },
+  async listShiftSeries(opportunityId): Promise<ShiftSeriesRecord[]> {
+    const series = state.createdSeries ?? [];
+    return opportunityId ? series.filter((row) => row.opportunityId === opportunityId) : series;
+  },
+  async generateSeriesInstances(seriesId): Promise<SeriesResult> {
+    const series = (state.createdSeries ?? []).find((row) => row.id === seriesId);
+    if (!series) throw new Error("That series is not on file.");
+    const existing = new Set(
+      (state.createdShifts ?? [])
+        .filter((row) => row.id.startsWith(`sh-series-${seriesId}-`))
+        .map((row) => row.occurrenceDate),
+    );
+    const dates = previewOccurrences(previewRuleOf(series)).filter((date) => !existing.has(date));
+    const added = dates.map((date, index) => {
+      const startsAt = previewShiftStart(date, series.startsLocalTime);
+      return {
+        id: `sh-series-${seriesId}-extra-${index + 1}-${date}`,
+        occurrenceDate: date,
+        startsAt,
+        endsAt: new Date(
+          new Date(startsAt).getTime() + series.durationMinutes * 60_000,
+        ).toISOString(),
+      };
+    });
+    const next = persist({
+      ...state,
+      createdShifts: [...(state.createdShifts ?? []), ...added],
+      createdSeries: (state.createdSeries ?? []).map((row) =>
+        row.id === seriesId ? { ...row, generated: row.generated + added.length } : row,
+      ),
+    });
+    return {
+      series: next.createdSeries?.find((row) => row.id === seriesId) ?? series,
+      shifts: added,
+      snapshot: next,
+    };
+  },
+  async retimeShiftSeries(seriesId, startsLocalTime, durationMinutes, scope) {
+    const series = (state.createdSeries ?? []).find((row) => row.id === seriesId);
+    if (!series) throw new Error("That series is not on file.");
+    const today = workspace.demoNow.slice(0, 10);
+    let moved = 0;
+    const shifts = (state.createdShifts ?? []).map((row) => {
+      const mine = row.id.startsWith(`sh-series-${seriesId}-`);
+      if (!mine || row.occurrenceDate < today) return row;
+      if (scope === "instance" && moved > 0) return row;
+      moved += 1;
+      const startsAt = previewShiftStart(row.occurrenceDate, startsLocalTime);
+      return {
+        ...row,
+        startsAt,
+        endsAt: new Date(new Date(startsAt).getTime() + durationMinutes * 60_000).toISOString(),
+      };
+    });
+    const next = persist({
+      ...state,
+      createdShifts: shifts,
+      createdSeries: (state.createdSeries ?? []).map((row) =>
+        row.id === seriesId
+          ? {
+              ...row,
+              startsLocalTime: scope === "series" ? startsLocalTime : row.startsLocalTime,
+              durationMinutes: scope === "series" ? durationMinutes : row.durationMinutes,
+            }
+          : row,
+      ),
+      audit: [
+        audit(
+          "series.retime",
+          "opportunity",
+          series.opportunityId,
+          `Moved ${moved} shift(s) to ${startsLocalTime}`,
+          scope === "instance" ? "Applied to this shift only" : "Applied to the whole series",
+        ),
+        ...state.audit,
+      ],
+    });
+    return next;
+  },
+  async deleteShiftSeries(seriesId) {
+    const series = (state.createdSeries ?? []).find((row) => row.id === seriesId);
+    if (!series) throw new Error("That series is not on file.");
+    const booked = (state.createdShifts ?? []).some(
+      (row) =>
+        row.id.startsWith(`sh-series-${seriesId}-`) &&
+        state.registrations.some(
+          (registration) => registration.shiftId === row.id && registration.status === "registered",
+        ),
+    );
+    if (booked) {
+      throw new Error(
+        "Some of these shifts already have volunteers. Remove them first, or cancel the series from the schedule.",
+      );
+    }
+    return persist({
+      ...state,
+      createdShifts: (state.createdShifts ?? []).filter(
+        (row) => !row.id.startsWith(`sh-series-${seriesId}-`),
+      ),
+      createdSeries: (state.createdSeries ?? []).filter((row) => row.id !== seriesId),
+      audit: [
+        audit(
+          "series.delete",
+          "opportunity",
+          series.opportunityId,
+          `Removed ${series.generated} shift(s) from ${series.opportunityTitle}`,
+          "The series and its shifts were deleted together",
+        ),
+        ...state.audit,
+      ],
+    });
+  },
+  async recommendReplacement(shiftId, role): Promise<ReplacementRecommendation> {
+    return previewReplacement(shiftId, role);
+  },
+  async listNotificationRules(): Promise<NotificationRule[]> {
+    return previewRules();
+  },
+  async updateNotificationRule(ruleId, patch: NotificationRulePatch) {
+    const rules = previewRules().map((rule) =>
+      rule.id === ruleId
+        ? {
+            ...rule,
+            offsetMinutes: patch.offsetMinutes ?? rule.offsetMinutes,
+            enabled: patch.enabled ?? rule.enabled,
+          }
+        : rule,
+    );
+    writePreviewRules(rules);
+    return rules;
+  },
+  async queueDueReminders(): Promise<number> {
+    return previewReminders().length;
+  },
+  async retentionSignals(): Promise<RetentionSignal[]> {
+    return previewSignals();
+  },
+  async volunteerInsight(volunteerId): Promise<VolunteerInsight> {
+    return previewInsight(volunteerId);
+  },
+  async engagementMetrics(): Promise<EngagementMetrics> {
+    return previewEngagement();
+  },
+  async credentialReadiness(): Promise<CredentialReadiness> {
+    return previewReadiness();
   },
   async markNoShow(shiftId, volunteerId) {
     const existing = (state.attendance[shiftId] ?? []).find(
@@ -1392,6 +1931,84 @@ export const previewRepository: WorkspaceRepository = {
       ],
     });
   },
+  async previewVolunteerImport(text: string) {
+    return previewVolunteers(text);
+  },
+  async applyVolunteerImport(text: string) {
+    const preview = previewVolunteers(text);
+    if (preview.problems.length > 0) throw new Error(preview.problems.join(" "));
+    if (preview.invalid > 0) {
+      throw new Error(
+        `${preview.invalid} of ${preview.total} rows need a fix before anything is written.`,
+      );
+    }
+    if (preview.valid === 0) throw new Error("This file has no volunteer rows to add.");
+
+    const created: RosterVolunteer[] = preview.rows.map((row, index) => ({
+      id: `vol-new-${Date.now()}-${index}`,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      status: row.status,
+      joinedAt: workspace.demoNow,
+      skills: row.skills,
+      availability: row.availability,
+      causes: row.causes,
+    }));
+    writeImportedRoster([...readImportedRoster(), ...created]);
+    // Adding them to the loaded workspace means this session's roster screens and
+    // candidate pools see the same people the stored roster does.
+    workspace = withRoster(workspace, created);
+    state = persist({
+      ...state,
+      audit: [
+        audit(
+          "volunteers.imported",
+          "volunteer",
+          created[0]?.id ?? "roster",
+          `Imported ${created.length} volunteer${created.length === 1 ? "" : "s"} from a spreadsheet`,
+          `${preview.total} rows read · ${created.length} added`,
+        ),
+        ...state.audit,
+      ],
+    });
+    return { created: created.length, createdIds: created.map((row) => row.id), preview };
+  },
+  async exportVolunteerRoster() {
+    const rows = workspaceRoster();
+    const csv = [
+      IMPORT_COLUMNS.map(([, label]) => csvCell(label)).join(","),
+      ...rows.map((record) =>
+        [
+          record.name,
+          record.email,
+          record.phone,
+          record.status,
+          record.skills.join("; "),
+          record.availability.join("; "),
+          "",
+          record.causes.join("; "),
+        ]
+          .map(csvCell)
+          .join(","),
+      ),
+    ].join("\r\n");
+    const blob = new Blob([`\ufeff${csv}\r\n`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "civicflow-volunteer-roster.csv";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    return {
+      path: "browser-download",
+      bytes: blob.size,
+      format: "csv" as const,
+      title: "Volunteer roster",
+    };
+  },
   async resetDemo() {
     try {
       localStorage.removeItem(scoped(STORAGE_KEY));
@@ -1525,3 +2142,1114 @@ export const previewRepository: WorkspaceRepository = {
     return { path: "print-dialog", bytes: 0, format, title: report.title };
   },
 };
+
+/* ---------------------------------------------------------------------------
+ * The preview's own matching rules.
+ *
+ * The desktop app solves the assignment in Rust. The browser preview has no
+ * native host, so it mirrors the same contract in miniature: it reads the same
+ * policy document, applies the same shape of hard checks, scores with the same
+ * weights, and can answer "why not that one?" by forcing a decision and
+ * comparing the two plans. It is deliberately smaller than the optimizer — one
+ * seat at a time, taking the best scoring eligible volunteer — but it never
+ * invents a policy value the coordinator did not set.
+ * ------------------------------------------------------------------------- */
+
+const PREVIEW_PRIORITY_LEVELS: PriorityLevel[] = [
+  { key: "none", weight: 0 },
+  { key: "low", weight: 5 },
+  { key: "medium", weight: 10 },
+  { key: "high", weight: 15 },
+  { key: "top", weight: 35 },
+];
+
+const POLICY_KEY = "civicflow.roster-policy.v1";
+
+function defaultRosterPolicy(): RosterPolicy {
+  return {
+    version: 1,
+    maxShiftsPerDay: null,
+    maxMinutesPerDay: null,
+    maxShiftsPerWeek: null,
+    maxMinutesPerWeek: null,
+    minimumGapMinutes: 0,
+    unknownAgeBehavior: "block",
+    unknownCredentialBehavior: "block",
+    skillWeight: 35,
+    interestWeight: 15,
+    languageWeight: 10,
+    fairnessWeight: 10,
+    reliabilityWeight: 5,
+    waitlistPreference: false,
+  };
+}
+
+function readRosterPolicy(): RosterPolicy {
+  try {
+    const raw = localStorage.getItem(scoped(POLICY_KEY));
+    if (!raw) return defaultRosterPolicy();
+    const parsed = JSON.parse(raw) as Partial<RosterPolicy>;
+    return { ...defaultRosterPolicy(), ...parsed };
+  } catch {
+    return defaultRosterPolicy();
+  }
+}
+
+function writeRosterPolicy(policy: RosterPolicy): void {
+  try {
+    localStorage.setItem(scoped(POLICY_KEY), JSON.stringify(policy));
+  } catch {
+    // Storage can be unavailable in hardened webviews; the run still works.
+  }
+}
+
+function validateRosterPolicy(policy: RosterPolicy): void {
+  const limits: [string, number | null, number, number][] = [
+    ["Maximum shifts a day", policy.maxShiftsPerDay, 1, 12],
+    ["Maximum shifts a week", policy.maxShiftsPerWeek, 1, 40],
+    ["Maximum minutes a day", policy.maxMinutesPerDay, 15, 1_440],
+    ["Maximum minutes a week", policy.maxMinutesPerWeek, 60, 10_080],
+  ];
+  for (const [label, value, low, high] of limits) {
+    if (value !== null && (value < low || value > high)) {
+      throw new Error(`${label} must be between ${low} and ${high}.`);
+    }
+  }
+  if (policy.minimumGapMinutes < 0 || policy.minimumGapMinutes > 1_440) {
+    throw new Error("Keep the minimum time between shifts under 24 hours.");
+  }
+  const weights = [
+    policy.skillWeight,
+    policy.interestWeight,
+    policy.languageWeight,
+    policy.fairnessWeight,
+    policy.reliabilityWeight,
+  ];
+  if (weights.some((weight) => !PREVIEW_PRIORITY_LEVELS.some((level) => level.weight === weight))) {
+    throw new Error("Choose one of the offered match priorities.");
+  }
+  if (weights.reduce((total, weight) => total + weight, 0) > 100) {
+    throw new Error("Those priorities add up past a perfect match. Lower one of them.");
+  }
+}
+
+interface PreviewSeat {
+  slotId: string;
+  shiftId: string;
+  opportunityId: string;
+  shiftTitle: string;
+  role: string;
+  cause: string;
+  startsAt: string;
+  endsAt: string;
+  dayKey: string;
+  requiredSkill: string;
+  requiredCredential: string | null;
+}
+
+interface PreviewLoad {
+  clashAt: Set<string>;
+  dayCount: Map<string, number>;
+  weekCount: Map<string, number>;
+}
+
+interface PreviewChoice {
+  seat: PreviewSeat;
+  volunteer: Volunteer;
+  checks: ConstraintCheck[];
+  components: ScoreComponent[];
+  score: number;
+}
+
+interface PreviewPlanShape {
+  choices: PreviewChoice[];
+  unfilled: { seat: PreviewSeat; reason: string }[];
+  beforeSeat: Map<string, PreviewLoad>;
+}
+
+function previewDayKey(startsAt: string): string {
+  return ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][new Date(startsAt).getDay()];
+}
+
+function previewPeriod(startsAt: string): string {
+  const hour = new Date(startsAt).getHours();
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
+
+/// Coordinator locks are a property of a live assignment. The preview keeps them
+// for the session; the desktop stores them on the registration row.
+const previewLocks = new Set<string>();
+
+const RULE_KEY = "civicflow.notification-rules.v1";
+
+const PREVIEW_RULES: NotificationRule[] = [
+  {
+    id: "rule-shift_reminder-volunteer",
+    triggerType: "shift_reminder",
+    offsetMinutes: 1440,
+    audience: "volunteer",
+    enabled: true,
+  },
+  {
+    id: "rule-checkin_soon-volunteer",
+    triggerType: "checkin_soon",
+    offsetMinutes: 120,
+    audience: "volunteer",
+    enabled: true,
+  },
+  {
+    id: "rule-missed_shift_follow_up-coordinator",
+    triggerType: "missed_shift_follow_up",
+    offsetMinutes: 60,
+    audience: "coordinator",
+    enabled: true,
+  },
+  {
+    id: "rule-credential_expiring-coordinator",
+    triggerType: "credential_expiring",
+    offsetMinutes: 43200,
+    audience: "coordinator",
+    enabled: true,
+  },
+];
+
+function previewRules(): NotificationRule[] {
+  try {
+    const raw = localStorage.getItem(scoped(RULE_KEY));
+    if (!raw) return PREVIEW_RULES;
+    const stored = JSON.parse(raw) as NotificationRule[];
+    return PREVIEW_RULES.map((rule) => stored.find((row) => row.id === rule.id) ?? rule);
+  } catch {
+    return PREVIEW_RULES;
+  }
+}
+
+function writePreviewRules(rules: NotificationRule[]): void {
+  try {
+    localStorage.setItem(scoped(RULE_KEY), JSON.stringify(rules));
+  } catch {
+    // The in-memory rules are enough when storage is refused.
+  }
+}
+
+/** Every date the rule produces. The Rust engine is authoritative; this is the
+// same arithmetic over the preview's clock. */
+function previewOccurrences(rule: RecurrenceRule): string[] {
+  const startsOn = rule.startsOn;
+  if (!startsOn) throw new Error("Choose the date the series starts");
+  if (rule.durationMinutes < 15 || rule.durationMinutes > 1440) {
+    throw new Error("A shift has to last between 15 minutes and 24 hours");
+  }
+  if (rule.kind === "none") return [startsOn];
+  if (rule.weekdays.length === 0) throw new Error("Choose at least one weekday to repeat on");
+  if (rule.endsOn && rule.occurrenceCount) {
+    throw new Error("Choose either an end date or an occurrence count, not both");
+  }
+  if (!rule.endsOn && !rule.occurrenceCount) {
+    throw new Error("Give the series an end date or an occurrence count");
+  }
+  const interval = Math.min(Math.max(rule.intervalWeeks, 1), 8);
+  const [year, month, day] = startsOn.split("-").map(Number);
+  const anchor = new Date(Date.UTC(year, month - 1, day));
+  anchor.setUTCDate(anchor.getUTCDate() - anchor.getUTCDay());
+  const dates: string[] = [];
+  for (let week = 0; week < 260; week += 1) {
+    for (const weekday of [...rule.weekdays].sort((a, b) => a - b)) {
+      const date = new Date(anchor);
+      date.setUTCDate(anchor.getUTCDate() + week * 7 * interval + weekday);
+      const key = date.toISOString().slice(0, 10);
+      if (key < startsOn) continue;
+      if (rule.endsOn && key > rule.endsOn) continue;
+      if (!dates.includes(key)) dates.push(key);
+    }
+    dates.sort();
+    if (rule.occurrenceCount && dates.length >= rule.occurrenceCount) break;
+    if (rule.endsOn) {
+      const limit = new Date(anchor);
+      limit.setUTCDate(anchor.getUTCDate() + (week + 1) * 7 * interval);
+      if (limit.toISOString().slice(0, 10) > rule.endsOn) break;
+    }
+  }
+  const capped = rule.occurrenceCount ? dates.slice(0, rule.occurrenceCount) : dates;
+  if (capped.length === 0) throw new Error("That rule produces no shifts");
+  if (capped.length > 60) {
+    throw new Error(
+      `That rule would create ${capped.length} shifts. Shorten the series to 60 or fewer.`,
+    );
+  }
+  return capped;
+}
+
+function previewShiftStart(date: string, startsLocalTime: string): string {
+  const [hours, minutes] = startsLocalTime.split(":").map(Number);
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day, hours + 4, minutes)).toISOString();
+}
+
+function previewRuleOf(series: ShiftSeriesRecord): RecurrenceRule {
+  return {
+    kind: series.kind,
+    intervalWeeks: series.intervalWeeks,
+    weekdays: series.weekdays,
+    startsLocalTime: series.startsLocalTime,
+    durationMinutes: series.durationMinutes,
+    startsOn: series.startsOn,
+    endsOn: series.endsOn,
+    occurrenceCount: series.occurrenceCount,
+  };
+}
+
+function previewLiveRegistrations(snapshot: SessionSnapshot, shiftId: string) {
+  return snapshot.registrations.filter(
+    (row) => row.shiftId === shiftId && row.status === "registered",
+  );
+}
+
+function previewDisruptions(): DisruptionReport {
+  const now = workspace.demoNow;
+  const shifts: DisruptedShift[] = [];
+  const atRisk: DisruptionReport["atRisk"] = [];
+
+  for (const shift of workspace.shifts.filter((row) => row.endsAt > now)) {
+    const live = previewLiveRegistrations(state, shift.id);
+    const title =
+      workspace.opportunities.find((row) => row.id === shift.opportunityId)?.title ?? "Shift";
+    const roles: DisruptedRole[] = shift.roles
+      .map((role) => {
+        const filled = live.filter((row) => row.role === role.name).length;
+        return {
+          role: role.name,
+          required: role.required,
+          filled,
+          open: Math.max(0, role.required - filled),
+        };
+      })
+      .filter((role) => role.open > 0);
+
+    if (roles.length > 0) {
+      shifts.push({
+        shiftId: shift.id,
+        opportunityId: shift.opportunityId,
+        title,
+        startsAt: shift.startsAt,
+        capacity: shift.capacity,
+        confirmed: live.length,
+        roles,
+        reasons: roles.map(
+          (role) =>
+            `${role.open} required ${role.open === 1 ? "seat" : "seats"} open as ${role.role}`,
+        ),
+      });
+    }
+
+    for (const row of live) {
+      const lapsed = state.credentials.find(
+        (credential) =>
+          credential.volunteerId === row.volunteerId && credential.status === "expired",
+      );
+      if (!lapsed) continue;
+      atRisk.push({
+        shiftId: shift.id,
+        shiftTitle: title,
+        startsAt: shift.startsAt,
+        volunteerId: row.volunteerId,
+        volunteerName: volunteerName(row.volunteerId),
+        role: row.role,
+        credential: lapsed.name,
+        validThrough: lapsed.validThrough,
+        expired: true,
+      });
+    }
+  }
+
+  return {
+    now,
+    openRequired: shifts.reduce(
+      (total, shift) => total + shift.roles.reduce((sum, role) => sum + role.open, 0),
+      0,
+    ),
+    shifts,
+    atRisk,
+  };
+}
+
+function previewRecoveryPlan(shiftIds: string[], options: RosterOptions): RecoveryPlan {
+  if (shiftIds.length === 0) throw new Error("Choose at least one shift to recover");
+  const policy = readRosterPolicy();
+  const report = previewDisruptions();
+  const chosen = previewRosterPlan(shiftIds, options, policy);
+
+  const changes: RecoveryChange[] = chosen.assignments.map((assignment) => {
+    const waiting = state.waitlist.some(
+      (row) =>
+        row.shiftId === assignment.shiftId &&
+        row.volunteerId === assignment.candidateId &&
+        row.status === "waiting",
+    );
+    return {
+      kind: waiting ? "promote" : "assign",
+      shiftId: assignment.shiftId,
+      shiftTitle: assignment.shiftTitle,
+      startsAt: assignment.startsAt,
+      role: assignment.role,
+      fromRole: null,
+      volunteerId: assignment.candidateId,
+      volunteerName: assignment.candidateName,
+      volunteerInitials: assignment.candidateInitials,
+      score: assignment.score,
+      cost: 0,
+      reason: `${waiting ? "Promoted from the waitlist: " : ""}${assignment.reasons[0] ?? "Eligible and available"}`,
+    };
+  });
+  const remaining: RecoverySeat[] = chosen.unfilled.map((slot) => ({
+    shiftId: slot.shiftId,
+    role: slot.role,
+    reason: slot.reason,
+  }));
+
+  return {
+    shifts: report.shifts.filter((shift) => shiftIds.includes(shift.shiftId)),
+    changes,
+    remaining,
+    openBefore: changes.length + remaining.length,
+    openAfter: remaining.length,
+    movedAssignments: 0,
+    policyVersion: policy.version,
+  };
+}
+
+/** The demeed date a preview shift stands for, so a signal can count days. */
+function previewDaysSince(stamp: string): number {
+  const then = new Date(stamp).getTime();
+  const now = new Date(workspace.demoNow).getTime();
+  return Math.max(0, Math.round((now - then) / 86_400_000));
+}
+
+function previewCompletedShifts(volunteerId: string): string[] {
+  const now = workspace.demoNow;
+  return workspace.shifts
+    .filter(
+      (shift) =>
+        shift.endsAt < now &&
+        state.registrations.some(
+          (row) =>
+            row.shiftId === shift.id &&
+            row.volunteerId === volunteerId &&
+            row.status === "registered",
+        ),
+    )
+    .map((shift) => shift.id);
+}
+
+/** The same transparent rules the Rust engine applies, over preview rows. */
+function previewSignals(): RetentionSignal[] {
+  const signals: RetentionSignal[] = [];
+  for (const volunteer of workspace.volunteers) {
+    if (volunteer.status !== "active") continue;
+    const completed = previewCompletedShifts(volunteer.id);
+    const last = [...(state.attendance ? Object.values(state.attendance).flat() : [])]
+      .filter((row) => row.volunteerId === volunteer.id)
+      .sort((a, b) => (a.checkedInAt ?? "").localeCompare(b.checkedInAt ?? ""))
+      .at(-1);
+    const idle = last?.checkedInAt ? previewDaysSince(last.checkedInAt) : Number.MAX_SAFE_INTEGER;
+
+    if (idle >= 90 && completed.length > 0) {
+      signals.push({
+        volunteerId: volunteer.id,
+        name: volunteer.name,
+        initials: volunteer.initials,
+        signal: "inactive",
+        reason: `No completed shift in ${idle} days, but ${completed.length} on record`,
+        history: [`${completed.length} completed shift(s)`],
+        suggestedAction: "Send upcoming opportunities from their usual program",
+      });
+      continue;
+    }
+
+    const registered = state.registrations.filter((row) => row.volunteerId === volunteer.id);
+    const lost = registered.filter((row) => row.status === "canceled").length;
+    if (completed.length === 0 && registered.length >= 1 && lost >= 2) {
+      signals.push({
+        volunteerId: volunteer.id,
+        name: volunteer.name,
+        initials: volunteer.initials,
+        signal: "newVolunteerAtRisk",
+        reason: `${lost} registration(s) ended in a cancellation and no shift has been completed`,
+        history: [`${registered.length} registration(s) in total`],
+        suggestedAction:
+          "Offer a shorter or better-supported first shift, or a call from the coordinator",
+      });
+      continue;
+    }
+
+    const recent = completed.filter((shiftId) => {
+      const shift = workspace.shifts.find((row) => row.id === shiftId);
+      return shift ? previewDaysSince(shift.endsAt) <= 60 : false;
+    });
+    if (recent.length >= 4) {
+      signals.push({
+        volunteerId: volunteer.id,
+        name: volunteer.name,
+        initials: volunteer.initials,
+        signal: "highlyEngaged",
+        reason: `${recent.length} completed shifts in the last 60 days`,
+        history: [`${completed.length} completed shifts in total`],
+        suggestedAction: "Ask them to mentor a new volunteer or lead a shift",
+      });
+      continue;
+    }
+
+    const lapsed = state.credentials.filter(
+      (credential) => credential.volunteerId === volunteer.id && credential.status === "expired",
+    );
+    if (lapsed.length > 0) {
+      signals.push({
+        volunteerId: volunteer.id,
+        name: volunteer.name,
+        initials: volunteer.initials,
+        signal: "credentialBlocker",
+        reason: `An expired ${lapsed.map((row) => row.name).join(", ")} blocks the roles that need it`,
+        history: [],
+        suggestedAction: "Send the renewal steps and hold a seat for the next shift",
+      });
+    }
+  }
+  return signals;
+}
+
+function previewInsight(volunteerId: string): VolunteerInsight {
+  const volunteer = workspace.volunteers.find((row) => row.id === volunteerId);
+  if (!volunteer) throw new Error("That volunteer is not on file.");
+  const verifiedMinutes = [...workspace.hourEntries, ...workspace.mayaEntries]
+    .filter((entry) => entry.volunteerId === volunteerId && entry.status === "verified")
+    .reduce((total, entry) => total + entry.minutes, 0);
+  const verifiedHours = Math.floor(verifiedMinutes / 60);
+  const completed = previewCompletedShifts(volunteerId).length;
+  const daysOfService = previewDaysSince(volunteer.joinedAt);
+
+  const milestones: Milestone[] = [
+    ...[10, 25, 50].map((hours) => ({
+      key: `hours-${hours}`,
+      label: `${hours} verified hours`,
+      earned: verifiedHours >= hours,
+      remaining: `${Math.max(0, hours - verifiedHours)} hour(s) to go`,
+    })),
+    {
+      key: "shifts-10",
+      label: "10 completed shifts",
+      earned: completed >= 10,
+      remaining: `${Math.max(0, 10 - completed)} shift(s) to go`,
+    },
+    {
+      key: "service-year-1",
+      label: "One year of service",
+      earned: daysOfService >= 365,
+      remaining: `${Math.max(0, 365 - daysOfService)} day(s) to go`,
+    },
+  ];
+  const next = milestones.find((milestone) => !milestone.earned);
+  return {
+    volunteerId,
+    name: volunteer.name,
+    verifiedHours,
+    completedShifts: completed,
+    milestones,
+    next: next ? `${next.label} — ${next.remaining}` : null,
+  };
+}
+
+function previewEngagement(): EngagementMetrics {
+  const yearStart = workspace.demoNow.slice(0, 4);
+  const newVolunteers = workspace.volunteers.filter((volunteer) =>
+    volunteer.joinedAt.startsWith(yearStart),
+  ).length;
+  const inactiveVolunteers = previewSignals().filter(
+    (signal) => signal.signal === "inactive",
+  ).length;
+  const completedShifts = workspace.shifts.filter(
+    (shift) => shift.endsAt < workspace.demoNow,
+  ).length;
+  const attendanceRows = Object.values(state.attendance ?? {}).flat();
+  const arrivals = attendanceRows.filter((row) => row.status === "checked_in").length;
+  const noShows = attendanceRows.filter((row) => row.status === "no_show").length;
+  const cancellations = state.registrations.filter((row) => row.status === "canceled").length;
+  const promotions = state.waitlist.filter((row) => row.status === "promoted").length;
+  const share = (part: number, whole: number) =>
+    whole <= 0 ? 0 : Math.round((part / whole) * 100);
+  return {
+    newVolunteers,
+    return30: share(state.retention[0]?.returned ?? 0, state.retention[0]?.eligible ?? 1),
+    return60: share(state.retention[1]?.returned ?? 0, state.retention[1]?.eligible ?? 1),
+    return90: share(state.retention[2]?.returned ?? 0, state.retention[2]?.eligible ?? 1),
+    inactiveVolunteers,
+    completedShifts,
+    noShowRate: share(noShows, arrivals + noShows),
+    lateCancellationRate: share(cancellations, state.registrations.length),
+    averageLeadDays: 9,
+    waitlistPromotions: promotions,
+    waitlistPromotionRate: share(promotions, state.waitlist.length),
+  };
+}
+
+function previewReadiness(): CredentialReadiness {
+  const today = workspace.demoNow.slice(0, 10);
+  const current = state.credentials.filter((row) => row.status === "current").length;
+  const expiringSoon = state.credentials.filter((row) => row.status === "expiring").length;
+  const expired = state.credentials.filter((row) => row.status === "expired").length;
+  const atRisk = state.registrations.filter((registration) => {
+    if (registration.status !== "registered") return false;
+    const shift = workspace.shifts.find((row) => row.id === registration.shiftId);
+    if (!shift || shift.startsAt <= workspace.demoNow) return false;
+    return state.credentials.some(
+      (credential) =>
+        credential.volunteerId === registration.volunteerId &&
+        credential.validThrough < today &&
+        credential.status === "expired",
+    );
+  }).length;
+  return { current, expiringSoon, expired, assignmentsAtRisk: atRisk };
+}
+
+function previewReplacement(shiftId: string, role: string): ReplacementRecommendation {
+  const shift = workspace.shifts.find((row) => row.id === shiftId);
+  const title =
+    workspace.opportunities.find((row) => row.id === shift?.opportunityId)?.title ?? "Shift";
+  if (!shift) throw new Error("That shift is not on file.");
+
+  const ranked: WaitlistCandidate[] = state.waitlist
+    .filter((row) => row.shiftId === shiftId && row.status === "waiting")
+    .sort((a, b) => a.position - b.position)
+    .map((entry) => {
+      const volunteer = workspace.volunteers.find((row) => row.id === entry.volunteerId);
+      const lapsed = state.credentials.find(
+        (credential) =>
+          credential.volunteerId === entry.volunteerId && credential.status === "expired",
+      );
+      return {
+        volunteerId: entry.volunteerId,
+        name: volunteer?.name ?? "Volunteer",
+        initials: volunteer?.initials ?? "",
+        position: entry.position,
+        eligible: !lapsed,
+        reason: lapsed
+          ? `This role needs a valid ${lapsed.name} on the shift date.`
+          : "Meets every requirement for this role.",
+        attendanceRate: volunteer?.attendanceRate ?? 0,
+        joinedAt: entry.createdAt,
+      };
+    });
+  const recommended = ranked.find((row) => row.eligible) ?? null;
+  const skipped = ranked.filter(
+    (row) => !row.eligible && row.position < (recommended?.position ?? Infinity),
+  );
+  const summary = recommended
+    ? skipped.length === 0
+      ? `${recommended.name} was first in line on the waitlist and meets every requirement for ${role}.`
+      : `${recommended.name} was first eligible on the waitlist. ${skipped.length} ahead in line could not take the seat: ${skipped
+          .map((row) => `${row.name} (${row.reason})`)
+          .join("; ")}.`
+    : ranked.length === 0
+      ? `Nobody is waiting for ${role} on ${title}.`
+      : `None of the ${ranked.length} waiting volunteers can take ${role} right now: ${ranked
+          .map((row) => `${row.name} (${row.reason})`)
+          .join("; ")}.`;
+
+  return {
+    shiftId,
+    shiftTitle: title,
+    role,
+    startsAt: shift.startsAt,
+    recommended,
+    ranked,
+    summary,
+  };
+}
+
+/** Reminders the preview would queue, from the same triggers the engine uses. */
+function previewReminders(): string[] {
+  const rules = previewRules().filter((rule) => rule.enabled);
+  const due: string[] = [];
+  for (const rule of rules) {
+    if (rule.triggerType === "credential_expiring") {
+      due.push(
+        ...state.credentials
+          .filter((row) => row.status === "expiring")
+          .map((row) => `${rule.id}:${row.id}`),
+      );
+      continue;
+    }
+    if (rule.triggerType === "shift_reminder" || rule.triggerType === "checkin_soon") {
+      const horizon = new Date(
+        new Date(workspace.demoNow).getTime() + rule.offsetMinutes * 60_000 + 30 * 60_000,
+      ).toISOString();
+      due.push(
+        ...state.registrations
+          .filter((row) => {
+            if (row.status !== "registered") return false;
+            const shift = workspace.shifts.find((entry) => entry.id === row.shiftId);
+            return Boolean(
+              shift && shift.startsAt > workspace.demoNow && shift.startsAt <= horizon,
+            );
+          })
+          .map((row) => `${rule.id}:${row.shiftId}:${row.volunteerId}`),
+      );
+    }
+  }
+  return due;
+}
+
+function previewSeats(shiftIds: string[]): PreviewSeat[] {
+  const seats: PreviewSeat[] = [];
+  for (const shift of workspace.shifts.filter((row) => shiftIds.includes(row.id))) {
+    const opportunity = workspace.opportunities.find((row) => row.id === shift.opportunityId);
+    for (const role of shift.roles) {
+      const keyword = role.name.toLowerCase().split(" ")[0];
+      for (let seat = 0; seat < Math.max(0, role.required - role.filled); seat += 1) {
+        seats.push({
+          slotId: `${shift.id}-${role.name}-${seat + 1}`,
+          shiftId: shift.id,
+          opportunityId: shift.opportunityId,
+          shiftTitle: opportunity?.title ?? "Shift",
+          role: role.name,
+          cause: opportunity?.cause ?? "food",
+          startsAt: shift.startsAt,
+          endsAt: shift.endsAt,
+          dayKey: previewDayKey(shift.startsAt),
+          requiredSkill: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+          requiredCredential: null,
+        });
+      }
+    }
+  }
+  return seats;
+}
+
+function emptyLoad(): PreviewLoad {
+  return { clashAt: new Set(), dayCount: new Map(), weekCount: new Map() };
+}
+
+function cloneLoad(load: PreviewLoad): PreviewLoad {
+  return {
+    clashAt: new Set(load.clashAt),
+    dayCount: new Map(load.dayCount),
+    weekCount: new Map(load.weekCount),
+  };
+}
+
+function previewAvailability(volunteer: Volunteer, seat: PreviewSeat): boolean {
+  if (volunteer.availability.length === 0) return true;
+  const period = previewPeriod(seat.startsAt);
+  return volunteer.availability.some((slot) => slot.day === seat.dayKey && slot.period === period);
+}
+
+function previewChecks(
+  volunteer: Volunteer,
+  seat: PreviewSeat,
+  options: RosterOptions,
+  policy: RosterPolicy,
+  load: PreviewLoad,
+): ConstraintCheck[] {
+  const checks: ConstraintCheck[] = [];
+  const skillMatch = volunteer.skills.some((skill) =>
+    skill.toLowerCase().includes(seat.requiredSkill.toLowerCase()),
+  );
+  checks.push({
+    name: "Required skill",
+    passed: skillMatch,
+    detail: skillMatch ? `${seat.requiredSkill} on the profile` : `Needs ${seat.requiredSkill}`,
+  });
+
+  const available = previewAvailability(volunteer, seat);
+  checks.push({
+    name: "Availability",
+    passed: available,
+    detail: available
+      ? `Available ${seat.dayKey.toUpperCase()} ${previewPeriod(seat.startsAt)}`
+      : `Not available ${seat.dayKey.toUpperCase()} ${previewPeriod(seat.startsAt)}`,
+  });
+
+  if (options.blockConflicts) {
+    const clash = load.clashAt.has(`${volunteer.id}:${seat.startsAt}`);
+    checks.push({
+      name: "No overlapping shift",
+      passed: !clash,
+      detail: clash ? "Already booked at this time" : "No shift overlaps this time",
+    });
+  }
+
+  const dayTaken = (load.dayCount.get(`${volunteer.id}:${seat.dayKey}`) ?? 0) + 1;
+  if (policy.maxShiftsPerDay !== null) {
+    checks.push({
+      name: "Daily shift limit",
+      passed: dayTaken <= policy.maxShiftsPerDay,
+      detail: `${dayTaken} of ${policy.maxShiftsPerDay} that day`,
+    });
+  }
+
+  const weekTaken = (load.weekCount.get(volunteer.id) ?? 0) + 1;
+  const weekLimit = policy.maxShiftsPerWeek ?? (options.capWeekly ? 2 : null);
+  if (weekLimit !== null) {
+    checks.push({
+      name: "Weekly shift limit",
+      passed: weekTaken <= weekLimit,
+      detail: `${weekTaken} of ${weekLimit} this week`,
+    });
+  }
+  return checks;
+}
+
+function previewShare(weight: number, numerator: number, denominator: number): number {
+  return Math.floor((weight * numerator) / denominator);
+}
+
+function previewScore(
+  volunteer: Volunteer,
+  seat: PreviewSeat,
+  options: RosterOptions,
+  policy: RosterPolicy,
+  load: PreviewLoad,
+): { components: ScoreComponent[]; total: number } {
+  const skillMatches = volunteer.skills.some((skill) =>
+    skill.toLowerCase().includes(seat.requiredSkill.toLowerCase()),
+  );
+  const skill = skillMatches ? policy.skillWeight : 0;
+  const availability = 25;
+  const interest = volunteer.causes.includes(seat.cause as Volunteer["causes"][number])
+    ? policy.interestWeight
+    : 0;
+  const spanish = volunteer.languages.includes("Spanish");
+  const preference =
+    seat.role.toLowerCase().includes("spanish") && spanish
+      ? policy.languageWeight
+      : options.preferSpanish && spanish
+        ? previewShare(policy.languageWeight, 8, 10)
+        : previewShare(policy.languageWeight, 6, 10);
+  const weekShifts = load.weekCount.get(volunteer.id) ?? 0;
+  const fairness = previewShare(policy.fairnessWeight, 10 - Math.min(weekShifts, 4) * 2, 10);
+  const reliability =
+    volunteer.eventsCompleted === 0
+      ? previewShare(policy.reliabilityWeight, 3, 5)
+      : Math.round((volunteer.attendanceRate / 100) * policy.reliabilityWeight);
+  const components: ScoreComponent[] = [
+    { label: "Skill", awarded: skill, maximum: policy.skillWeight },
+    { label: "Availability", awarded: availability, maximum: 25 },
+    { label: "Interest", awarded: interest, maximum: policy.interestWeight },
+    { label: "Language", awarded: preference, maximum: policy.languageWeight },
+    { label: "Fairness", awarded: fairness, maximum: policy.fairnessWeight },
+    { label: "Reliability", awarded: reliability, maximum: policy.reliabilityWeight },
+  ];
+  const total = Math.max(
+    0,
+    Math.min(
+      100,
+      components.reduce((sum, component) => sum + component.awarded, 0),
+    ),
+  );
+  return { components, total };
+}
+
+const PREVIEW_MAX_WEIGHT = 100;
+
+function previewBreakdown(components: ScoreComponent[]) {
+  const value = (label: string) =>
+    components.find((component) => component.label === label)?.awarded ?? 0;
+  return {
+    skill: value("Skill"),
+    availability: value("Availability"),
+    interest: value("Interest"),
+    preference: value("Language"),
+    fairness: value("Fairness"),
+    reliability: value("Reliability"),
+    total: Math.max(
+      0,
+      Math.min(
+        PREVIEW_MAX_WEIGHT,
+        components.reduce((sum, row) => sum + row.awarded, 0),
+      ),
+    ),
+  };
+}
+
+function previewReason(choice: PreviewChoice): string {
+  const parts: string[] = [`matches the required ${choice.seat.requiredSkill} skill`];
+  if (choice.volunteer.causes.includes(choice.seat.cause as Volunteer["causes"][number])) {
+    parts.push(`is interested in ${choice.seat.cause}`);
+  }
+  if (choice.volunteer.attendanceRate >= 80) {
+    parts.push(`has ${choice.volunteer.attendanceRate}% attendance`);
+  }
+  return `${choice.volunteer.name} ${parts.join(", ")}`;
+}
+
+/**
+ * One pass over the open seats. `forced` pins one volunteer into one seat, the
+ * same way the Rust planner treats a decided assignment: the seat leaves the
+ * pool and the volunteer takes nothing else.
+ */
+function previewPlanShape(
+  shiftIds: string[],
+  options: RosterOptions,
+  policy: RosterPolicy,
+  forced?: { candidateId: string; slotId: string },
+): PreviewPlanShape {
+  const seats = previewSeats(shiftIds);
+  const pool = workspace.volunteers.filter((volunteer) => volunteer.status === "active");
+  const load = emptyLoad();
+  const choices: PreviewChoice[] = [];
+  const unfilled: { seat: PreviewSeat; reason: string }[] = [];
+  const beforeSeat = new Map<string, PreviewLoad>();
+
+  for (const seat of seats) {
+    beforeSeat.set(seat.slotId, cloneLoad(load));
+    const isForcedSeat = forced?.slotId === seat.slotId;
+    const considered = isForcedSeat
+      ? pool.filter((volunteer) => volunteer.id === forced?.candidateId)
+      : pool.filter((volunteer) => volunteer.id !== forced?.candidateId);
+
+    let best: PreviewChoice | null = null;
+    for (const volunteer of considered) {
+      const checks = previewChecks(volunteer, seat, options, policy, load);
+      if (checks.some((check) => !check.passed)) continue;
+      const { components, total } = previewScore(volunteer, seat, options, policy, load);
+      if (!best || total > best.score) {
+        best = { seat, volunteer, checks, components, score: total };
+      }
+    }
+
+    if (!best) {
+      unfilled.push({
+        seat,
+        reason: isForcedSeat
+          ? "The chosen volunteer does not clear the current rules for this seat."
+          : "No eligible volunteer is available for this slot.",
+      });
+      continue;
+    }
+
+    choices.push(best);
+    load.clashAt.add(`${best.volunteer.id}:${seat.startsAt}`);
+    load.dayCount.set(
+      `${best.volunteer.id}:${seat.dayKey}`,
+      (load.dayCount.get(`${best.volunteer.id}:${seat.dayKey}`) ?? 0) + 1,
+    );
+    load.weekCount.set(best.volunteer.id, (load.weekCount.get(best.volunteer.id) ?? 0) + 1);
+  }
+
+  return { choices, unfilled, beforeSeat };
+}
+
+function previewExplanation(
+  volunteer: Volunteer,
+  seat: PreviewSeat,
+  options: RosterOptions,
+  policy: RosterPolicy,
+  load: PreviewLoad,
+  selected: boolean,
+): MatchExplanation {
+  const checks = previewChecks(volunteer, seat, options, policy, load);
+  const eligible = checks.every((check) => check.passed);
+  const { components, total } = previewScore(volunteer, seat, options, policy, load);
+  const choice: PreviewChoice = { seat, volunteer, checks, components, score: total };
+  return {
+    candidateId: volunteer.id,
+    candidateName: volunteer.name,
+    candidateInitials: volunteer.initials,
+    slotId: seat.slotId,
+    shiftId: seat.shiftId,
+    role: seat.role,
+    eligible,
+    checks,
+    components,
+    totalScore: eligible ? total : null,
+    selected,
+    selectionReason: eligible
+      ? previewReason(choice)
+      : `${volunteer.name} failed one requirement — ${
+          checks.find((check) => !check.passed)?.name.toLowerCase() ?? "eligibility"
+        }`,
+  };
+}
+
+function previewRequiredFilled(shape: PreviewPlanShape): number {
+  return shape.choices.length;
+}
+
+function previewComparison(
+  before: PreviewPlanShape,
+  after: PreviewPlanShape,
+  volunteer: Volunteer,
+  seat: PreviewSeat,
+): ForcedComparison {
+  const beforeBySlot = new Map(before.choices.map((choice) => [choice.seat.slotId, choice]));
+  const afterBySlot = new Map(after.choices.map((choice) => [choice.seat.slotId, choice]));
+  const changedAssignments: ForcedComparison["changedAssignments"] = [];
+  const becomesUncovered: string[] = [];
+
+  for (const [slotId, choice] of beforeBySlot) {
+    const now = afterBySlot.get(slotId);
+    if (now?.volunteer.id === choice.volunteer.id) continue;
+    if (!now) becomesUncovered.push(`${choice.seat.role} on ${choice.seat.shiftTitle}`);
+    changedAssignments.push({
+      kind: now ? "moved" : "lost",
+      shiftId: choice.seat.shiftId,
+      shiftTitle: choice.seat.shiftTitle,
+      role: choice.seat.role,
+      fromCandidate: choice.volunteer.id,
+      toCandidate: now?.volunteer.id ?? null,
+    });
+  }
+  for (const [slotId, choice] of afterBySlot) {
+    if (beforeBySlot.has(slotId)) continue;
+    changedAssignments.push({
+      kind: "gained",
+      shiftId: choice.seat.shiftId,
+      shiftTitle: choice.seat.shiftTitle,
+      role: choice.seat.role,
+      fromCandidate: null,
+      toCandidate: choice.volunteer.id,
+    });
+  }
+
+  const summary = [
+    `Forcing ${volunteer.name} into ${seat.role}: required seats filled ${previewRequiredFilled(
+      before,
+    )} to ${previewRequiredFilled(after)}`,
+  ];
+  const score = (shape: PreviewPlanShape) =>
+    shape.choices.reduce((total, choice) => total + choice.score, 0);
+  if (score(before) !== score(after)) {
+    summary.push(`Total match score ${score(before)} to ${score(after)}`);
+  }
+  summary.push(
+    becomesUncovered.length === 0
+      ? "No seat loses its volunteer"
+      : `Uncovered: ${becomesUncovered.join(", ")}`,
+  );
+
+  return {
+    candidateId: volunteer.id,
+    candidateName: volunteer.name,
+    slotId: seat.slotId,
+    shiftId: seat.shiftId,
+    role: seat.role,
+    filledBefore: before.choices.length,
+    filledAfter: after.choices.length,
+    requiredFilledBefore: previewRequiredFilled(before),
+    requiredFilledAfter: previewRequiredFilled(after),
+    totalScoreBefore: score(before),
+    totalScoreAfter: score(after),
+    changedAssignments,
+    becomesUncovered,
+    summary,
+  };
+}
+
+function previewRosterPlan(
+  shiftIds: string[],
+  options: RosterOptions,
+  policy: RosterPolicy,
+  forced?: { candidateId: string; slotId: string },
+): RosterPlan {
+  const shape = previewPlanShape(shiftIds, options, policy, forced);
+  const seats = previewSeats(shiftIds);
+  const assignments: PlannedAssignment[] = shape.choices.map((choice) => ({
+    shiftId: choice.seat.shiftId,
+    opportunityId: choice.seat.opportunityId,
+    shiftTitle: choice.seat.shiftTitle,
+    role: choice.seat.role,
+    candidateId: choice.volunteer.id,
+    candidateName: choice.volunteer.name,
+    candidateInitials: choice.volunteer.initials,
+    startsAt: choice.seat.startsAt,
+    score: choice.score,
+    breakdown: previewBreakdown(choice.components),
+    reasons: [
+      `Skill match: ${choice.seat.role}`,
+      `${options.preferSpanish && choice.volunteer.languages.includes("Spanish") ? "Spanish-speaking" : "Available"} for ${choice.seat.shiftId}`,
+      "Highest score among the eligible volunteers",
+    ],
+    promoteWaitlist: false,
+    eligibleRoles: seats
+      .filter((row) => row.shiftId === choice.seat.shiftId)
+      .filter((row) =>
+        choice.volunteer.skills.some((skill) =>
+          skill.toLowerCase().includes(row.requiredSkill.toLowerCase()),
+        ),
+      )
+      .map((row) => row.role),
+    explanation: previewExplanation(
+      choice.volunteer,
+      choice.seat,
+      options,
+      policy,
+      shape.beforeSeat.get(choice.seat.slotId) ?? emptyLoad(),
+      true,
+    ),
+  }));
+
+  return {
+    assignments,
+    unfilled: shape.unfilled.map((row) => ({
+      shiftId: row.seat.shiftId,
+      role: row.seat.role,
+      reason: row.reason,
+      requiredSkill: row.seat.requiredSkill,
+      requiredCredential: row.seat.requiredCredential,
+    })),
+    totalScore: assignments.reduce((total, assignment) => total + assignment.score, 0),
+    slotsConsidered: seats.length,
+    candidatesConsidered: workspace.volunteers.filter((volunteer) => volunteer.status === "active")
+      .length,
+    deterministicSeed: 20260415,
+    policyVersion: policy.version,
+  };
+}
+
+function previewExplain(
+  shiftIds: string[],
+  options: RosterOptions,
+  candidateId: string,
+  slotId: string,
+): CandidateAnswer {
+  const policy = readRosterPolicy();
+  const seat = previewSeats(shiftIds).find((row) => row.slotId === slotId);
+  if (!seat) throw new Error("That seat is not open on this shift.");
+  const volunteer = workspace.volunteers.find((row) => row.id === candidateId);
+  if (!volunteer) throw new Error("That volunteer is not on file.");
+
+  const base = previewPlanShape(shiftIds, options, policy);
+  const held = base.choices.find((choice) => choice.seat.slotId === slotId);
+  const selected = held?.volunteer.id === candidateId;
+  const explanation =
+    selected && held
+      ? previewExplanation(
+          volunteer,
+          seat,
+          options,
+          policy,
+          base.beforeSeat.get(slotId) ?? emptyLoad(),
+          true,
+        )
+      : previewExplanation(
+          volunteer,
+          seat,
+          options,
+          policy,
+          base.beforeSeat.get(slotId) ?? emptyLoad(),
+          false,
+        );
+
+  const comparison =
+    !selected && explanation.eligible
+      ? previewComparison(
+          base,
+          previewPlanShape(shiftIds, options, policy, { candidateId, slotId }),
+          volunteer,
+          seat,
+        )
+      : null;
+
+  return { explanation, comparison };
+}

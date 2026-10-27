@@ -24,6 +24,7 @@ import {
   getRetentionRows,
   getUpcomingShiftRows,
 } from "../../lib/workspace/selectors";
+import { RetentionSignalsCard } from "./RetentionSignalsCard";
 
 export function RetentionPage() {
   const { workspace, session } = useWorkspace();
@@ -229,7 +230,10 @@ export function RetentionPage() {
           ))}
         </Card>
 
+        <RetentionSignalsCard />
+
         <Card padding="compact">
+          {" "}
           <SectionHeader title="Engagement moves" subtitle="Try one this week" />
           {[
             [

@@ -16,6 +16,7 @@ import { currentOrganizationFor, recordOrganizationUpdate } from "../../lib/orga
 import { useWorkspace } from "../../lib/workspace/session";
 import { CAUSE_LABELS } from "../../lib/workspace/selectors";
 import type { Cause, NewOpportunityInput, Opportunity } from "../../types/domain";
+import { SeriesScheduleCard } from "./SeriesScheduleCard";
 import styles from "./Schedule.module.css";
 
 const CAUSE_IMAGE: Record<Cause, string> = {
@@ -206,6 +207,7 @@ export function CreateOpportunityPage() {
             </div>
           </div>
         </Card>
+        <SeriesScheduleCard opportunity={created} />
       </Page>
     );
   }

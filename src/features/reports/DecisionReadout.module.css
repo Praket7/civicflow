@@ -1,0 +1,72 @@
+.card {
+  margin-top: 14px;
+}
+
+.groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 22px;
+  margin-top: 14px;
+}
+
+.group {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.groupTitle {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.groupCopy {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.row:first-child {
+  border-top: 1px solid var(--border-strong);
+}
+
+.rowText {
+  display: grid;
+  min-width: 0;
+}
+
+.rowLabel {
+  font-size: 12.5px;
+  font-weight: 560;
+}
+
+.rowDetail {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--tone-red-ink);
+}

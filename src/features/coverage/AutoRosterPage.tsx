@@ -21,7 +21,7 @@ import {
   Toggle,
 } from "../../components/ui";
 import { t } from "../../lib/i18n";
-import type { RosterPlan, Shift, Volunteer } from "../../types/domain";
+import type { CandidateAnswer, RosterPlan, Shift, Volunteer } from "../../types/domain";
 import { useWorkspace } from "../../lib/workspace/session";
 import styles from "./AutoRosterPage.module.css";
 import {
@@ -117,6 +117,107 @@ function availabilityLabel(state: AvailabilityState): string {
   return "No availability listed for this day";
 }
 
+/**
+ * The evidence behind one seat: every hard requirement the solver checked, the
+ * score components, and the option to ask about someone else.
+ */
+function PlanEvidence({
+  explanation,
+  alternatives,
+  asking,
+  answer,
+  onAsk,
+}: {
+  explanation: RosterPlan["assignments"][number]["explanation"];
+  alternatives: Candidate[];
+  asking: string;
+  answer: { slotId: string; candidateName: string; answer: CandidateAnswer } | null;
+  onAsk: (candidateId: string, candidateName: string) => void;
+}) {
+  const showing = answer?.slotId === explanation.slotId ? answer : null;
+  const first = explanation.candidateName.split(" ")[0];
+  return (
+    <>
+      <details className={styles.planWhy}>
+        <summary>Why {first}?</summary>
+        <p className={styles.whyNote}>{explanation.selectionReason}</p>
+        <ul className={`${styles.reasonList} ${styles.checkList}`}>
+          {explanation.checks.map((check) => (
+            <li key={check.name} className={styles.checkRow}>
+              <span>
+                {check.name} · {check.detail}
+              </span>
+              <span className={check.passed ? styles.checkPass : styles.checkFail}>
+                {check.passed ? "PASS" : "FAIL"}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className={styles.breakdown}>
+          {explanation.components.map((row) => (
+            <div key={row.label} className={styles.breakdownRow}>
+              <span>{row.label}</span>
+              <div className={styles.breakdownTrack} aria-hidden="true">
+                <span
+                  style={{ width: `${row.maximum === 0 ? 0 : (row.awarded / row.maximum) * 100}%` }}
+                />
+              </div>
+              <span className={styles.breakdownValue}>{row.awarded}</span>
+            </div>
+          ))}
+        </div>
+      </details>
+
+      {alternatives.length > 0 ? (
+        <div className={styles.whyNot}>
+          <span className={styles.whyNotLabel}>Ask why not:</span>
+          {alternatives.map((candidate) => (
+            <button
+              key={candidate.volunteer.id}
+              type="button"
+              className={styles.whyNotButton}
+              onClick={() => onAsk(candidate.volunteer.id, candidate.volunteer.name)}
+              disabled={asking === candidate.volunteer.id}
+            >
+              {asking === candidate.volunteer.id
+                ? "Checking…"
+                : candidate.volunteer.name.split(" ")[0]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {showing ? (
+        <div className={styles.answerCard} role="status">
+          <p className={styles.answerTitle}>Why not {showing.candidateName}?</p>
+          {showing.answer.explanation.eligible ? (
+            <p className={styles.whyNote}>
+              They clear every requirement for this seat. This is what the plan would do instead:
+            </p>
+          ) : (
+            <ul className={styles.reasonList}>
+              {showing.answer.explanation.checks
+                .filter((check) => !check.passed)
+                .map((check) => (
+                  <li key={check.name}>
+                    {check.name} · {check.detail}
+                  </li>
+                ))}
+            </ul>
+          )}
+          {showing.answer.comparison ? (
+            <ul className={styles.reasonList}>
+              {showing.answer.comparison.summary.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function AutoRosterPage() {
   const { workspace, session, actions } = useWorkspace();
   const shiftOptions = useMemo(
@@ -141,6 +242,15 @@ export function AutoRosterPage() {
   const [planning, setPlanning] = useState(false);
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState("");
+  // Answers to "why not that one?", kept per seat so the plan row shows the
+  // explanation next to the decision it is about.
+  const [answer, setAnswer] = useState<{
+    slotId: string;
+    candidateName: string;
+    answer: CandidateAnswer;
+  } | null>(null);
+  const [asking, setAsking] = useState("");
+  const [answerError, setAnswerError] = useState("");
 
   const selected = shiftOptions.find((row) => row.shift.id === shiftId) ?? shiftOptions[0];
   const shift = selected?.shift;
@@ -387,6 +497,47 @@ export function AutoRosterPage() {
   function invalidatePlan() {
     setPlan(null);
     setApplied(false);
+    setAnswer(null);
+    setAnswerError("");
+  }
+
+  /**
+   * Asks the solver about one seat. The answer comes from the same rules the
+   * plan used: a failed hard check, or — when the person was eligible — what
+   * forcing them into the seat would do to the rest of the plan.
+   */
+  async function askWhyNot(slotId: string, candidateId: string, candidateName: string) {
+    if (!shift) return;
+    setAsking(candidateId);
+    setAnswerError("");
+    try {
+      const result = await actions.explainRosterChoice(
+        [shift.id],
+        {
+          preferSpanish: options.preferSpanish,
+          includeWaitlist: options.includeWaitlist,
+          blockConflicts: options.blockConflicts,
+          capWeekly: options.capWeekly,
+        },
+        candidateId,
+        slotId,
+      );
+      setAnswer({ slotId, candidateName, answer: result });
+    } catch (caught) {
+      setAnswerError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setAsking("");
+    }
+  }
+
+  /** The people who could arguably take this seat, besides the one holding it. */
+  function alternativesFor(role: string, holderId: string): Candidate[] {
+    return data.candidates
+      .filter(
+        (candidate) =>
+          candidate.volunteer.id !== holderId && candidate.eligibleRoles.includes(role),
+      )
+      .slice(0, 4);
   }
 
   function updateOption(key: keyof EngineOptions, value: boolean) {
@@ -726,6 +877,12 @@ export function AutoRosterPage() {
             </p>
           ) : null}
 
+          {answerError ? (
+            <p className={styles.errorNote} role="alert">
+              {answerError}
+            </p>
+          ) : null}
+
           {plannedCandidates.length > 0 ? (
             <>
               <ul className={styles.planList}>
@@ -756,6 +913,24 @@ export function AutoRosterPage() {
                           `${candidate.volunteer.attendanceRate}% attendance`}
                       </span>
                       <span className={styles.planScore}>{candidate.score}</span>
+                      {assignment.backend ? (
+                        <PlanEvidence
+                          explanation={assignment.backend.explanation}
+                          alternatives={alternativesFor(
+                            assignment.gap.name,
+                            candidate.volunteer.id,
+                          )}
+                          asking={asking}
+                          answer={answer}
+                          onAsk={(candidateId, name) =>
+                            void askWhyNot(
+                              assignment.backend!.explanation.slotId,
+                              candidateId,
+                              name,
+                            )
+                          }
+                        />
+                      ) : null}
                     </li>
                   );
                 })}

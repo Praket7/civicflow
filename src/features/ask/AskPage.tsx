@@ -165,13 +165,24 @@ export function AskPage() {
               <ShieldCheck size={13} aria-hidden="true" />
               {result.answer.recordsRead > 0
                 ? `Read ${result.answer.recordsRead} records on this device.`
-                : "Answered without reading any records."}
+                : "Answered without reading any records."}{" "}
+              {result.answer.evidence}
             </p>
             {result.answer.action ? (
-              <Link className={styles.action} to={result.answer.action.href}>
-                {result.answer.action.label}
-                <ArrowRight size={14} aria-hidden="true" />
-              </Link>
+              <span className={styles.actionRow}>
+                <Link className={styles.action} to={result.answer.action.href}>
+                  {result.answer.action.label}
+                  <ArrowRight size={14} aria-hidden="true" />
+                </Link>
+                {(result.answer.actions ?? [])
+                  .filter((action) => action.href !== result.answer.action?.href)
+                  .map((action) => (
+                    <Link key={action.href} className={styles.action} to={action.href}>
+                      {action.label}
+                      <ArrowRight size={14} aria-hidden="true" />
+                    </Link>
+                  ))}
+              </span>
             ) : null}
           </div>
         </article>

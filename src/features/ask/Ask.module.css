@@ -246,6 +246,13 @@
   color: var(--text-muted);
 }
 
+.actionRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .action {
   display: inline-flex;
   align-items: center;

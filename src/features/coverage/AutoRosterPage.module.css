@@ -1028,3 +1028,126 @@
     align-items: flex-start;
   }
 }
+
+/* The evidence behind one assignment. It sits inside the plan row, so the
+   explanation for a seat is read where the seat is. */
+.planWhy {
+  grid-column: 1 / -1;
+  margin-top: 5px;
+}
+
+.planWhy summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  list-style: none;
+}
+
+.planWhy summary:hover {
+  color: var(--text-primary);
+}
+
+.planWhy summary::-webkit-details-marker {
+  display: none;
+}
+
+.planWhy summary::after {
+  content: " +";
+}
+
+.planWhy[open] summary::after {
+  content: " −";
+}
+
+.checkList {
+  list-style: none;
+}
+
+.checkRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.checkRow span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.checkPass,
+.checkFail {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.checkPass {
+  color: var(--tone-green-ink);
+}
+
+.checkFail {
+  color: var(--tone-red-ink);
+}
+
+.whyNot {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.whyNotLabel {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+.whyNotButton {
+  padding: 3px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface-paper);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.whyNotButton:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.whyNotButton:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.answerCard {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--surface-paper);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.answerTitle {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.answerCard .reasonList {
+  margin-top: 5px;
+}

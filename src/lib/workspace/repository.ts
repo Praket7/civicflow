@@ -6,21 +6,40 @@ import type {
   AuthSession,
   BackupRestoreResult,
   BackupSnapshot,
+  CandidateAnswer,
   CheckinCode,
   CreateOpportunityResult,
+  CredentialReadiness,
+  DisruptionReport,
+  EngagementMetrics,
   ExportFormat,
   ExportReceipt,
   HoursDecision,
   MissionControlSummary,
   NewOpportunityInput,
   NotificationItem,
+  NotificationRule,
+  NotificationRulePatch,
   Opportunity,
+  RecoveryChangeRequest,
+  RecoveryPlan,
+  RecurrenceRule,
   ReportDocument,
   ReportRequest,
+  ReplacementRecommendation,
+  RetentionSignal,
   RosterApplyAssignment,
   RosterOptions,
   RosterPlan,
+  RosterPolicy,
+  RosterPolicyView,
+  SeriesResult,
+  SeriesRole,
   SessionSnapshot,
+  ShiftSeriesRecord,
+  VolunteerInsight,
+  VolunteerImportPreview,
+  VolunteerImportSummary,
   WorkspaceSettings,
 } from "../../types/domain";
 import type { HostedIdentity } from "../auth/hosted";
@@ -74,7 +93,69 @@ export interface WorkspaceRepository {
   joinWaitlist(shiftId: string, volunteerId: string, role: string): Promise<SessionSnapshot>;
   getCheckinCode(shiftId: string): Promise<CheckinCode>;
   autoRoster(shiftIds: string[], options: RosterOptions): Promise<RosterPlan>;
+  /** The matching policy in force, with the priority levels the screen offers. */
+  getRosterPolicy(): Promise<RosterPolicyView>;
+  updateRosterPolicy(policy: RosterPolicy): Promise<RosterPolicyView>;
+  /**
+   * Why this person, or why not that one. The answer is computed from the same
+   * rules the planner used; a forced comparison is included when the seat was
+   * within reach but went to someone else.
+   */
+  explainRosterChoice(
+    shiftIds: string[],
+    options: RosterOptions,
+    candidateId: string,
+    slotId: string,
+  ): Promise<CandidateAnswer>;
   applyRoster(shiftId: string, assignments: RosterApplyAssignment[]): Promise<SessionSnapshot>;
+  /**
+   * What is wrong with the roster right now: required seats with nobody in them,
+   * and credentials that will not be valid when an assigned shift starts.
+   */
+  detectDisruptions(): Promise<DisruptionReport>;
+  /**
+   * A minimal repair for the chosen shifts. Coverage comes first, then how few
+   * assignments the plan disturbs, then match quality. A locked assignment is
+   * never moved.
+   */
+  planRecovery(shiftIds: string[], options: RosterOptions): Promise<RecoveryPlan>;
+  /** Applies the approved changes in one transaction, one audit event each. */
+  applyRecovery(shiftId: string, changes: RecoveryChangeRequest[]): Promise<SessionSnapshot>;
+  /** Holds an assignment still so recovery and AutoRoster cannot move it. */
+  setAssignmentLock(
+    shiftId: string,
+    volunteerId: string,
+    locked: boolean,
+  ): Promise<SessionSnapshot>;
+  /** Schedules a repeating shift series and every instance it produces. */
+  createShiftSeries(
+    opportunityId: string,
+    rule: RecurrenceRule,
+    roles: SeriesRole[],
+  ): Promise<SeriesResult>;
+  listShiftSeries(opportunityId?: string): Promise<ShiftSeriesRecord[]>;
+  /** Adds the occurrences the rule asks for that the series has not produced. */
+  generateSeriesInstances(seriesId: string): Promise<SeriesResult>;
+  /** Retimes one shift of the series, or the rule and every shift it made. */
+  retimeShiftSeries(
+    seriesId: string,
+    startsLocalTime: string,
+    durationMinutes: number,
+    scope: "instance" | "series",
+  ): Promise<SessionSnapshot>;
+  deleteShiftSeries(seriesId: string): Promise<SessionSnapshot>;
+  /** Who should take an opened seat, and why the people ahead were skipped. */
+  recommendReplacement(shiftId: string, role: string): Promise<ReplacementRecommendation>;
+  listNotificationRules(): Promise<NotificationRule[]>;
+  updateNotificationRule(ruleId: string, patch: NotificationRulePatch): Promise<NotificationRule[]>;
+  /** Queues every reminder that is due, and returns how many it wrote. */
+  queueDueReminders(): Promise<number>;
+  /** The transparent rules behind who might need attention. */
+  retentionSignals(): Promise<RetentionSignal[]>;
+  /** One volunteer's verified hours, completed shifts, and milestones. */
+  volunteerInsight(volunteerId: string): Promise<VolunteerInsight>;
+  engagementMetrics(): Promise<EngagementMetrics>;
+  credentialReadiness(): Promise<CredentialReadiness>;
   promoteWaitlist(shiftId: string, volunteerId: string): Promise<SessionSnapshot>;
   reviewHours(entryId: string, decision: HoursDecision): Promise<SessionSnapshot>;
   updateSettings(patch: Partial<WorkspaceSettings>): Promise<SessionSnapshot>;
@@ -96,6 +177,18 @@ export interface WorkspaceRepository {
   saveReportView(name: string, scope: string, filtersJson: string): Promise<SessionSnapshot>;
   generateReport(request: ReportRequest): Promise<ReportDocument>;
   exportReport(request: ReportRequest, format: ExportFormat): Promise<ExportReceipt | null>;
+  /**
+   * Checks a volunteer spreadsheet row by row without writing anything, so a
+   * coordinator can fix a file before it changes the roster.
+   */
+  previewVolunteerImport(text: string): Promise<VolunteerImportPreview>;
+  /**
+   * Adds the file's rows in one transaction. A file with any problem is refused
+   * whole, so a half-imported roster cannot happen.
+   */
+  applyVolunteerImport(text: string): Promise<VolunteerImportSummary>;
+  /** Writes the roster in the shape the import reads, for editing and return. */
+  exportVolunteerRoster(): Promise<ExportReceipt | null>;
 }
 
 // The signed-in session is the only credential the IPC bridge accepts. Keeping
@@ -163,8 +256,50 @@ const desktopRepository: WorkspaceRepository = {
   getCheckinCode: (shiftId) => invoke<CheckinCode>("get_checkin_code", withToken({ shiftId })),
   autoRoster: (shiftIds, options) =>
     invoke<RosterPlan>("auto_roster", withToken({ shiftIds, options })),
+  getRosterPolicy: () => invoke<RosterPolicyView>("get_roster_policy", withToken()),
+  updateRosterPolicy: (policy) =>
+    invoke<RosterPolicyView>("update_roster_policy", withToken({ policy })),
+  explainRosterChoice: (shiftIds, options, candidateId, slotId) =>
+    invoke<CandidateAnswer>(
+      "explain_roster_choice",
+      withToken({ shiftIds, options, candidateId, slotId }),
+    ),
   applyRoster: (shiftId, assignments) =>
     invoke<SessionSnapshot>("apply_roster_plan", withToken({ shiftId, assignments })),
+  detectDisruptions: () => invoke<DisruptionReport>("detect_disruptions", withToken()),
+  planRecovery: (shiftIds, options) =>
+    invoke<RecoveryPlan>("plan_recovery", withToken({ shiftIds, options })),
+  applyRecovery: (shiftId, changes) =>
+    invoke<SessionSnapshot>("apply_recovery", withToken({ shiftId, changes })),
+  setAssignmentLock: (shiftId, volunteerId, locked) =>
+    invoke<SessionSnapshot>("set_assignment_lock", withToken({ shiftId, volunteerId, locked })),
+  createShiftSeries: (opportunityId, rule, roles) =>
+    invoke<SeriesResult>("create_shift_series", withToken({ opportunityId, rule, roles })),
+  listShiftSeries: (opportunityId) =>
+    invoke<ShiftSeriesRecord[]>(
+      "list_shift_series",
+      withToken({ opportunityId: opportunityId ?? null }),
+    ),
+  generateSeriesInstances: (seriesId) =>
+    invoke<SeriesResult>("generate_series_instances", withToken({ seriesId })),
+  retimeShiftSeries: (seriesId, startsLocalTime, durationMinutes, scope) =>
+    invoke<SessionSnapshot>(
+      "retime_shift_series",
+      withToken({ seriesId, startsLocalTime, durationMinutes, scope }),
+    ),
+  deleteShiftSeries: (seriesId) =>
+    invoke<SessionSnapshot>("delete_shift_series", withToken({ seriesId })),
+  recommendReplacement: (shiftId, role) =>
+    invoke<ReplacementRecommendation>("recommend_replacement", withToken({ shiftId, role })),
+  listNotificationRules: () => invoke<NotificationRule[]>("list_notification_rules", withToken()),
+  updateNotificationRule: (ruleId, patch) =>
+    invoke<NotificationRule[]>("update_notification_rule", withToken({ ruleId, patch })),
+  queueDueReminders: () => invoke<number>("queue_due_reminders", withToken()),
+  retentionSignals: () => invoke<RetentionSignal[]>("retention_signals", withToken()),
+  volunteerInsight: (volunteerId) =>
+    invoke<VolunteerInsight>("volunteer_insight", withToken({ volunteerId })),
+  engagementMetrics: () => invoke<EngagementMetrics>("engagement_metrics", withToken()),
+  credentialReadiness: () => invoke<CredentialReadiness>("credential_readiness", withToken()),
   promoteWaitlist: (shiftId, volunteerId) =>
     invoke<SessionSnapshot>("promote_waitlist", withToken({ shiftId, volunteerId })),
   reviewHours: (entryId, decision) =>
@@ -224,6 +359,19 @@ const desktopRepository: WorkspaceRepository = {
     });
     if (!path) return null;
     return invoke<ExportReceipt>("export_report", withToken({ request, format, path }));
+  },
+  previewVolunteerImport: (text) =>
+    invoke<VolunteerImportPreview>("preview_volunteer_import", withToken({ text })),
+  applyVolunteerImport: (text) =>
+    invoke<VolunteerImportSummary>("apply_volunteer_import", withToken({ text })),
+  exportVolunteerRoster: async () => {
+    const path = await save({
+      title: "Export the volunteer roster",
+      defaultPath: "civicflow-volunteer-roster.csv",
+      filters: [{ name: "CSV roster", extensions: ["csv"] }],
+    });
+    if (!path) return null;
+    return invoke<ExportReceipt>("export_volunteer_roster", withToken({ path }));
   },
 };
 

@@ -24,6 +24,7 @@ import {
   getShiftRows,
   timeRange,
 } from "../../lib/workspace/selectors";
+import { RecoveryRescueCard } from "./RecoveryRescueCard";
 import styles from "./CoveragePage.module.css";
 
 type CoverageStatus = "critical" | "at-risk" | "healthy";
@@ -354,6 +355,8 @@ export function CoveragePage() {
           )}
         </Card>
       </div>
+
+      <RecoveryRescueCard />
 
       <div className={styles.bottomGrid}>
         <Card className={styles.listCard}>

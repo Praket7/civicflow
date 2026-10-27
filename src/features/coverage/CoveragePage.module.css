@@ -588,6 +588,184 @@
   text-align: center;
 }
 
+/* ------------------------------ coverage rescue --------------------------- */
+
+.rescueCard {
+  padding: 20px 22px 18px;
+}
+
+.rescueList {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rescueRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+}
+
+.rescueCopy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rescueTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 640;
+}
+
+.rescueMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rescueRoles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.rescueRoles li {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-muted);
+}
+
+.rescueRoles li span:last-child {
+  font-weight: 620;
+  color: var(--text-primary);
+}
+
+.rescueRisk {
+  margin-top: 14px;
+  padding: 11px 14px;
+  border: 1px solid var(--tone-orange-soft, var(--border-soft));
+  border-radius: var(--radius-card);
+  background: var(--tone-orange-soft, transparent);
+}
+
+.rescueRiskTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.rescueRiskList {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rescuePlan {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.rescueEmpty {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.planList {
+  display: grid;
+  gap: 2px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planRow {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.planRow:last-child {
+  border-bottom: 0;
+}
+
+.planReason {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.planCost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.planFoot {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.planRemaining {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rescueActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rescueNotice {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rescueError {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--tone-red-ink);
+}
+
 /* ------------------------------- responsive ------------------------------- */
 
 @media (max-width: 1320px) {
@@ -663,5 +841,15 @@
     margin-left: 0;
     padding-left: 0;
     border-left: 0;
+  }
+
+  .rescueRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .planRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
   }
 }

@@ -292,6 +292,101 @@ export interface ScoreBreakdown {
   total: number;
 }
 
+export interface ConstraintCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ScoreComponent {
+  label: string;
+  awarded: number;
+  maximum: number;
+}
+
+/** The full record of why one person was chosen for one seat. */
+export interface MatchExplanation {
+  candidateId: string;
+  candidateName: string;
+  candidateInitials: string;
+  slotId: string;
+  shiftId: string;
+  role: string;
+  eligible: boolean;
+  checks: ConstraintCheck[];
+  components: ScoreComponent[];
+  totalScore: number | null;
+  selected: boolean;
+  selectionReason: string;
+}
+
+/** One seat that a different person holds once a decision is forced. */
+export interface AssignmentChange {
+  kind: "lost" | "moved" | "gained" | string;
+  shiftId: string;
+  shiftTitle: string;
+  role: string;
+  fromCandidate: string | null;
+  toCandidate: string | null;
+}
+
+/** What happens to the whole plan if one questioned decision is forced. */
+export interface ForcedComparison {
+  candidateId: string;
+  candidateName: string;
+  slotId: string;
+  shiftId: string;
+  role: string;
+  filledBefore: number;
+  filledAfter: number;
+  requiredFilledBefore: number;
+  requiredFilledAfter: number;
+  totalScoreBefore: number;
+  totalScoreAfter: number;
+  changedAssignments: AssignmentChange[];
+  becomesUncovered: string[];
+  summary: string[];
+}
+
+/** The answer to "why this person?" or "why not that one?". */
+export interface CandidateAnswer {
+  explanation: MatchExplanation;
+  comparison: ForcedComparison | null;
+}
+
+/** What an unknown age or credential means for the role that requires it. */
+export type MissingRequirementBehavior = "block" | "allow";
+
+/** The organization's own matching rules, in the words a coordinator chose. */
+export interface RosterPolicy {
+  version: number;
+  maxShiftsPerDay: number | null;
+  maxMinutesPerDay: number | null;
+  maxShiftsPerWeek: number | null;
+  maxMinutesPerWeek: number | null;
+  minimumGapMinutes: number;
+  unknownAgeBehavior: MissingRequirementBehavior;
+  unknownCredentialBehavior: MissingRequirementBehavior;
+  skillWeight: number;
+  interestWeight: number;
+  languageWeight: number;
+  fairnessWeight: number;
+  reliabilityWeight: number;
+  waitlistPreference: boolean;
+}
+
+/** A named priority a coordinator picks, and the weight it becomes. */
+export interface PriorityLevel {
+  key: string;
+  weight: number;
+}
+
+export interface RosterPolicyView {
+  policy: RosterPolicy;
+  levels: PriorityLevel[];
+  organizationId: string;
+}
+
 export interface PlannedAssignment {
   shiftId: string;
   opportunityId: string;
@@ -306,6 +401,7 @@ export interface PlannedAssignment {
   reasons: string[];
   promoteWaitlist: boolean;
   eligibleRoles: string[];
+  explanation: MatchExplanation;
 }
 
 export interface UnfilledSlot {
@@ -323,6 +419,8 @@ export interface RosterPlan {
   slotsConsidered: number;
   candidatesConsidered: number;
   deterministicSeed: number;
+  /** Which version of the organization's matching policy produced this plan. */
+  policyVersion: number;
 }
 
 export interface RosterApplyAssignment {
@@ -336,6 +434,88 @@ export interface RosterOptions {
   blockConflicts: boolean;
   capWeekly: boolean;
   includeWaitlist: boolean;
+}
+
+/** A role on a disrupted shift, counted as the shift screen counts it. */
+export interface DisruptedRole {
+  role: string;
+  required: number;
+  filled: number;
+  open: number;
+}
+
+export interface DisruptedShift {
+  shiftId: string;
+  opportunityId: string;
+  title: string;
+  startsAt: string;
+  capacity: number;
+  confirmed: number;
+  roles: DisruptedRole[];
+  reasons: string[];
+}
+
+export interface AtRiskAssignment {
+  shiftId: string;
+  shiftTitle: string;
+  startsAt: string;
+  volunteerId: string;
+  volunteerName: string;
+  role: string;
+  credential: string;
+  validThrough: string | null;
+  expired: boolean;
+}
+
+/** What is wrong with the roster right now, before anybody plans a repair. */
+export interface DisruptionReport {
+  now: string;
+  shifts: DisruptedShift[];
+  openRequired: number;
+  atRisk: AtRiskAssignment[];
+}
+
+export type RecoveryChangeKind = "assign" | "promote" | "move";
+
+export interface RecoveryChange {
+  kind: RecoveryChangeKind;
+  shiftId: string;
+  shiftTitle: string;
+  startsAt: string;
+  role: string;
+  /** The seat a move leaves behind, so the screen can name both ends. */
+  fromRole: string | null;
+  volunteerId: string;
+  volunteerName: string;
+  volunteerInitials: string;
+  score: number;
+  cost: number;
+  reason: string;
+}
+
+export interface RecoverySeat {
+  shiftId: string;
+  role: string;
+  reason: string;
+}
+
+export interface RecoveryPlan {
+  shifts: DisruptedShift[];
+  changes: RecoveryChange[];
+  remaining: RecoverySeat[];
+  openBefore: number;
+  openAfter: number;
+  /** Assignments the plan disturbs, which is the number a coordinator weighs. */
+  movedAssignments: number;
+  policyVersion: number;
+}
+
+/** One seat a coordinator approved. */
+export interface RecoveryChangeRequest {
+  volunteerId: string;
+  role: string;
+  fromRole: string | null;
+  promoteWaitlist: boolean;
 }
 
 export interface AuditEvent {
@@ -455,6 +635,61 @@ export interface CreateOpportunityResult {
   snapshot: SessionSnapshot;
 }
 
+/**
+ * A roster record as the database holds it — identity, contact, status, and the
+ * lists the matching engine reads. The bundled seed authors its own display
+ * fields, so the screens turn this into a `Volunteer` and keep the seed's richer
+ * detail where the two describe the same person.
+ */
+export interface RosterVolunteer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  joinedAt: string;
+  skills: string[];
+  availability: string[];
+  causes: string[];
+}
+
+/** One row of a volunteer spreadsheet, with what the importer understood. */
+export interface VolunteerImportRow {
+  /** The line number as the coordinator's spreadsheet editor shows it. */
+  line: number;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+  skills: string[];
+  /** Windows in the `mon:morning` form the export writes. */
+  availability: string[];
+  interests: string;
+  causes: string[];
+  outcome: "create" | "invalid";
+  /** Anything that stops the row being written. */
+  problems: string[];
+  /** True of the row but not an error, such as a missing skill list. */
+  notes: string[];
+}
+
+export interface VolunteerImportPreview {
+  columns: string[];
+  required: string[];
+  template: string;
+  total: number;
+  valid: number;
+  invalid: number;
+  problems: string[];
+  rows: VolunteerImportRow[];
+}
+
+export interface VolunteerImportSummary {
+  created: number;
+  createdIds: string[];
+  preview: VolunteerImportPreview;
+}
+
 export interface SessionSnapshot {
   savedOpportunityIds: string[];
   attendance: Record<string, AttendanceEntry[]>;
@@ -481,6 +716,159 @@ export interface SessionSnapshot {
   retention: RetentionCohort[];
   checkinCode: CheckinCode | null;
   reportExports?: ExportReceipt[];
+  /** The whole roster for a coordinator, and only their own row for a volunteer. */
+  roster?: RosterVolunteer[];
+  /**
+   * Shifts a coordinator scheduled from a series. The browser fallback keeps
+   * them here because its schedule comes from the seed; the desktop workspace
+   * writes real shift rows instead.
+   */
+  createdSeries?: ShiftSeriesRecord[];
+  createdShifts?: SeriesShift[];
+}
+
+/** The repeat rule a coordinator filled in. */
+export interface RecurrenceRule {
+  kind: "none" | "weekly";
+  intervalWeeks: number;
+  /** Sunday is 0, so the numbering matches the seed's day keys. */
+  weekdays: number[];
+  /** "HH:MM" in the organization's own clock. */
+  startsLocalTime: string;
+  durationMinutes: number;
+  /** "YYYY-MM-DD": the first day an occurrence may fall on. */
+  startsOn: string;
+  endsOn: string | null;
+  occurrenceCount: number | null;
+}
+
+export interface SeriesRole {
+  name: string;
+  required: number;
+}
+
+export interface ShiftSeriesRecord {
+  id: string;
+  opportunityId: string;
+  opportunityTitle: string;
+  timezone: string;
+  kind: "none" | "weekly";
+  intervalWeeks: number;
+  weekdays: number[];
+  startsLocalTime: string;
+  durationMinutes: number;
+  startsOn: string;
+  endsOn: string | null;
+  occurrenceCount: number | null;
+  /** Shifts this series has actually produced. */
+  generated: number;
+  roles: SeriesRole[];
+}
+
+export interface SeriesShift {
+  id: string;
+  occurrenceDate: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface SeriesResult {
+  series: ShiftSeriesRecord;
+  shifts: SeriesShift[];
+  snapshot: SessionSnapshot;
+}
+
+/** One person waiting for a seat, and whether they can take it. */
+export interface WaitlistCandidate {
+  volunteerId: string;
+  name: string;
+  initials: string;
+  position: number;
+  eligible: boolean;
+  reason: string;
+  attendanceRate: number;
+  joinedAt: string;
+}
+
+export interface ReplacementRecommendation {
+  shiftId: string;
+  shiftTitle: string;
+  role: string;
+  startsAt: string;
+  recommended: WaitlistCandidate | null;
+  ranked: WaitlistCandidate[];
+  /** The sentence a coordinator reads, including who was passed over. */
+  summary: string;
+}
+
+/** The reminder triggers the product actually sends. */
+export type ReminderTrigger =
+  "shift_reminder" | "checkin_soon" | "missed_shift_follow_up" | "credential_expiring";
+
+export interface NotificationRule {
+  id: string;
+  triggerType: ReminderTrigger;
+  offsetMinutes: number;
+  audience: "volunteer" | "coordinator";
+  enabled: boolean;
+}
+
+export interface NotificationRulePatch {
+  offsetMinutes?: number;
+  enabled?: boolean;
+}
+
+/** The rule that fired, in the coordinator's words. */
+export type RetentionSignalKind =
+  "inactive" | "newVolunteerAtRisk" | "highlyEngaged" | "credentialBlocker";
+
+export interface RetentionSignal {
+  volunteerId: string;
+  name: string;
+  initials: string;
+  signal: RetentionSignalKind;
+  reason: string;
+  history: string[];
+  suggestedAction: string;
+}
+
+export interface Milestone {
+  key: string;
+  label: string;
+  earned: boolean;
+  /** What is still missing, so the next one is visible rather than implied. */
+  remaining: string;
+}
+
+export interface VolunteerInsight {
+  volunteerId: string;
+  name: string;
+  verifiedHours: number;
+  completedShifts: number;
+  milestones: Milestone[];
+  next: string | null;
+}
+
+export interface EngagementMetrics {
+  newVolunteers: number;
+  return30: number;
+  return60: number;
+  return90: number;
+  inactiveVolunteers: number;
+  completedShifts: number;
+  noShowRate: number;
+  lateCancellationRate: number;
+  averageLeadDays: number;
+  waitlistPromotions: number;
+  waitlistPromotionRate: number;
+}
+
+export interface CredentialReadiness {
+  current: number;
+  expiringSoon: number;
+  expired: number;
+  /** Assignments on future shifts whose credential lapses before the shift. */
+  assignmentsAtRisk: number;
 }
 
 export interface DemoWorkspace {

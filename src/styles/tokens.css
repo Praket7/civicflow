@@ -9,7 +9,6 @@
   /* Brand structure */
   --color-navy: #211d17;
   --color-navy-raised: #2b261e;
-  --color-navy-line: #423a2e;
   --color-canvas: #f1ebe0;
   --color-paper: #f9f4ea;
   --color-raised: #fffdf7;
@@ -30,11 +29,9 @@
   /* Signature + expressive */
   --color-lime: #e6c56d;
   --color-lime-hover: #efd389;
-  --color-lime-ink: #3d2f0c;
   --switch-off: #c9bfae;
   --color-coral: #b4563d;
   --color-orange: #b97a2c;
-  --color-yellow: #d6a63d;
   --color-violet: #6e5a75;
   --color-teal: #3d7168;
   --color-cyan: #4f6f80;
@@ -71,8 +68,6 @@
   --surface-paper: var(--color-paper);
   --surface-raised: var(--color-raised);
   --surface-muted: #eae2d5;
-  --surface-dark: var(--color-navy);
-  --surface-dark-raised: var(--color-navy-raised);
   --surface-sidebar: #1c1914;
   --text-primary: var(--color-ink);
   --text-secondary: var(--color-ink-soft);
@@ -80,19 +75,16 @@
   --text-inverse: var(--color-ink-inverse);
   --action-primary: var(--color-cobalt);
   --action-hover: var(--color-cobalt-hover);
-  --action-pressed: var(--color-cobalt-pressed);
   --border-soft: rgba(48, 39, 28, 0.14);
   --border-strong: rgba(48, 39, 28, 0.26);
   --status-success: var(--color-green);
   --status-warning: var(--color-orange);
   --status-critical: var(--color-red);
-  --status-info: var(--color-cyan);
 
   /* Paper and glass */
   --glass-surface: rgba(249, 244, 234, 0.9);
   --glass-strong: rgba(255, 253, 247, 0.96);
   --glass-border: rgba(48, 39, 28, 0.16);
-  --glass-highlight: rgba(255, 255, 255, 0.55);
   --glass-blur: 0px;
   --paper-grain-opacity: 0.05;
 
@@ -112,19 +104,12 @@
   /* Radii. Small, printed-paper corners instead of soft SaaS pills. */
   --radius-compact: 2px;
   --radius-control: 4px;
-  --radius-panel: 5px;
   --radius-card: 6px;
   --radius-hero: 4px;
   --radius-pill: 999px;
 
   /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
   --space-6: 24px;
-  --space-8: 32px;
-  --space-12: 48px;
 
   /* Elevation: paper lift, not floating glass. */
   --shadow-card: 0 1px 0 rgba(48, 39, 28, 0.05);
@@ -132,7 +117,6 @@
   --shadow-float: 0 22px 50px -28px rgba(48, 39, 28, 0.5), 0 1px 0 rgba(48, 39, 28, 0.1);
 
   /* Motion */
-  --motion-instant: 80ms;
   --motion-fast: 130ms;
   --motion-standard: 190ms;
   --motion-celebration: 380ms;
@@ -154,7 +138,6 @@ html[data-theme="dark"] {
   --color-raised: #27221a;
   --color-navy: #100e0a;
   --color-navy-raised: #1d1912;
-  --color-navy-line: #3a3125;
   --color-ink: #f0e7d7;
   --color-ink-soft: #cfc2ad;
   --color-ink-muted: #a99a84;
@@ -167,7 +150,6 @@ html[data-theme="dark"] {
 
   --color-lime: #d9b85f;
   --color-lime-hover: #e8ca7b;
-  --color-lime-ink: #302509;
   --switch-off: #51463a;
 
   --color-cobalt: #b45c42;
@@ -196,8 +178,6 @@ html[data-theme="dark"] {
   --surface-paper: var(--color-paper);
   --surface-raised: var(--color-raised);
   --surface-muted: #2d271e;
-  --surface-dark: var(--color-navy);
-  --surface-dark-raised: var(--color-navy-raised);
   --surface-sidebar: #12100b;
   --text-primary: var(--color-ink);
   --text-secondary: var(--color-ink-soft);
@@ -205,14 +185,12 @@ html[data-theme="dark"] {
   --text-inverse: var(--color-ink-inverse);
   --action-primary: #d98b70;
   --action-hover: #e5a088;
-  --action-pressed: #c8795e;
   --border-soft: rgba(240, 231, 215, 0.15);
   --border-strong: rgba(240, 231, 215, 0.27);
 
   --glass-surface: rgba(33, 29, 22, 0.94);
   --glass-strong: rgba(39, 34, 26, 0.98);
   --glass-border: rgba(240, 231, 215, 0.16);
-  --glass-highlight: rgba(255, 255, 255, 0.06);
   --glass-blur: 0px;
   --paper-grain-opacity: 0.08;
 

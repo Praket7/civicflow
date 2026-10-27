@@ -25,7 +25,7 @@ import { demoWorkspace } from "./dataset";
  * those overrides when a session is supplied.
  */
 
-export type SessionOverrides = Partial<SessionSnapshot>;
+type SessionOverrides = Partial<SessionSnapshot>;
 
 const CAUSE_COPY: Record<Cause, string> = {
   food: "Food security",

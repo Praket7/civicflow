@@ -2,7 +2,7 @@
  * Organization addresses are US-only, so the form offers the two-letter codes
  * instead of a free-text field that accepts typos.
  */
-export interface UsState {
+interface UsState {
   code: string;
   name: string;
 }

@@ -505,7 +505,6 @@
   .choices,
   .fieldGrid,
   .codes,
-  .taskGrid,
   .twoCol {
     grid-template-columns: minmax(0, 1fr);
   }

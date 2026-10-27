@@ -346,16 +346,6 @@
     top: 26px;
     left: 32px;
   }
-
-  .roleCard {
-    min-height: 100px;
-    gap: 14px;
-    padding-right: 16px;
-  }
-
-  .roleBody {
-    max-width: 330px;
-  }
 }
 
 @media (max-width: 1020px) {

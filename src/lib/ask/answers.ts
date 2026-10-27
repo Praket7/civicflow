@@ -909,7 +909,7 @@ export function suggestedQuestions(role: AskRole): string[] {
     .map((intent) => t(intent.question));
 }
 
-export interface AskRequest {
+interface AskRequest {
   question: string;
   role: AskRole;
   workspace: DemoWorkspace;

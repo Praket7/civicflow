@@ -28,7 +28,7 @@ const client = hostedAuthConfigured
     })
   : null;
 
-export type HostedReturnKind = "callback" | "reset";
+type HostedReturnKind = "callback" | "reset";
 
 export interface HostedIdentity {
   name: string;
@@ -255,7 +255,7 @@ export function hostedRedirect(kind: HostedReturnKind): string {
   return `${window.location.origin}${kind === "reset" ? "/reset-password" : "/auth/callback"}`;
 }
 
-export interface HostedOAuth {
+interface HostedOAuth {
   /** Where the provider wants the browser to go. */
   url: string;
 }
@@ -431,7 +431,7 @@ export function identityFromUser(
   };
 }
 
-export interface HostedLink {
+interface HostedLink {
   kind: HostedReturnKind;
   code: string | null;
   accessToken: string | null;
@@ -456,7 +456,7 @@ function sessionFromFragment(hash: string): {
 
 type HostedProblemKind = "canceled" | "state" | "expired" | "other";
 
-export interface HostedProblem {
+interface HostedProblem {
   /** The provider's own words, or the sentence the app attached. */
   message: string;
   kind: HostedProblemKind;

@@ -52,7 +52,7 @@ interface StoredState {
   readAt: Record<string, string>;
 }
 
-export interface NewOrganizationInput {
+interface NewOrganizationInput {
   name: string;
   description: string;
   website: string;

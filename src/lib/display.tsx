@@ -5,7 +5,7 @@ export type ThemePreference = "light" | "dark" | "system";
 type SpacingPreference = "standard" | "comfortable";
 type TransparencyPreference = "standard" | "reduced";
 
-export interface DisplayPreferences {
+interface DisplayPreferences {
   theme: ThemePreference;
   spacing: SpacingPreference;
   alwaysShowFocus: boolean;

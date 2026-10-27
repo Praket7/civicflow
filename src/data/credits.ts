@@ -1,4 +1,4 @@
-export interface PhotoCredit {
+interface PhotoCredit {
   file: string;
   usage: string;
   creator: string;

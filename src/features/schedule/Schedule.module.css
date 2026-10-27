@@ -1206,14 +1206,6 @@
 }
 
 @media (max-width: 1400px) {
-  .sideGrid {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-
-  .sideGrid > :last-child {
-    grid-column: 1 / -1;
-  }
-
   .wizard {
     grid-template-columns: 1fr;
   }
@@ -1224,10 +1216,6 @@
 }
 
 @media (max-width: 900px) {
-  .sideGrid {
-    grid-template-columns: 1fr;
-  }
-
   .attentionStrip {
     grid-template-columns: 1fr;
   }

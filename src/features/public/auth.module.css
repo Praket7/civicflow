@@ -482,10 +482,4 @@
   .segmented {
     width: 100%;
   }
-
-  .orbBlue,
-  .orbMint,
-  .orbCoral {
-    display: none;
-  }
 }

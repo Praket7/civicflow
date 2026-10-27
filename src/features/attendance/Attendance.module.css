@@ -736,24 +736,6 @@
   .kioskTitle {
     font-size: 68px;
   }
-
-  .kioskSummary {
-    gap: 16px;
-  }
-
-  .kioskDonut {
-    width: 148px;
-    height: 148px;
-  }
-
-  .kioskDonutInner {
-    width: 118px;
-    height: 118px;
-  }
-
-  .kioskDonutInner strong {
-    font-size: 36px;
-  }
 }
 
 @media (max-width: 760px) {

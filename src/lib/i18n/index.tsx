@@ -15,7 +15,7 @@ import { enUS } from "date-fns/locale";
 import localeData from "./locales.json";
 import polished from "./polish.json";
 
-export interface LocaleMeta {
+interface LocaleMeta {
   code: string;
   name: string;
   nativeName: string;

@@ -169,7 +169,7 @@ export function AreaChart({
   );
 }
 
-export interface DonutDatum {
+interface DonutDatum {
   label: string;
   value: number;
   color: string;

@@ -21,3 +21,4 @@ wdio-logs/
 contrast-report.json
 zoom-report.json
 accessibility-tree-report.json
+/logs/

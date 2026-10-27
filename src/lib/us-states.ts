@@ -61,3 +61,17 @@ export const US_STATES: UsState[] = [
   { code: "WY", name: "Wyoming" },
   { code: "PR", name: "Puerto Rico" },
 ];
+
+/**
+ * The two-letter code for a stored state, whether the record holds a code or
+ * the full name. An unrecognized value yields "", so a select shows its
+ * placeholder instead of landing on whichever option happens to be first.
+ */
+export function stateCode(value: string): string {
+  const clean = value.trim();
+  if (!clean) return "";
+  const upper = clean.toUpperCase();
+  if (US_STATES.some((state) => state.code === upper)) return upper;
+  const lowered = clean.toLowerCase();
+  return US_STATES.find((state) => state.name.toLowerCase() === lowered)?.code ?? "";
+}

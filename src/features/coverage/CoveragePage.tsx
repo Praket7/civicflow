@@ -15,6 +15,7 @@ import {
 } from "../../components/ui";
 import { t } from "../../lib/i18n";
 import { useWorkspace } from "../../lib/workspace/session";
+import type { DemoWorkspace } from "../../types/domain";
 import {
   fillPercent,
   formatDate,
@@ -47,8 +48,8 @@ const RANGE_OPTIONS = [
   { days: 30, label: "Next 30 days" },
 ];
 
-function gapLabel(shiftId: string): string {
-  const shift = getShiftRows().find((row) => row.shift.id === shiftId)?.shift;
+function gapLabel(shiftId: string, workspace: DemoWorkspace): string {
+  const shift = getShiftRows(workspace).find((row) => row.shift.id === shiftId)?.shift;
   if (!shift) return "No shift selected";
   const missing = shift.roles.find((role) => role.filled < role.required);
   if (missing) {
@@ -71,11 +72,11 @@ export function CoveragePage() {
 
   const timedRows = useMemo(() => {
     const cutoff = addDays(parseISO(workspace.demoNow), days);
-    return getCoverageRows().filter(({ row }) => {
+    return getCoverageRows(workspace).filter(({ row }) => {
       const start = parseISO(row.shift.startsAt);
       return start > parseISO(workspace.demoNow) && start <= cutoff;
     });
-  }, [days, workspace.demoNow]);
+  }, [days, workspace]);
 
   const counts = useMemo(() => {
     return timedRows.reduce(
@@ -97,7 +98,7 @@ export function CoveragePage() {
     timedRows[0];
 
   const selectedShift = selected?.row.shift;
-  const roster = selectedShift ? getRoster(selectedShift.id, session) : [];
+  const roster = selectedShift ? getRoster(selectedShift.id, session, workspace) : [];
   const liveRoles =
     selectedShift?.roles.map((role) => {
       const assigned = roster.filter((person) => person.role === role.name).length;
@@ -114,7 +115,7 @@ export function CoveragePage() {
     0,
   );
 
-  const risk = getRoleRisk().slice(0, 5);
+  const risk = getRoleRisk(workspace).slice(0, 5);
   const visibleRows = expanded ? timedRows : timedRows.slice(0, 5);
 
   const donutSegments = useMemo(() => {
@@ -333,7 +334,7 @@ export function CoveragePage() {
                           },
                         )}
                       </strong>{" "}
-                      {gapLabel(selectedShift.id)}. Seat fill is {selectedFill}%.
+                      {gapLabel(selectedShift.id, workspace)}. Seat fill is {selectedFill}%.
                     </>
                   )}
                 </p>
@@ -416,7 +417,7 @@ export function CoveragePage() {
                         </span>
                         <span className={styles.rowStatus}>
                           <Badge tone={statusTone(status)} dot>
-                            {gapLabel(row.shift.id)}
+                            {gapLabel(row.shift.id, workspace)}
                           </Badge>
                         </span>
                       </button>

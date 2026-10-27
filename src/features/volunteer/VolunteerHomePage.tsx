@@ -38,10 +38,11 @@ const dayTones = ["teal", "cobalt", "violet", "amber", "coral", "teal", "violet"
 
 export function VolunteerHomePage() {
   const { workspace, session, actions } = useWorkspace();
-  const volunteer = volunteerById(workspace.currentVolunteerId) ?? currentVolunteer(workspace);
+  const volunteer =
+    volunteerById(workspace.currentVolunteerId, workspace) ?? currentVolunteer(workspace);
   const upcoming = getUpcomingForVolunteer(volunteer.id, session, workspace);
   const next = upcoming[0];
-  const summary = getHoursSummary(volunteer.id, session);
+  const summary = getHoursSummary(volunteer.id, session, workspace);
   const matches = getMatches(volunteer, 3, workspace, session.createdOpportunities);
   const { data: notifications = [] } = useNotifications("volunteer");
 

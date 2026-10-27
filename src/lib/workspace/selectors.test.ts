@@ -14,20 +14,25 @@ import {
 import { demoWorkspace } from "./dataset";
 import { createDefaultSnapshot } from "./previewRepository";
 
-const maya = currentVolunteer();
+const maya = currentVolunteer(demoWorkspace);
 const base = createDefaultSnapshot();
 
 describe("shared read model consistency", () => {
   it("uses the curated Maya ledger once and totals 18.5 hours", () => {
-    const summary = getHoursSummary(maya.id, base);
+    const summary = getHoursSummary(maya.id, base, demoWorkspace);
     expect(summary.totalMinutes).toBe(1110);
     expect(summary.verifiedMinutes).toBe(570);
     expect(summary.pendingMinutes).toBe(540);
-    expect(new Set(getUpcomingForVolunteer(maya.id, base).map((row) => row.shift.id)).size).toBe(2);
+    expect(
+      new Set(getUpcomingForVolunteer(maya.id, base, demoWorkspace).map((row) => row.shift.id))
+        .size,
+    ).toBe(2);
   });
 
   it("only marks demo-day arrivals as checked in once the check-in window opens", () => {
-    const event = getLiveEvent(base);
+    const event = getLiveEvent(base, demoWorkspace);
+    expect(event).not.toBeNull();
+    if (!event) return;
     expect(event.roster.length).toBe(3);
     const counts = rosterCounts(event.roster);
     expect(counts.checkedIn).toBe(2);
@@ -38,12 +43,15 @@ describe("shared read model consistency", () => {
       ).toBe(true);
     }
 
-    const library = getRoster("sh-tue-library", base);
+    const library = getRoster("sh-tue-library", base, demoWorkspace);
     expect(library.every((row) => row.status === "expected")).toBe(true);
   });
 
   it("reflects a session check-in in the same roster used by attendance and the kiosk", () => {
-    const expected = getLiveEvent(base).roster.find((row) => row.status === "expected");
+    const initial = getLiveEvent(base, demoWorkspace);
+    expect(initial).not.toBeNull();
+    if (!initial) return;
+    const expected = initial.roster.find((row) => row.status === "expected");
     expect(expected).toBeDefined();
     if (!expected) return;
 
@@ -65,7 +73,9 @@ describe("shared read model consistency", () => {
       },
     } satisfies SessionSnapshot;
 
-    const updated = getLiveEvent(session);
+    const updated = getLiveEvent(session, demoWorkspace);
+    expect(updated).not.toBeNull();
+    if (!updated) return;
     expect(rosterCounts(updated.roster).checkedIn).toBe(3);
     expect(updated.roster.find((row) => row.volunteer.id === expected.volunteer.id)?.status).toBe(
       "checked_in",
@@ -73,18 +83,24 @@ describe("shared read model consistency", () => {
   });
 
   it("moves waitlisted volunteers to promoted without duplicating their chair", () => {
-    const entry = getWaitlist("sh-sat-food", base)[0];
+    const entry = getWaitlist("sh-sat-food", base, demoWorkspace)[0];
     expect(entry).toBeDefined();
     if (!entry) return;
-    const promoted = getWaitlist("sh-sat-food", {
-      ...base,
-      waitlist: base.waitlist.map((row) =>
-        row.id === entry.entry.id ? { ...row, status: "promoted" as const } : row,
-      ),
-    });
+    const promoted = getWaitlist(
+      "sh-sat-food",
+      {
+        ...base,
+        waitlist: base.waitlist.map((row) =>
+          row.id === entry.entry.id ? { ...row, status: "promoted" as const } : row,
+        ),
+      },
+      demoWorkspace,
+    );
     expect(promoted[0]?.status).toBe("promoted");
     expect(
-      getRoster("sh-sat-food", base).some((row) => row.volunteer.id === entry.volunteer.id),
+      getRoster("sh-sat-food", base, demoWorkspace).some(
+        (row) => row.volunteer.id === entry.volunteer.id,
+      ),
     ).toBe(false);
   });
 

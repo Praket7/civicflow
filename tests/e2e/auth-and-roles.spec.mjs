@@ -48,6 +48,40 @@ async function pressOne(groupLabel) {
   }, groupLabel);
 }
 
+/**
+ * The code panel is rendered a tick after the form submits. Reading it in the
+ * same breath as the click raced the render and passed only on a slower runner.
+ */
+async function readVerificationCode() {
+  let code = "";
+  await browser.waitUntil(
+    async () => {
+      code = await browser.execute(() => {
+        const output = document.querySelector('output[aria-label="Verification code"]');
+        return output?.textContent?.trim() ?? "";
+      });
+      return /^\d{6}$/.test(code);
+    },
+    { timeout: 15_000, timeoutMsg: "the verification code never appeared" },
+  );
+  return code;
+}
+
+/**
+ * WebKit holds CSS animations on their first frame while the app window sits
+ * behind another window, which is how an entrance that started at opacity 0
+ * used to make a whole page invisible to WebDriver's visibility check. Freezing
+ * the entrance here keeps that regression caught: the coordinator greeting has
+ * to be readable even though the animation never advances.
+ */
+async function freezeEntrance() {
+  await browser.execute(() => {
+    const style = document.createElement("style");
+    style.textContent = '[class*="pageTransition"] { animation-play-state: paused !important; }';
+    document.head.appendChild(style);
+  });
+}
+
 async function waitForHeading(pattern, message) {
   await browser.waitUntil(
     async () =>
@@ -69,6 +103,7 @@ describe("CivicFlow native window", () => {
   });
 
   it("signs a coordinator in and reaches Mission Control", async () => {
+    await freezeEntrance();
     await signIn("praket@feedmorewny.org", "civicflow-demo");
     const greeting = await $("#mc-greeting");
     await greeting.waitForDisplayed({ timeout: 20_000 });
@@ -119,22 +154,24 @@ describe("CivicFlow native window", () => {
     const emailField = await $('input[name="email"]');
     await emailField.waitForDisplayed({ timeout: 20_000 });
 
+    // Setup flags and team membership live in this webview's store, which the
+    // suite shares with the installed app: a fixed address can arrive with the
+    // setup gate already finished or a team it joined in an earlier run. A
+    // fresh address keeps every assertion about a brand-new volunteer.
+    const email = `alicia.e2e.${Date.now()}@example.org`;
+
     await browser.execute(() => {
       window.location.hash = "#/create-account";
     });
     const nameField = await $('input[name="name"]');
     await nameField.waitForDisplayed({ timeout: 20_000 });
     await nameField.setValue("Alicia Moreno");
-    await $('input[name="email"]').setValue("alicia.moreno@example.org");
+    await $('input[name="email"]').setValue(email);
     await $('input[name="new-password"]').setValue("second-saturday");
     await $('input[name="confirm-password"]').setValue("second-saturday");
     await $('button[type="submit"]').click();
 
-    const code = await browser.execute(() => {
-      const output = document.querySelector('output[aria-label="Verification code"]');
-      return output?.textContent?.trim() ?? "";
-    });
-    expect(code).toMatch(/^\d{6}$/);
+    const code = await readVerificationCode();
     await $('input[name="verification-code"]').setValue(code);
     await $('button[type="submit"]').click();
 
@@ -171,7 +208,7 @@ describe("CivicFlow native window", () => {
     });
     const fields = await $('input[name="email"]');
     await fields.waitForDisplayed({ timeout: 20_000 });
-    await signIn("alicia.moreno@example.org", "second-saturday", "volunteer");
+    await signIn(email, "second-saturday", "volunteer");
     await waitForHeading(/Alicia/, "the new account could not sign in again");
   });
 });

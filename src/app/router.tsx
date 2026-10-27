@@ -30,7 +30,6 @@ import { OnboardingPage } from "../features/volunteer/OnboardingPage";
 import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
 import { OpportunityDetailPage } from "../features/volunteer/OpportunityDetailPage";
 import { OpportunityManagementPage } from "../features/opportunities/OpportunityManagementPage";
-import { OrganizationSetupPage } from "../features/coordinator/OrganizationSetupPage";
 import { CoordinatorStartPage } from "../features/organizations/CoordinatorStartPage";
 import { OrganizationCreatePage } from "../features/organizations/OrganizationCreatePage";
 import { VolunteerStartPage } from "../features/organizations/VolunteerStartPage";
@@ -71,7 +70,6 @@ export const pages: Record<string, ReactNode> = {
   "reset-password": <ResetPasswordPage />,
   "auth-callback": <AuthCallbackPage />,
   "volunteer-onboarding": <OnboardingPage />,
-  "organization-setup": <OrganizationSetupPage />,
   "coordinator-start": <CoordinatorStartPage />,
   "organization-create": <OrganizationCreatePage />,
   "volunteer-start": <VolunteerStartPage />,

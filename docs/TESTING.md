@@ -30,7 +30,7 @@ pnpm test:native  # WebdriverIO inside the real macOS window
 | `CustomReportPage.test.ts` | Groups report rows by ISO date and orders the trend axis chronologically, even when the ledger arrives out of order                                                                                                                                                                                                                                                                                                                                                           |
 | `accessibility.test.tsx`   | Mounts every registered route, waits for its content, and runs axe on each one; fails on serious or critical ARIA, landmark, list, or control violations                                                                                                                                                                                                                                                                                                                      |
 | `answers.test.ts`          | Ask CivicFlow: every offered question resolves to its own intent for both roles; the replacement answer excludes rostered, booked and unavailable people; credentials match the seed's expiry dates; a volunteer cannot reach a coordinator intent; an uncovered question is refused with answerable ones; the same question returns the same answer                                                                                                                          |
-| `print.test.tsx`           | Mounts all 50 registered routes and asserts each renders content; the certificate sets `body[data-print-view="verification"]` only while mounted and clears it on unmount; the impact report renders its printed sections without that gate; the certificate's print-hiding selector is scoped to that attribute                                                                                                                                                              |
+| `print.test.tsx`           | Mounts all 49 registered routes and asserts each renders content; the certificate sets `body[data-print-view="verification"]` only while mounted and clears it on unmount; the impact report renders its printed sections without that gate; the certificate's print-hiding selector is scoped to that attribute                                                                                                                                                              |
 
 The axe suite disables the `color-contrast` rule because jsdom cannot compute composited
 colors. Color is verified in a real engine instead:
@@ -122,23 +122,46 @@ questions that can be answered, and the same question returns the same answer tw
 On 2026-10-24 the native window is automated on macOS with WebdriverIO and
 `tauri-plugin-wdio-webdriver`. The plugin embeds a W3C WebDriver server in the debug build,
 so no external `tauri-driver` or accessibility permission is required. The suite runs against
-a throwaway `CIVICFLOW_DATA_DIR` and clears the WebKit storage directory first.
+a throwaway `CIVICFLOW_DATA_DIR`.
+
+It does **not** delete the WebKit storage directory. That directory belongs to the installed
+app as well, so clearing it signed the real app out and could erase a hosted sign-in hand-off
+that was in flight while the suite ran. A fresh database is enough: a token left by an earlier
+run no longer resolves, so the app still lands on the sign-in screen.
+
+`build:native:test` passes empty `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` values, so the
+binary exercises local accounts exactly as CI does. Without that, a developer machine with
+`.env.local` took the hosted sign-up path and the six-digit code the account test waits for
+was never rendered. The service also captures the app's own stdout/stderr; a debug build logs
+enough to fill an unread pipe, and draining it keeps a long scenario from stalling.
+
+Every WebDriver command waits out the driver's five-second window-state probe, which never
+answers in this app, so the account scenario — create an account, answer setup, join an
+organization, sign out, sign back in — spends minutes of its own; the mocha timeout has to
+allow for that rather than the flow being quick. It also creates its volunteer under a
+fresh address on every run, because setup flags and team membership live in the WebKit store
+this suite deliberately shares with the installed app, and an address used by an earlier run
+arrives with the gate already finished.
 
 ```bash
 pnpm build:native:test   # debug app with the embedded WebDriver server
-pnpm test:native         # 5 scenarios, about 3 minutes
+pnpm test:native         # 6 scenarios, about 7 minutes
 ```
 
-The recorded run passed five scenarios in the real window:
+The recorded run passed six scenarios in the real window:
 
 1. the sign-in screen appears when no session exists;
-2. the coordinator signs in and reaches Mission Control with “Praket” in the greeting;
+2. the coordinator signs in and reaches Mission Control with “Praket” in the greeting, with
+   the page entrance frozen as it would be in a window behind another window;
 3. a coordinator who navigates to `/volunteer/home` is returned to Mission Control;
 4. sign-out returns to the sign-in form, the volunteer signs in, and volunteer home renders;
-5. a volunteer who navigates to `/coordinator/coverage` is returned to volunteer home.
+5. a volunteer who navigates to `/coordinator/coverage` is returned to volunteer home;
+6. a new volunteer account is created with the code the app prints, finishes setup, joins an
+   organization, signs out, and signs back in.
 
 The suite is part of `.github/workflows/ci.yml` on `macos-latest`. It covers a real sign-out,
-session persistence, route guards, and the render path of both roles. It does not click a
+session persistence, route guards, the render path of both roles, and the page entrance that
+used to hide a whole screen whenever the window was not on screen. It does not click a
 camera permission dialog or exercise the QR scanner with a physical camera; the payload
 format and validation are covered by `tests/checkin_qr.rs`.
 

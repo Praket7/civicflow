@@ -2,16 +2,23 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { User } from "@supabase/supabase-js";
 import {
   clearPendingHostedIdentity,
-  consumePendingLink,
+  finishHostedHandoff,
+  hostedHandoffPending,
+  hostedProblemRoute,
   hostedTokensInHash,
   identityFromUser,
   parseHostedLink,
+  readHostedProblem,
+  rememberHostedAnswer,
   rememberPendingRole,
   rememberPendingSignup,
+  rememberedHostedAnswer,
 } from "./hosted";
 
 beforeEach(() => {
   clearPendingHostedIdentity();
+  localStorage.removeItem("civicflow.hosted.pending-link");
+  sessionStorage.clear();
 });
 
 describe("desktop email links", () => {
@@ -63,37 +70,147 @@ describe("desktop email links", () => {
   });
 });
 
+describe("callback failures", () => {
+  it("reads the reason a desktop link was refused", () => {
+    const problem = readHostedProblem(
+      "#/auth/callback?error_description=This%20link%20was%20not%20requested%20on%20this%20device",
+      "",
+    );
+
+    expect(problem).toEqual({
+      message: "This link was not requested on this device",
+      kind: "other",
+    });
+  });
+
+  it("reads an error the provider put in the fragment", () => {
+    const problem = readHostedProblem("#error=access_denied&error_description=Access+denied", "");
+
+    expect(problem?.kind).toBe("canceled");
+  });
+
+  it("tells an expired OAuth request apart from an expired email link", () => {
+    expect(
+      readHostedProblem(
+        "#error=bad_oauth_state&error_description=OAuth+state+parameter+has+expired",
+        "",
+      )?.kind,
+    ).toBe("state");
+    expect(
+      readHostedProblem(
+        "#error=otp_expired&error_description=Email+link+is+invalid+or+has+expired",
+        "",
+      )?.kind,
+    ).toBe("expired");
+  });
+
+  it("ignores a callback that carries a session", () => {
+    expect(readHostedProblem("#access_token=one&refresh_token=two", "")).toBeNull();
+  });
+
+  it("writes a route the callback page reads back", () => {
+    const route = hostedProblemRoute("No seat left & no token");
+
+    expect(readHostedProblem(route, "")).toEqual({
+      message: "No seat left & no token",
+      kind: "other",
+    });
+  });
+});
+
+describe("callback answers that outlive the address", () => {
+  it("keeps the tokens a browser return carried", () => {
+    const answer = rememberHostedAnswer("", "#access_token=one&refresh_token=two");
+
+    expect(answer).toEqual({ code: null, accessToken: "one", refreshToken: "two" });
+    // The address is rewritten right after this read, so the next page load can
+    // only find the answer here.
+    expect(rememberedHostedAnswer()).toEqual(answer);
+  });
+
+  it("keeps the code a desktop return carried", () => {
+    expect(rememberHostedAnswer("?code=abc123", "")).toEqual({
+      code: "abc123",
+      accessToken: null,
+      refreshToken: null,
+    });
+  });
+
+  it("has nothing to keep for a bare callback address", () => {
+    expect(rememberHostedAnswer("", "")).toBeNull();
+    expect(rememberHostedAnswer("", "#/auth/callback")).toBeNull();
+    expect(rememberedHostedAnswer()).toBeNull();
+  });
+
+  it("drops an answer that sat longer than the provider allows", () => {
+    sessionStorage.setItem(
+      "civicflow.hosted.answer",
+      JSON.stringify({
+        code: null,
+        accessToken: "one",
+        refreshToken: "two",
+        at: Date.now() - 11 * 60_000,
+      }),
+    );
+
+    expect(rememberedHostedAnswer()).toBeNull();
+  });
+
+  it("forgets the answer once the hand-off is finished", async () => {
+    rememberHostedAnswer("", "#access_token=one&refresh_token=two");
+
+    await finishHostedHandoff();
+
+    expect(rememberedHostedAnswer()).toBeNull();
+  });
+});
+
 describe("desktop hand-off guard", () => {
-  it("accepts a return link this device asked for, once", () => {
+  it("reads the mark without spending it", async () => {
     localStorage.setItem(
       "civicflow.hosted.pending-link",
       JSON.stringify({ kind: "callback", at: Date.now() }),
     );
 
-    expect(consumePendingLink("callback")).toBe(true);
-    expect(consumePendingLink("callback")).toBe(false);
+    // A duplicate delivery and a retry both need the mark to survive until a
+    // session has actually been adopted.
+    expect(await hostedHandoffPending("callback")).toBe(true);
+    expect(await hostedHandoffPending("callback")).toBe(true);
+    await finishHostedHandoff();
+    expect(await hostedHandoffPending("callback")).toBe(false);
   });
 
-  it("refuses a link nothing asked for", () => {
-    expect(consumePendingLink("callback")).toBe(false);
+  it("accepts a return link this device asked for, once", async () => {
+    localStorage.setItem(
+      "civicflow.hosted.pending-link",
+      JSON.stringify({ kind: "callback", at: Date.now() }),
+    );
+
+    expect(await hostedHandoffPending("callback")).toBe(true);
+    await finishHostedHandoff();
+    expect(await hostedHandoffPending("callback")).toBe(false);
   });
 
-  it("refuses a link of the other kind", () => {
+  it("refuses a link nothing asked for", async () => {
+    expect(await hostedHandoffPending("callback")).toBe(false);
+  });
+
+  it("refuses a link of the other kind", async () => {
     localStorage.setItem(
       "civicflow.hosted.pending-link",
       JSON.stringify({ kind: "reset", at: Date.now() }),
     );
 
-    expect(consumePendingLink("callback")).toBe(false);
+    expect(await hostedHandoffPending("callback")).toBe(false);
   });
 
-  it("refuses a link that has gone stale", () => {
+  it("refuses a link that has gone stale", async () => {
     localStorage.setItem(
       "civicflow.hosted.pending-link",
       JSON.stringify({ kind: "callback", at: Date.now() - 2 * 86_400_000 }),
     );
 
-    expect(consumePendingLink("callback")).toBe(false);
+    expect(await hostedHandoffPending("callback")).toBe(false);
   });
 });
 

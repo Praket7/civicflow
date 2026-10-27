@@ -23,6 +23,8 @@ use civicflow_core::Database;
 use civicflow_core::{auth, backups, roster, services, workflows};
 use serde::Serialize;
 use tauri::{Manager, State};
+#[cfg(desktop)]
+use tauri_plugin_deep_link::DeepLinkExt;
 
 struct AppState {
     database: Mutex<Database>,
@@ -199,6 +201,32 @@ mod tests {
         ));
         assert!(!is_openable_sign_in_url("https://example.org/\"quoted\""));
     }
+}
+
+#[tauri::command]
+fn remember_hosted_handoff(state: State<'_, AppState>, kind: String) -> Result<(), AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    auth::remember_hosted_handoff(database.connection(), &kind).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn hosted_handoff_pending(state: State<'_, AppState>, kind: String) -> Result<bool, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    auth::hosted_handoff_pending(database.connection(), &kind).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn clear_hosted_handoff(state: State<'_, AppState>) -> Result<(), AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    auth::clear_hosted_handoff(database.connection()).map_err(AppError::from)
+}
+
+/// Hands the callback page the address the operating system delivered. Taking
+/// it spends it, so the same link cannot sign the window in twice.
+#[tauri::command]
+fn take_hosted_link(state: State<'_, AppState>) -> Result<Option<String>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    auth::take_hosted_link(database.connection()).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -1055,7 +1083,7 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
-    builder
+    let app = builder
         .setup(|app| {
             // The end-to-end suite points this at a throwaway directory so a
             // test run never opens (or resets) the real workspace.
@@ -1087,6 +1115,10 @@ pub fn run() {
             sign_in,
             sign_in_with_hosted,
             create_account,
+            remember_hosted_handoff,
+            hosted_handoff_pending,
+            clear_hosted_handoff,
+            take_hosted_link,
             sign_out,
             current_user,
             list_accounts,
@@ -1143,6 +1175,26 @@ pub fn run() {
             create_backup,
             restore_backup
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("CivicFlow failed to launch");
+
+    // The scheme URL belongs to the event, not to the window: macOS can deliver
+    // it before the page that needs it has loaded, and a reload would lose a
+    // value that only ever existed in the address bar. Record it first so the
+    // callback page can ask for it whenever it is ready.
+    #[cfg(desktop)]
+    {
+        let handle = app.handle().clone();
+        app.deep_link().on_open_url(move |event| {
+            let state = handle.state::<AppState>();
+            let Ok(database) = state.database.lock() else {
+                return;
+            };
+            for url in event.urls() {
+                let _ = auth::store_hosted_link(database.connection(), url.as_str());
+            }
+        });
+    }
+
+    app.run(|_, _| {});
 }

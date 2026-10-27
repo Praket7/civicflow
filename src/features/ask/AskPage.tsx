@@ -18,7 +18,9 @@ export function AskPage() {
   const { workspace, session } = useWorkspace();
   const { user } = useAuth();
   const role = user?.role === "volunteer" ? "volunteer" : "coordinator";
-  const volunteerId = currentVolunteer(workspace).id;
+  // A coordinator workspace can have nobody on the roster yet, so the current
+  // volunteer is optional here; the answers that need one say so themselves.
+  const volunteer = currentVolunteer(workspace);
 
   const [draft, setDraft] = useState("");
   const [result, setResult] = useState<{ question: string; answer: AskAnswer } | null>(null);
@@ -31,7 +33,13 @@ export function AskPage() {
     setDraft(trimmed);
     setResult({
       question: trimmed,
-      answer: ask({ question: trimmed, role, workspace, session, volunteerId }),
+      answer: ask({
+        question: trimmed,
+        role,
+        workspace,
+        session,
+        volunteerId: volunteer?.id ?? "",
+      }),
     });
   }
 

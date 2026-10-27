@@ -44,6 +44,87 @@ const PENDING_KEY = "civicflow.hosted.pending";
 const PENDING_ROLE_KEY = "civicflow.hosted.pending-role";
 const PENDING_TTL_MS = 86_400_000;
 const PENDING_LINK_KEY = "civicflow.hosted.pending-link";
+const ANSWER_KEY = "civicflow.hosted.answer";
+const ANSWER_TTL_MS = 10 * 60_000;
+
+/** What a callback address carried, before the address itself is rewritten. */
+export interface HostedAnswer {
+  code: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+}
+
+/**
+ * Keeps the answer on this page's own storage.
+ *
+ * The callback page rewrites the address as soon as it reads it, which used to
+ * make a reload — a dev-server restart, a stray navigation, a second delivery —
+ * look exactly like an expired link. Session storage is per-tab and dies with
+ * the window, so the answer outlives the rewrite without outliving the person's
+ * intent to sign in.
+ */
+export function keepHostedAnswer(answer: HostedAnswer): void {
+  try {
+    sessionStorage.setItem(ANSWER_KEY, JSON.stringify({ ...answer, at: Date.now() }));
+  } catch {
+    // A blocked storage area only costs the reload, never the sign-in.
+  }
+}
+
+/** Reads a callback address and keeps what it carried, if anything. */
+export function rememberHostedAnswer(search: string, hash: string): HostedAnswer | null {
+  const code = hostedCodeInLocation(search);
+  const tokens = sessionFromFragment(hash);
+  if (!code && !(tokens.accessToken && tokens.refreshToken)) return null;
+  const answer = {
+    code,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+  };
+  keepHostedAnswer(answer);
+  return answer;
+}
+
+/** Keeps a link that arrived on the desktop scheme instead of the address bar. */
+export function rememberHostedLinkAnswer(link: HostedLink): HostedAnswer | null {
+  if (!link.code && !(link.accessToken && link.refreshToken)) return null;
+  const answer = {
+    code: link.code,
+    accessToken: link.accessToken,
+    refreshToken: link.refreshToken,
+  };
+  keepHostedAnswer(answer);
+  return answer;
+}
+
+/** The answer an earlier page load kept, while it is still fresh. */
+export function rememberedHostedAnswer(): HostedAnswer | null {
+  try {
+    const raw = sessionStorage.getItem(ANSWER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<HostedAnswer> & { at?: unknown };
+    const at = typeof parsed.at === "number" ? parsed.at : 0;
+    if (!at || Date.now() - at > ANSWER_TTL_MS) {
+      sessionStorage.removeItem(ANSWER_KEY);
+      return null;
+    }
+    const code = typeof parsed.code === "string" ? parsed.code : null;
+    const accessToken = typeof parsed.accessToken === "string" ? parsed.accessToken : null;
+    const refreshToken = typeof parsed.refreshToken === "string" ? parsed.refreshToken : null;
+    if (!code && !(accessToken && refreshToken)) return null;
+    return { code, accessToken, refreshToken };
+  } catch {
+    return null;
+  }
+}
+
+function clearHostedAnswer(): void {
+  try {
+    sessionStorage.removeItem(ANSWER_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
 
 /**
  * Records that this device asked the provider for a return link. A desktop
@@ -59,19 +140,82 @@ function rememberPendingLink(kind: HostedReturnKind): void {
   }
 }
 
-/** True when a hand-off is outstanding, and clears it so a link works once. */
-export function consumePendingLink(kind: HostedReturnKind): boolean {
+/** True while a hand-off is outstanding in this webview, without spending it. */
+function hasPendingLink(kind: HostedReturnKind): boolean {
   try {
     const raw = localStorage.getItem(PENDING_LINK_KEY);
     if (!raw) return false;
     const parsed = JSON.parse(raw) as { kind?: unknown; at?: unknown };
     const at = typeof parsed.at === "number" ? parsed.at : 0;
-    const matches = parsed.kind === kind && at > 0 && Date.now() - at < PENDING_TTL_MS;
-    localStorage.removeItem(PENDING_LINK_KEY);
-    return matches;
+    return parsed.kind === kind && at > 0 && Date.now() - at < PENDING_TTL_MS;
   } catch {
     return false;
   }
+}
+
+function clearLocalPendingLink(): void {
+  try {
+    localStorage.removeItem(PENDING_LINK_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+/**
+ * The native commands are optional: the browser build has no bridge, and a
+ * database that is busy should not stop the sign-in it is recording.
+ */
+async function invokeHandoff<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T | null> {
+  if (!isTauri()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<T>(command, args);
+  } catch {
+    return null;
+  }
+}
+
+async function rememberHandoff(kind: HostedReturnKind): Promise<void> {
+  // Both stores: the webview one is fast, the database one survives a cleared
+  // store or another build of the app opening the return link.
+  rememberPendingLink(kind);
+  await invokeHandoff("remember_hosted_handoff", { kind });
+}
+
+/** True when this device started this hand-off, in either store. */
+export async function hostedHandoffPending(kind: HostedReturnKind): Promise<boolean> {
+  if (hasPendingLink(kind)) return true;
+  return (await invokeHandoff<boolean>("hosted_handoff_pending", { kind })) === true;
+}
+
+/**
+ * Ends the hand-off once its answer has actually been used. Spending the mark
+ * up front meant a duplicate delivery or a transient exchange error turned a
+ * valid link into "this was not requested" and left no way back in short of
+ * asking the provider again.
+ */
+export async function finishHostedHandoff(): Promise<void> {
+  clearLocalPendingLink();
+  clearHostedAnswer();
+  // A finished hand-off must not leave an address behind for the next launch
+  // to spend a second time.
+  await takeStoredHostedLink();
+  await invokeHandoff("clear_hosted_handoff");
+}
+
+/**
+ * The scheme address the app received, if this page load did not get it.
+ *
+ * macOS hands the URL to the process, so the page that opens can be a reload of
+ * the bare callback route. The native side kept the address; taking it here
+ * spends it, which is what keeps a link usable once.
+ */
+export async function takeStoredHostedLink(): Promise<string | null> {
+  const stored = await invokeHandoff<string | null>("take_hosted_link");
+  return typeof stored === "string" ? stored : null;
 }
 
 function requireClient() {
@@ -124,7 +268,7 @@ export async function startHostedOAuth(
   redirectTo: string,
   provider: "google" = "google",
 ): Promise<HostedOAuth> {
-  rememberPendingLink("callback");
+  await rememberHandoff("callback");
   const { data, error } = await requireClient().auth.signInWithOAuth({
     provider,
     options: { redirectTo, skipBrowserRedirect: true },
@@ -148,7 +292,7 @@ export async function hostedSignUp(
   identity: HostedIdentity,
   password: string,
 ): Promise<{ session: Session | null; needsVerification: boolean }> {
-  rememberPendingLink("callback");
+  await rememberHandoff("callback");
   const { data, error } = await requireClient().auth.signUp({
     email: identity.email.trim(),
     password,
@@ -162,7 +306,7 @@ export async function hostedSignUp(
 }
 
 export async function resendHostedVerification(email: string): Promise<void> {
-  rememberPendingLink("callback");
+  await rememberHandoff("callback");
   const { error } = await requireClient().auth.resend({
     type: "signup",
     email: email.trim(),
@@ -172,7 +316,7 @@ export async function resendHostedVerification(email: string): Promise<void> {
 }
 
 export async function requestHostedPasswordReset(email: string): Promise<void> {
-  rememberPendingLink("reset");
+  await rememberHandoff("reset");
   const { error } = await requireClient().auth.resetPasswordForEmail(email.trim(), {
     redirectTo: hostedRedirect("reset"),
   });
@@ -308,6 +452,61 @@ function sessionFromFragment(hash: string): {
     accessToken: fragment.get("access_token"),
     refreshToken: fragment.get("refresh_token"),
   };
+}
+
+export type HostedProblemKind = "canceled" | "state" | "expired" | "other";
+
+export interface HostedProblem {
+  /** The provider's own words, or the sentence the app attached. */
+  message: string;
+  kind: HostedProblemKind;
+}
+
+/**
+ * Reads a failed answer from a callback URL. The browser build lands on
+ * /auth/callback with ordinary parameters, while the desktop handler rewrites
+ * the window to #/auth/callback?error_description=… — so the query can sit
+ * after a route rather than after the bare "#". Parsing the whole fragment as
+ * one parameter (the earlier behavior) missed it and reported a missing token
+ * instead of the reason the link was refused.
+ */
+export function readHostedProblem(hash: string, search: string): HostedProblem | null {
+  const fragment = hash.replace(/^#/, "");
+  const question = fragment.indexOf("?");
+  const fromHash = new URLSearchParams(question >= 0 ? fragment.slice(question + 1) : fragment);
+  const fromSearch = new URLSearchParams(search);
+  const details = [
+    fromHash.get("error_description"),
+    fromSearch.get("error_description"),
+    fromHash.get("error"),
+    fromSearch.get("error"),
+  ].filter((value): value is string => Boolean(value));
+  if (details.length === 0) return null;
+  const text = details.join(" ").toLowerCase();
+  return { message: details[0], kind: classifyHostedProblem(text) };
+}
+
+function classifyHostedProblem(text: string): HostedProblemKind {
+  // Google reports a closed window as access_denied; the description says
+  // "Access denied", so both spellings have to count.
+  if (["access_denied", "access denied", "cancel"].some((signal) => text.includes(signal))) {
+    return "canceled";
+  }
+  // "bad_oauth_state" and "OAuth state parameter has expired" mean the answer
+  // took too long or the page was opened a second time. That is not the email
+  // link expiring, and the two need different advice.
+  if (text.includes("state") && ["expire", "invalid", "missing"].some((s) => text.includes(s))) {
+    return "state";
+  }
+  if (["expired", "otp_expired", "invalid or has expired"].some((s) => text.includes(s))) {
+    return "expired";
+  }
+  return "other";
+}
+
+/** The callback route the desktop handler uses to report a refused link. */
+export function hostedProblemRoute(message: string): string {
+  return `#/auth/callback?${new URLSearchParams({ error_description: message })}`;
 }
 
 /** Desktop links arrive as civicflow://auth/callback#access_token=… */

@@ -51,15 +51,6 @@ export const routes: RouteMeta[] = [
     keywords: ["onboarding", "skills", "availability"],
   },
   {
-    id: "organization-setup",
-    number: 5,
-    title: "Organization Setup",
-    path: "/coordinator/organization/setup",
-    role: "coordinator",
-    spec: "Workspace profile",
-    keywords: ["organization", "setup", "mission"],
-  },
-  {
     id: "volunteer-home",
     number: 6,
     title: "Home",

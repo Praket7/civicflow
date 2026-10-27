@@ -44,16 +44,19 @@
 
 .pageTransition {
   min-height: 100%;
+  /* Motion only: never start a page from opacity 0. A window that is behind
+     another window, or a reader that suppresses animation, can hold an
+     entrance animation on its first frame for as long as it is off screen.
+     Animating transform alone means that worst case is a page sitting 7px low,
+     not a page nobody can see. */
   animation: pageEnter 280ms var(--ease-out) both;
 }
 
 @keyframes pageEnter {
   from {
-    opacity: 0;
     transform: translateY(7px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }

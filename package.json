@@ -21,7 +21,7 @@
     "audit:zoom": "node scripts/audit-zoom.mjs",
     "audit:a11y": "node scripts/audit-accessibility-tree.mjs",
     "test:native": "wdio run wdio.conf.mjs",
-    "build:native:test": "tauri build --debug --no-bundle",
+    "build:native:test": "node scripts/build-native-test.mjs",
     "verify": "bash scripts/verify.sh",
     "check:i18n": "node scripts/i18n-extract.mjs && git diff --exit-code -- src/lib/i18n/strings.json",
     "check:generated": "node scripts/generate-demo-data.mjs && node scripts/i18n-extract.mjs && git diff --exit-code -- shared/demo-workspace.json src/lib/i18n/strings.json"

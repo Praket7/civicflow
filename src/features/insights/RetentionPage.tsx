@@ -31,13 +31,13 @@ export function RetentionPage() {
   const [range, setRange] = useState("11");
   const retention = getRetentionRows(session);
   const chartRows = range === "6" ? retention.slice(-6) : retention;
-  const atRisk = getAtRiskVolunteers();
+  const atRisk = getAtRiskVolunteers(workspace);
   const causes = getCauseHours(session, workspace);
   const average =
     retention.length === 0
       ? 0
       : Math.round(retention.reduce((sum, row) => sum + row.rate, 0) / retention.length);
-  const bookedThisWeek = getUpcomingShiftRows().filter(
+  const bookedThisWeek = getUpcomingShiftRows(workspace).filter(
     (row) => row.shift.startsAt.slice(0, 10) <= "2026-10-19",
   ).length;
 
@@ -159,9 +159,19 @@ export function RetentionPage() {
             <p
               style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: "var(--text-muted)" }}
             >
-              Food security carries the most hours and is also the easiest entry point. Education
-              has the highest return rate; pair new volunteers with a tutoring shift after their
-              first pantry day.
+              {
+                // The analysis names real causes, so an empty ledger gets an
+                // empty answer instead of someone else's numbers.
+                causes.length === 0 ? (
+                  <>No hours recorded yet</>
+                ) : (
+                  <>
+                    Food security carries the most hours and is also the easiest entry point.
+                    Education has the highest return rate; pair new volunteers with a tutoring shift
+                    after their first pantry day.
+                  </>
+                )
+              }
             </p>
           </div>
         </Card>

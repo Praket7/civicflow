@@ -146,7 +146,7 @@ export function VolunteerProfilePage() {
     workspace,
     session.createdOpportunities,
   );
-  const recentActivity = getRecentActivityFor(volunteer.id);
+  const recentActivity = getRecentActivityFor(volunteer.id, workspace);
   const upcoming = getUpcomingShiftRows(workspace);
   const expiring = credentials.filter((row) => row.status !== "current");
   const availability = profile.availability;

@@ -58,8 +58,8 @@ function cumulativePoints(
 export function PersonalImpactPage() {
   const { workspace, session } = useWorkspace();
   const volunteer = currentVolunteer(workspace);
-  const impact = getVolunteerImpact(volunteer.id, session);
-  const stories = getImpactStories().slice(0, 3);
+  const impact = getVolunteerImpact(volunteer.id, session, workspace);
+  const stories = getImpactStories(workspace).slice(0, 3);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const causes = useMemo(

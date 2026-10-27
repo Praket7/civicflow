@@ -16,7 +16,7 @@ import styles from "./Reports.module.css";
 export function ImpactReportPage() {
   const { workspace, session } = useWorkspace();
   const report = getReportPreview(session, workspace);
-  const stories = getImpactStories();
+  const stories = getImpactStories(workspace);
   const topCause = report.causes[0];
   const maxCause = Math.max(...report.causes.map((cause) => cause.hours), 1);
 

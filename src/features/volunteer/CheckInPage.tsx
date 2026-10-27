@@ -39,10 +39,35 @@ const WINDOW_COPY: Record<WindowState, string> = {
     "Arrival check-in has closed. Ask the shift lead for a manual check-in so your hours stay accurate.",
 };
 
+/** Shown when the signed-in volunteer's workspace has no shift to check into. */
+function NoEventPanel() {
+  return (
+    <div className={styles.world} data-theme="light">
+      <div className={styles.panelWrap}>
+        <section className={styles.panel}>
+          <h1 className={styles.title}>No event is open right now</h1>
+          <p className={styles.missingCopy}>
+            The next check-in window appears here 30 minutes before a shift begins.{" "}
+            <Link to="/volunteer/schedule">View my schedule</Link>.
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+type LiveEvent = NonNullable<ReturnType<typeof getLiveEvent>>;
+
 export function CheckInPage() {
+  const { workspace, session } = useWorkspace();
+  const liveEvent = getLiveEvent(session, workspace);
+  if (!liveEvent) return <NoEventPanel />;
+  return <CheckInBody liveEvent={liveEvent} />;
+}
+
+function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
   const { workspace, session, actions } = useWorkspace();
   const volunteer = currentVolunteer(workspace);
-  const liveEvent = getLiveEvent(session);
   const { shift, opportunity } = liveEvent;
 
   const [digits, setDigits] = useState<string[]>(emptyDigits);
@@ -71,21 +96,7 @@ export function CheckInPage() {
     };
   }, [actions, opportunity, shift.id]);
 
-  if (!opportunity) {
-    return (
-      <div className={styles.world} data-theme="light">
-        <div className={styles.panelWrap}>
-          <section className={styles.panel}>
-            <h1 className={styles.title}>No event is open right now</h1>
-            <p className={styles.missingCopy}>
-              The next check-in window appears here 30 minutes before a shift begins.{" "}
-              <Link to="/volunteer/schedule">View my schedule</Link>.
-            </p>
-          </section>
-        </div>
-      </div>
-    );
-  }
+  if (!opportunity) return <NoEventPanel />;
 
   const now = parseISO(workspace.demoNow);
   const startsAt = parseISO(shift.startsAt);

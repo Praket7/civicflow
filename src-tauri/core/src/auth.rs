@@ -524,6 +524,131 @@ pub fn require_coordinator(conn: &Connection, token: &str) -> Result<Account> {
     Ok(account)
 }
 
+const HANDOFF_KEY: &str = "hosted_handoff";
+const HANDOFF_HOURS: i64 = 24;
+
+/// Records that this device started a hosted hand-off.
+///
+/// The webview store is the fast path, but it is shared with other builds of
+/// the app and a launch that starts from a fresh store loses it. The workspace
+/// database survives both, so a return link is still recognised as one this
+/// device asked for instead of being refused as an unrequested sign-in.
+pub fn remember_hosted_handoff(conn: &Connection, kind: &str) -> Result<()> {
+    if kind != "callback" && kind != "reset" {
+        return Err(CoreError::Validation(
+            "Choose between a sign-in and a password reset.".into(),
+        ));
+    }
+    let value = format!("{kind}:{}", Utc::now().timestamp());
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+        params![HANDOFF_KEY, value],
+    )?;
+    Ok(())
+}
+
+/// True while an unspent hand-off of this kind is younger than a day.
+pub fn hosted_handoff_pending(conn: &Connection, kind: &str) -> Result<bool> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![HANDOFF_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(stored) = stored else {
+        return Ok(false);
+    };
+    let Some((stored_kind, at)) = stored.split_once(':') else {
+        return Ok(false);
+    };
+    let Ok(at) = at.parse::<i64>() else {
+        return Ok(false);
+    };
+    let age = Utc::now().timestamp() - at;
+    Ok(stored_kind == kind && (0..HANDOFF_HOURS * 3600).contains(&age))
+}
+
+pub fn clear_hosted_handoff(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM app_settings WHERE key = ?1",
+        params![HANDOFF_KEY],
+    )?;
+    Ok(())
+}
+
+const LINK_KEY: &str = "hosted_link";
+const LINK_AT_KEY: &str = "hosted_link_at";
+const LINK_MINUTES: i64 = 60;
+
+/// Keeps the address the operating system handed the app.
+///
+/// macOS opens the app on the scheme URL, and the page that renders from it can
+/// arrive after a reload, a second delivery, or a fresh window — each of which
+/// throws away whatever the previous page held in memory. Recording the address
+/// here means the callback page can still finish a sign-in that the webview
+/// dropped on the floor instead of calling a valid Google return an expired
+/// link.
+pub fn store_hosted_link(conn: &Connection, url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("civicflow://") || trimmed.len() > 4096 {
+        return Err(CoreError::Validation(
+            "That return address is not a CivicFlow link.".into(),
+        ));
+    }
+    if trimmed.contains(['\n', '\r']) {
+        return Err(CoreError::Validation(
+            "That return address is not a CivicFlow link.".into(),
+        ));
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+        params![LINK_KEY, trimmed],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+        params![LINK_AT_KEY, Utc::now().timestamp().to_string()],
+    )?;
+    Ok(())
+}
+
+/// Returns the stored address once and forgets it, so a link works once.
+///
+/// An address older than the provider's own hour is dropped: finishing it
+/// would fail the exchange anyway, and the sign-in screen can ask for a new
+/// hand-off instead.
+pub fn take_hosted_link(conn: &Connection) -> Result<Option<String>> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![LINK_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let stored_at: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![LINK_AT_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    conn.execute(
+        "DELETE FROM app_settings WHERE key IN (?1, ?2)",
+        params![LINK_KEY, LINK_AT_KEY],
+    )?;
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    let at = stored_at
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or_default();
+    let age = Utc::now().timestamp() - at;
+    if at == 0 || !(0..LINK_MINUTES * 60).contains(&age) {
+        return Ok(None);
+    }
+    Ok(Some(stored))
+}
+
 pub fn sign_out(conn: &Connection, token: &str, actor: &Account) -> Result<bool> {
     let now = Utc::now().to_rfc3339();
     let changed = conn.execute(

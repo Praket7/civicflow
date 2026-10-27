@@ -59,7 +59,7 @@ The last pass treated the whole product as one surface rather than a set of scre
   axis jumped between dates. It now groups by ISO date, sorts before slicing, and the preview
   table is newest-first. A unit test pins the ordering.
 - **Verification.** `pnpm verify` passes: typecheck, ESLint, Prettier, **180 tests** in 18
-  files, the production web build, and the Rust workspace tests. The 50 registered routes plus
+  files, the production web build, and the Rust workspace tests. The 49 registered routes plus
   `/help` were swept at 1600 × 1000, 1280 × 800, 1024 × 720, 820 × 1180 and 390 × 844 with no
   overflow, console errors or blank renders. Axe reported no findings on the 50 routes
   registered today; the
@@ -124,7 +124,7 @@ themes. Inline `--color-green`/`--color-red`/`--color-orange` are reserved for f
 and bars, never for text.
 
 Two Chrome DevTools Protocol sweeps computed contrast for every text-bearing element on all
-50 registered routes plus `/help` in light and dark theme (2026-10-24). `scripts/audit-contrast.mjs` composites each
+49 registered routes plus `/help` in light and dark theme (2026-10-24). `scripts/audit-contrast.mjs` composites each
 element over its computed ancestor background stack; the stricter pass samples the rendered
 PNG only where the glyphs actually paint, by diffing the frame against the same frame with
 text hidden, so decoration, rounded-badge corners, and disclosure content cannot produce

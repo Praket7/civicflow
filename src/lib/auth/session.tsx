@@ -7,19 +7,26 @@ import { isTauri } from "../platform";
 import { getWorkspaceRepository, setRepositoryToken } from "../workspace/repository";
 import {
   clearPendingHostedIdentity,
-  consumePendingLink,
   exchangeHostedCode,
+  finishHostedHandoff,
+  hostedHandoffPending,
   hostedAuthConfigured,
+  hostedProblemRoute,
   hostedSignIn,
   hostedSignOut,
   identityFromUser,
   parseHostedLink,
   setHostedSession,
+  takeStoredHostedLink,
   type HostedIdentity,
 } from "./hosted";
 
 const repository = getWorkspaceRepository();
 const TOKEN_KEY = "civicflow.auth.token";
+// macOS can deliver one launch URL twice: once from getCurrent() and once from
+// the open-url event. The first delivery already decides the session, so the
+// repeat must not be judged as a second, rejected link.
+const handledHostedLinks = new Set<string>();
 
 interface AuthValue {
   user: Account | null;
@@ -204,36 +211,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       for (const raw of urls) {
         const link = parseHostedLink(raw);
         if (!link) continue;
-        if (!consumePendingLink(link.kind)) {
+        // The same answer delivered again is not a new answer.
+        if (handledHostedLinks.has(raw)) continue;
+        handledHostedLinks.add(raw);
+        if (!(await hostedHandoffPending(link.kind))) {
           // A scheme URL that this device never asked for is not a sign-in.
-          window.location.hash = `#/auth/callback?error_description=${encodeURIComponent(
+          window.location.hash = hostedProblemRoute(
             "This link was not requested on this device. Start again from the sign-in screen.",
-          )}`;
+          );
           continue;
         }
         try {
           if (link.error) throw new Error(link.error);
+          if (!link.accessToken && !link.code) {
+            throw new Error("That link did not carry a sign-in token. Request a new email.");
+          }
           const hostedSession =
             link.accessToken && link.refreshToken
               ? await setHostedSession(link.accessToken, link.refreshToken)
-              : link.code
-                ? await exchangeHostedCode(link.code)
-                : null;
-          if (!hostedSession) continue;
+              : await exchangeHostedCode(link.code as string);
           if (link.kind === "reset") {
+            await finishHostedHandoff();
             window.location.hash = "#/reset-password";
             return;
           }
           const identity = identityFromUser(hostedSession.user);
-          if (!identity) continue;
+          if (!identity) throw new Error("That account has no email address.");
           // A provider account with no organization yet is new: setup comes first.
           if (organizationsFor(identity.email).length === 0) {
             markSetupPending(identity.email, identity.role);
           }
           const session = await adoptHostedIdentity(identity, true);
+          await finishHostedHandoff();
           window.location.hash = `#${accountHome(session.user)}`;
-        } catch {
-          window.location.hash = "#/sign-in";
+        } catch (caught) {
+          // Bouncing to the sign-in screen hid every reason a link failed; the
+          // callback page can now say what the provider said.
+          window.location.hash = hostedProblemRoute(
+            caught instanceof Error ? caught.message : String(caught),
+          );
         }
       }
     }
@@ -242,7 +258,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
         const current = await getCurrent();
-        if (current) await receive(current);
+        if (current?.length) await receive(current);
+        else {
+          // The window may have been reloaded after the operating system handed
+          // the URL over. The native side kept the address for exactly this
+          // page load, and taking it here spends it once.
+          const stored = await takeStoredHostedLink();
+          if (stored) await receive([stored]);
+        }
         unlisten = await onOpenUrl((urls) => void receive(urls));
       } catch {
         // A build without the deep-link plugin simply has no email returns.

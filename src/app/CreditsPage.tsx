@@ -4,8 +4,30 @@ import { OPEN_SOURCE_CREDITS } from "../data/credits";
 import styles from "./CreditsPage.module.css";
 
 export function CreditsPage() {
-  const photos = OPEN_SOURCE_CREDITS.photos;
-  const pexelsCount = photos.filter((photo) => photo.license === "Pexels License").length;
+  // Several bundled files are crops of one licensed photograph. They are one
+  // photograph for credit purposes, so each source appears once with every
+  // file that derives from it.
+  const groups = OPEN_SOURCE_CREDITS.photos.reduce<
+    { photo: (typeof OPEN_SOURCE_CREDITS.photos)[number]; files: string[]; usage: string[] }[]
+  >((rows, photo) => {
+    const existing = rows.find((row) => row.photo.sourceUrl === photo.sourceUrl);
+    if (existing) {
+      existing.files.push(photo.file);
+      existing.usage.push(photo.usage);
+      return rows;
+    }
+    rows.push({ photo, files: [photo.file], usage: [photo.usage] });
+    return rows;
+  }, []);
+  const photos = groups.map((group) => ({
+    ...group.photo,
+    image: group.photo.file,
+    file: group.files.join(" · "),
+    usage: group.usage.join(" · "),
+  }));
+  // The header counts bundled files, so it adds up against `public/media`.
+  const files = OPEN_SOURCE_CREDITS.photos;
+  const pexelsCount = files.filter((photo) => photo.license === "Pexels License").length;
 
   return (
     <div className={styles.page}>
@@ -25,8 +47,7 @@ export function CreditsPage() {
             Photography
           </h2>
           <p className={styles.sectionMeta}>
-            {photos.length} files · {pexelsCount} Pexels · {photos.length - pexelsCount} CC BY-SA
-            4.0
+            {files.length} files · {pexelsCount} Pexels · {files.length - pexelsCount} CC BY-SA 4.0
           </p>
         </div>
         <ul className={styles.grid}>
@@ -34,7 +55,7 @@ export function CreditsPage() {
             <li key={photo.file} className={styles.photo}>
               <img
                 className={styles.thumb}
-                src={`/media/${photo.file}`}
+                src={`/media/${photo.image}`}
                 alt=""
                 loading="lazy"
                 decoding="async"

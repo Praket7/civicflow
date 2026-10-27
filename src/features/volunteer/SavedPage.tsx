@@ -150,7 +150,7 @@ export function SavedPage() {
         match,
       ]),
     );
-    return getSavedOpportunities(session).map((opportunity) => {
+    return getSavedOpportunities(session, workspace).map((opportunity) => {
       const match = scores.get(opportunity.id);
       const nextShift =
         getShiftRowsForOpportunity(opportunity.id, workspace).find(

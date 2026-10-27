@@ -1,7 +1,12 @@
-use civicflow_core::auth::{create_account, current_user, sign_in, sign_in_with_hosted};
+use chrono::Utc;
+use civicflow_core::auth::{
+    clear_hosted_handoff, create_account, current_user, hosted_handoff_pending,
+    remember_hosted_handoff, sign_in, sign_in_with_hosted, store_hosted_link, take_hosted_link,
+};
 use civicflow_core::error::CoreError;
 use civicflow_core::workflows::snapshot_for;
 use civicflow_core::Database;
+use rusqlite::params;
 
 fn seeded() -> Database {
     let mut database = Database::in_memory().expect("in-memory database");
@@ -404,4 +409,93 @@ fn resetting_the_demo_workspace_clears_a_sign_in_lock() {
         false,
     )
     .expect("a reset clears the wait with the rest of the demo state");
+}
+
+#[test]
+fn a_hosted_handoff_is_remembered_until_it_is_finished() {
+    let database = seeded();
+    assert!(!hosted_handoff_pending(database.connection(), "callback").unwrap());
+
+    remember_hosted_handoff(database.connection(), "callback").expect("the hand-off is recorded");
+
+    assert!(hosted_handoff_pending(database.connection(), "callback").unwrap());
+    // A reset link must not answer for a sign-in link, or the other way round.
+    assert!(!hosted_handoff_pending(database.connection(), "reset").unwrap());
+
+    clear_hosted_handoff(database.connection()).expect("the hand-off is cleared");
+
+    assert!(!hosted_handoff_pending(database.connection(), "callback").unwrap());
+}
+
+#[test]
+fn a_hosted_handoff_older_than_a_day_is_refused() {
+    let database = seeded();
+    let old = Utc::now().timestamp() - 2 * 86_400;
+    database
+        .connection()
+        .execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('hosted_handoff', ?1)",
+            params![format!("callback:{old}")],
+        )
+        .unwrap();
+
+    assert!(!hosted_handoff_pending(database.connection(), "callback").unwrap());
+}
+
+#[test]
+fn an_unknown_handoff_kind_is_refused() {
+    let database = seeded();
+
+    assert!(remember_hosted_handoff(database.connection(), "elsewhere").is_err());
+    assert!(!hosted_handoff_pending(database.connection(), "elsewhere").unwrap());
+}
+
+#[test]
+fn a_return_link_survives_until_it_is_taken_once() {
+    let database = seeded();
+    let link = "civicflow://auth/callback#access_token=one&refresh_token=two";
+
+    store_hosted_link(database.connection(), link).expect("the address is kept");
+
+    assert_eq!(
+        take_hosted_link(database.connection()).unwrap(),
+        Some(link.into())
+    );
+    // Taking it spends it: a reload cannot sign the window in a second time.
+    assert_eq!(take_hosted_link(database.connection()).unwrap(), None);
+}
+
+#[test]
+fn a_return_link_older_than_an_hour_is_dropped() {
+    let database = seeded();
+    let old = Utc::now().timestamp() - 2 * 3600;
+    database
+        .connection()
+        .execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('hosted_link', ?1)",
+            params!["civicflow://auth/callback#access_token=one"],
+        )
+        .unwrap();
+    database
+        .connection()
+        .execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('hosted_link_at', ?1)",
+            params![old.to_string()],
+        )
+        .unwrap();
+
+    assert_eq!(take_hosted_link(database.connection()).unwrap(), None);
+    // The stale address is not left behind to answer a later launch.
+    assert_eq!(take_hosted_link(database.connection()).unwrap(), None);
+}
+
+#[test]
+fn only_civicflow_addresses_are_kept() {
+    let database = seeded();
+
+    assert!(store_hosted_link(database.connection(), "https://example.org/auth/callback").is_err());
+    assert!(
+        store_hosted_link(database.connection(), "civicflow://auth/callback\nrm -rf /").is_err()
+    );
+    assert_eq!(take_hosted_link(database.connection()).unwrap(), None);
 }

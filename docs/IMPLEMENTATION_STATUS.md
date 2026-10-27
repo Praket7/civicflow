@@ -124,13 +124,13 @@ no account request. See [AUTH.md](AUTH.md).
 
 ### Screens
 
-All 50 registered routes resolve to built screens. The main working surfaces:
+All 49 registered routes resolve to built screens. The main working surfaces:
 
 - **Coordinator:** Mission Control, Coverage, AutoRoster, Schedule, Opportunities, Create
   Opportunity, Opportunity Management, Live Roster, Volunteers, Volunteer Detail,
   Recruitment, Credentials, Attendance, Kiosk, Hours Review, Reports, Custom Report, Impact
-  Analytics, Retention, Impact Report, Records, Audit, Backup, Settings, Accessibility,
-  Organization Setup.
+  Analytics, Retention, Impact Report, Records, Audit, Backup, Settings (which now owns the
+  organization profile), Accessibility.
 - **Volunteer:** Home, Discover, Opportunity Detail, Saved, Schedule, Shift Detail, Check In,
   My Hours, Personal Impact, Service Verification, Notifications, Profile, Onboarding.
 - **Public:** Launch, Welcome, Sign In, Credits, and the in-app guide at `/help`.

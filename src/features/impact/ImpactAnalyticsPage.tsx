@@ -26,7 +26,7 @@ export function ImpactAnalyticsPage() {
   const causes = getCauseHours(session, workspace);
   const demoStories = isDemoOrganization(workspace.organization.id)
     ? [
-        ...getImpactStories(),
+        ...getImpactStories(workspace),
         {
           id: "story-community",
           title: "Neighborhood Mural Project",

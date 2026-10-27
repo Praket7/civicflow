@@ -219,25 +219,19 @@ export function relativeDayLabel(iso: string, demoNow: string = demoWorkspace.de
 
 /* --------------------------------- lookups -------------------------------- */
 
-export function volunteerById(
-  id: string,
-  workspace: DemoWorkspace = demoWorkspace,
-): Volunteer | undefined {
+export function volunteerById(id: string, workspace: DemoWorkspace): Volunteer | undefined {
   return workspace.volunteers.find((volunteer) => volunteer.id === id);
 }
 
-export function opportunityById(
-  id: string,
-  workspace: DemoWorkspace = demoWorkspace,
-): Opportunity | undefined {
+export function opportunityById(id: string, workspace: DemoWorkspace): Opportunity | undefined {
   return workspace.opportunities.find((opportunity) => opportunity.id === id);
 }
 
-export function shiftById(id: string, workspace: DemoWorkspace = demoWorkspace): Shift | undefined {
+export function shiftById(id: string, workspace: DemoWorkspace): Shift | undefined {
   return workspace.shifts.find((shift) => shift.id === id);
 }
 
-export function currentVolunteer(workspace: DemoWorkspace = demoWorkspace): Volunteer {
+export function currentVolunteer(workspace: DemoWorkspace): Volunteer {
   const found = workspace.volunteers.find(
     (volunteer) => volunteer.id === workspace.currentVolunteerId,
   );
@@ -251,12 +245,12 @@ export interface ShiftRow {
 
 export function getOpportunities(
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): Opportunity[] {
   return [...workspace.opportunities, ...(session.createdOpportunities ?? [])];
 }
 
-export function getShiftRows(workspace: DemoWorkspace = demoWorkspace): ShiftRow[] {
+export function getShiftRows(workspace: DemoWorkspace): ShiftRow[] {
   return workspace.shifts
     .map((shift) => {
       const opportunity = opportunityById(shift.opportunityId, workspace);
@@ -267,7 +261,7 @@ export function getShiftRows(workspace: DemoWorkspace = demoWorkspace): ShiftRow
 }
 
 export function getUpcomingShiftRows(
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
   from: string = workspace.demoNow,
 ): ShiftRow[] {
   return getShiftRows(workspace).filter((row) => row.shift.startsAt > from);
@@ -275,7 +269,7 @@ export function getUpcomingShiftRows(
 
 export function getShiftRowsForOpportunity(
   opportunityId: string,
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): ShiftRow[] {
   return getShiftRows(workspace).filter((row) => row.shift.opportunityId === opportunityId);
 }
@@ -298,7 +292,7 @@ export interface RosterRow {
 export function getRoster(
   shiftId: string,
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): RosterRow[] {
   const shift = shiftById(shiftId, workspace);
   if (!shift) return [];
@@ -347,7 +341,7 @@ interface WaitlistRow {
 export function getWaitlist(
   shiftId: string,
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): WaitlistRow[] {
   return (session.waitlist ?? [])
     .filter((entry) => entry.shiftId === shiftId)
@@ -360,18 +354,19 @@ export function getWaitlist(
 
 /* ------------------------------- attendance ------------------------------- */
 
-export function getLiveEvent(session: SessionOverrides = {}) {
-  const shift = shiftById(DEMO_EVENT_SHIFT_ID) ?? demoWorkspace.shifts[1];
-  const opportunity = opportunityById(shift.opportunityId);
+/** The shift the check-in desk is working, or null when nothing is scheduled. */
+export function getLiveEvent(session: SessionOverrides = {}, workspace: DemoWorkspace) {
+  const shift = shiftById(DEMO_EVENT_SHIFT_ID, workspace) ?? workspace.shifts[1];
+  if (!shift) return null;
+  const opportunity = opportunityById(shift.opportunityId, workspace);
   return {
     shift,
     opportunity,
-    roster: getRoster(shift.id, session),
-    waitlist: getWaitlist(shift.id, session),
+    roster: getRoster(shift.id, session, workspace),
+    waitlist: getWaitlist(shift.id, session, workspace),
     checkInOpen:
-      new Date(demoWorkspace.demoNow) >=
-        new Date(parseISO(shift.startsAt).getTime() - 30 * 60_000) &&
-      new Date(demoWorkspace.demoNow) <= parseISO(shift.endsAt),
+      new Date(workspace.demoNow) >= new Date(parseISO(shift.startsAt).getTime() - 30 * 60_000) &&
+      new Date(workspace.demoNow) <= parseISO(shift.endsAt),
   };
 }
 
@@ -392,10 +387,7 @@ export interface HourRow {
   shiftId: string | null;
 }
 
-export function getHourRows(
-  session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
-): HourRow[] {
+export function getHourRows(session: SessionOverrides = {}, workspace: DemoWorkspace): HourRow[] {
   // Maya has a curated four-entry history; the bulk ledger includes other
   // volunteers. Do not count her twice if the bulk generator also sampled her.
   const entries = [
@@ -431,8 +423,8 @@ export function getHourRows(
   });
 }
 
-export function getHoursQueue(session: SessionOverrides = {}): HourRow[] {
-  return getHourRows(session)
+export function getHoursQueue(session: SessionOverrides = {}, workspace: DemoWorkspace): HourRow[] {
+  return getHourRows(session, workspace)
     .filter((row) => row.status === "pending")
     .sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -449,7 +441,7 @@ interface HoursSummary {
 export function getHoursSummary(
   volunteerId: string,
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): HoursSummary {
   const rows = getHourRows(session, workspace).filter((row) => row.volunteer.id === volunteerId);
   const verified = rows.filter((row) => row.status === "verified");
@@ -473,7 +465,7 @@ export function getHoursSummary(
 
 export function getHoursTrend(
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): { label: string; hours: number }[] {
   const end = parseISO(workspace.demoNow);
   const rows = getHourRows(session, workspace).filter((row) => row.status !== "rejected");
@@ -489,7 +481,7 @@ export function getHoursTrend(
 
 export function getCauseHours(
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): { cause: Cause; label: string; hours: number; percent: number }[] {
   const totals = new Map<Cause, number>();
   for (const row of getHourRows(session, workspace)) {
@@ -510,8 +502,9 @@ export function getCauseHours(
 export function getVerificationRecords(
   volunteerId: string,
   session: SessionOverrides = {},
+  workspace: DemoWorkspace,
 ): HourRow[] {
-  return getHourRows(session).filter(
+  return getHourRows(session, workspace).filter(
     (row) => row.volunteer.id === volunteerId && row.status === "verified" && row.verificationId,
   );
 }
@@ -563,7 +556,7 @@ export interface CredentialRow {
 
 export function getCredentials(
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): CredentialRow[] {
   return (session.credentials ?? [])
     .flatMap((credential) => {
@@ -586,8 +579,10 @@ export function getCredentials(
     .sort((a, b) => (a.expiresAt ?? "").localeCompare(b.expiresAt ?? ""));
 }
 
-export function getCredentialSupply(): { skill: string; supply: number; demand: number }[] {
-  const upcoming = getUpcomingShiftRows();
+export function getCredentialSupply(
+  workspace: DemoWorkspace,
+): { skill: string; supply: number; demand: number }[] {
+  const upcoming = getUpcomingShiftRows(workspace);
   return Object.keys(CREDENTIAL_NAMES).map((skill) => {
     const demand = upcoming.reduce((total, row) => {
       const slots = row.shift.roles
@@ -595,7 +590,7 @@ export function getCredentialSupply(): { skill: string; supply: number; demand: 
         .reduce((sum, role) => sum + role.required, 0);
       return total + slots;
     }, 0);
-    const supply = demoWorkspace.volunteers.filter((volunteer) =>
+    const supply = workspace.volunteers.filter((volunteer) =>
       volunteer.skills.includes(skill),
     ).length;
     return { skill, supply, demand };
@@ -682,10 +677,7 @@ export function getImpactOutcomes(
   return outcomes;
 }
 
-export function getReportPreview(
-  session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
-) {
+export function getReportPreview(session: SessionOverrides = {}, workspace: DemoWorkspace) {
   const causes = getCauseHours(session, workspace);
   const upcoming = getUpcomingShiftRows(workspace);
   const outcomes = getImpactOutcomes(session);
@@ -726,8 +718,8 @@ export function getRetentionRows(session: SessionOverrides = {}) {
   return session.retention ?? [];
 }
 
-export function getAtRiskVolunteers(): Volunteer[] {
-  return demoWorkspace.volunteers
+export function getAtRiskVolunteers(workspace: DemoWorkspace): Volunteer[] {
+  return workspace.volunteers
     .filter((volunteer) => volunteer.attendanceRate < 85 || volunteer.eventsCompleted < 5)
     .sort((a, b) => a.attendanceRate - b.attendanceRate)
     .slice(0, 6);
@@ -744,7 +736,7 @@ interface MatchRow {
 export function getMatches(
   volunteer: Volunteer,
   limit = 3,
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
   extraOpportunities: Opportunity[] = [],
 ): MatchRow[] {
   const upcoming = getUpcomingShiftRows(workspace);
@@ -787,7 +779,7 @@ export function getMatches(
 function getVolunteerShifts(
   volunteerId: string,
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): ShiftRow[] {
   return getShiftRows(workspace).filter((row) =>
     getRoster(row.shift.id, session, workspace).some((entry) => entry.volunteer.id === volunteerId),
@@ -796,7 +788,7 @@ function getVolunteerShifts(
 
 export function getSavedOpportunities(
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): Opportunity[] {
   return (session.savedOpportunityIds ?? [])
     .map((id) => opportunityById(id, workspace))
@@ -806,15 +798,17 @@ export function getSavedOpportunities(
 export function getUpcomingForVolunteer(
   volunteerId: string,
   session: SessionOverrides = {},
-  workspace: DemoWorkspace = demoWorkspace,
+  workspace: DemoWorkspace,
 ): ShiftRow[] {
   return getVolunteerShifts(volunteerId, session, workspace).filter(
     (row) => row.shift.startsAt > workspace.demoNow,
   );
 }
 
-export function getCoverageRows(): { row: ShiftRow; status: "critical" | "at-risk" | "healthy" }[] {
-  return getUpcomingShiftRows().map((row) => {
+export function getCoverageRows(
+  workspace: DemoWorkspace,
+): { row: ShiftRow; status: "critical" | "at-risk" | "healthy" }[] {
+  return getUpcomingShiftRows(workspace).map((row) => {
     const openRoles = row.shift.roles.some((role) => role.filled < role.required);
     const percent = fillPercent(row.shift);
     const status = openRoles && percent < 70 ? "critical" : percent < 86 ? "at-risk" : "healthy";
@@ -822,14 +816,14 @@ export function getCoverageRows(): { row: ShiftRow; status: "critical" | "at-ris
   });
 }
 
-export function getRoleRisk(): {
+export function getRoleRisk(workspace: DemoWorkspace): {
   role: string;
   filled: number;
   required: number;
   percent: number;
 }[] {
   const totals = new Map<string, { filled: number; required: number }>();
-  for (const { shift } of getUpcomingShiftRows()) {
+  for (const { shift } of getUpcomingShiftRows(workspace)) {
     for (const role of shift.roles) {
       const current = totals.get(role.name) ?? { filled: 0, required: 0 };
       totals.set(role.name, {
@@ -847,7 +841,12 @@ export function getRoleRisk(): {
     .sort((a, b) => a.percent - b.percent);
 }
 
-export function getImpactStories() {
+/**
+ * The sample organization's story cards. A workspace someone created has no
+ * stories of its own yet, so it shows none rather than the bundled sample's.
+ */
+export function getImpactStories(workspace: DemoWorkspace) {
+  if (workspace.organization.id !== demoWorkspace.organization.id) return [];
   return [
     {
       id: "story-food",
@@ -876,8 +875,8 @@ export function getImpactStories() {
   ];
 }
 
-export function getRecentActivityFor(volunteerId: string) {
-  return demoWorkspace.recentActivity.filter((item) => item.volunteerId === volunteerId);
+export function getRecentActivityFor(volunteerId: string, workspace: DemoWorkspace) {
+  return workspace.recentActivity.filter((item) => item.volunteerId === volunteerId);
 }
 
 export function getOrganizationImages(): string[] {
@@ -890,11 +889,15 @@ export function getOrganizationImages(): string[] {
   ];
 }
 
-export function getVolunteerImpact(volunteerId: string, session: SessionOverrides = {}) {
-  const summary = getHoursSummary(volunteerId, session);
-  const volunteer = volunteerById(volunteerId) ?? currentVolunteer();
+export function getVolunteerImpact(
+  volunteerId: string,
+  session: SessionOverrides = {},
+  workspace: DemoWorkspace,
+) {
+  const summary = getHoursSummary(volunteerId, session, workspace);
+  const volunteer = volunteerById(volunteerId, workspace) ?? currentVolunteer(workspace);
   const causes = new Map<Cause, number>();
-  getHourRows(session)
+  getHourRows(session, workspace)
     .filter((row) => row.volunteer.id === volunteerId)
     .forEach((row) => {
       causes.set(

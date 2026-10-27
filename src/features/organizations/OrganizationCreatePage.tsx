@@ -23,7 +23,7 @@ import {
   setCurrentOrganization,
 } from "../../lib/organizations/store";
 import type { OrganizationProfile, OrganizationVisibility } from "../../lib/organizations/store";
-import { US_STATES } from "../../lib/us-states";
+import { US_STATES, stateCode } from "../../lib/us-states";
 import styles from "./onboarding.module.css";
 
 interface FormState {
@@ -103,7 +103,7 @@ export function OrganizationCreatePage() {
     if (!form.website.trim()) next.website = "Add a website so volunteers can check you out.";
     if (!form.address.trim()) next.address = "Add the street address volunteers will travel to.";
     if (!form.city.trim()) next.city = "Add the city.";
-    if (!form.state.trim()) next.state = "Add the two-letter state.";
+    if (!stateCode(form.state)) next.state = "Choose the state from the list.";
     if (!isEmail(form.contactEmail))
       next.contactEmail = "Use the email that should receive volunteer questions.";
     if (form.secondEmail.trim() && !isEmail(form.secondEmail))
@@ -124,7 +124,7 @@ export function OrganizationCreatePage() {
         website: form.website,
         address: form.address,
         city: form.city,
-        state: form.state,
+        state: stateCode(form.state),
         contactEmails: [form.contactEmail, form.secondEmail].filter(Boolean),
         image: cover.src,
         imageAlt: cover.alt,
@@ -236,9 +236,9 @@ export function OrganizationCreatePage() {
               <Button
                 size="large"
                 icon={<ArrowRight size={15} />}
-                onClick={() => navigate("/coordinator/organization/setup", { replace: true })}
+                onClick={() => navigate("/coordinator/mission-control", { replace: true })}
               >
-                Continue setup
+                Open workspace
               </Button>
             </div>
           </div>
@@ -264,16 +264,12 @@ export function OrganizationCreatePage() {
 
       <section className={styles.shell} aria-labelledby="new-org-title">
         <header className={styles.head}>
-          <p className={styles.eyebrow}>
-            <Globe2 size={13} aria-hidden="true" />
-            New workspace · Step 1 of 2
-          </p>
           <h1 className={styles.title} id="new-org-title">
             Tell volunteers who you are.
           </h1>
           <p className={styles.lede}>
-            This is what someone sees when they search for organizations near them. You can change
-            any of it later in Organization setup.
+            These details appear across opportunity pages, reports, and service verification
+            records.
           </p>
         </header>
 
@@ -348,8 +344,7 @@ export function OrganizationCreatePage() {
                   label="State"
                   value={form.state}
                   error={errors.state}
-                  autoComplete="address-level1"
-                  onChange={(event) => update("state", event.target.value)}
+                  onChange={(event) => update("state", stateCode(event.target.value))}
                 >
                   <option value="">Select a state</option>
                   {US_STATES.map((state) => (

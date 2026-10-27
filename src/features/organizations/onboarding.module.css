@@ -284,16 +284,18 @@
 }
 
 .coverRow {
-  display: flex;
+  display: grid;
+  /* The three samples and the upload share one row at every width. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  flex-wrap: wrap;
+  max-width: 520px;
 }
 
 .coverOption {
   position: relative;
   padding: 0;
-  width: 118px;
-  height: 74px;
+  width: 100%;
+  aspect-ratio: 8 / 5;
   border: 2px solid transparent;
   border-radius: var(--radius-control);
   overflow: hidden;

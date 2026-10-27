@@ -336,14 +336,6 @@ export function Sidebar({
               {isCoordinator ? (
                 <>
                   <Link
-                    to="/coordinator/organization/setup"
-                    className={styles.menuItem}
-                    role="menuitem"
-                    onClick={dismissOnNavigate}
-                  >
-                    Organization setup
-                  </Link>
-                  <Link
                     to="/coordinator/settings"
                     className={styles.menuItem}
                     role="menuitem"

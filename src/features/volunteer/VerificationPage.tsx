@@ -38,8 +38,8 @@ export function VerificationPage() {
   const { workspace, session } = useWorkspace();
   const volunteer = currentVolunteer(workspace);
   const records = useMemo(
-    () => getVerificationRecords(volunteer.id, session),
-    [session, volunteer.id],
+    () => getVerificationRecords(volunteer.id, session, workspace),
+    [session, volunteer.id, workspace],
   );
   const [selectedId, setSelectedId] = useState<string>(() => records[0]?.id ?? "");
   const [copyMessage, setCopyMessage] = useState("");

@@ -28,9 +28,23 @@ import type { RosterRow } from "../../lib/workspace/selectors";
 import styles from "./Attendance.module.css";
 
 export function AttendancePage() {
-  const { session, actions } = useWorkspace();
-  const event = getLiveEvent(session);
+  const { workspace, session, actions } = useWorkspace();
+  const event = getLiveEvent(session, workspace);
   const [message, setMessage] = useState("");
+  if (!event) {
+    return (
+      <Page>
+        <PageHeader
+          title={t("Attendance")}
+          description={t("Check-in evidence, late arrivals, and no-show follow-up list.")}
+        />
+        <Card>
+          <p>{t("Nothing is scheduled yet.")}</p>
+          <p>{t("Publish a shift to start filling roles.")}</p>
+        </Card>
+      </Page>
+    );
+  }
   const roster = event.roster;
   const counts = rosterCounts(roster);
   const capacity = event.shift.capacity;

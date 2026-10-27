@@ -84,8 +84,12 @@ export function restartSetup(email: string, role: AccountRole): void {
   write(PENDING_KEY, add(read(PENDING_KEY), email, role));
 }
 
-/** Where a new account finishes setup, before it reaches a workspace. */
+/**
+ * Where a new account finishes setup, before it reaches a workspace. A
+ * coordinator's organization details live in Workspace settings now, so the
+ * first step is creating the organization and the next is the workspace.
+ */
 export function setupRoute(account: Account, hasOrganization: boolean): string {
   if (account.role === "volunteer") return "/volunteer/onboarding";
-  return hasOrganization ? "/coordinator/organization/setup" : "/coordinator/organization/new";
+  return hasOrganization ? "/coordinator/mission-control" : "/coordinator/organization/new";
 }

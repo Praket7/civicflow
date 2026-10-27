@@ -50,8 +50,8 @@ not sent to servers or included in referrers.
 | Setting             | Value                                                                                                                                                             |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Project             | `civicflow-auth` (`imzdblvljdcbnxtwbmbw`, us-east-2)                                                                                                              |
-| Site URL            | `http://localhost:5199`                                                                                                                                           |
-| Redirect allow list | `http://localhost:5199`, `http://localhost:5199/auth/callback`, `http://localhost:5199/reset-password`, `civicflow://auth/callback`, `civicflow://reset-password` |
+| Site URL            | `http://localhost:5173`                                                                                                                                           |
+| Redirect allow list | `http://localhost:5173`, `http://localhost:5173/auth/callback`, `http://localhost:5173/reset-password`, `civicflow://auth/callback`, `civicflow://reset-password` |
 | Google provider     | Enabled, client holds the Supabase callback                                                                                                                       |
 | Email provider      | Supabase built-in SMTP (development only)                                                                                                                         |
 | Confirmation        | Required                                                                                                                                                          |
@@ -61,6 +61,14 @@ The publishable key lives in `.env.local`, which is ignored by git. It is meant
 to ship in a client. The service-role key is not used anywhere in the app and
 must never be added to an environment file in this repository.
 
+The browser build asks the provider to return to `window.location.origin`, so
+the Site URL and the allow list have to name the port the dev server actually
+uses (`pnpm dev` runs on 5173, fixed in `vite.config.ts`). The older 5199
+entries belong to the print-audit server in `scripts/audit-print.mjs` and do not
+cover the app. A return to an origin that is not on the list is silently
+replaced with the Site URL, which looks like a dead link rather than a
+configuration mistake.
+
 The built-in mailer allows a couple of messages per hour. Before a real
 deployment, set custom SMTP under Authentication → Emails. The default sender
 also tends to land in spam.
@@ -69,7 +77,7 @@ also tends to land in spam.
 
 ```bash
 cp .env.example .env.local     # fill in the project URL and publishable key
-pnpm dev                       # web build at http://localhost:5199
+pnpm dev                       # web build at http://localhost:5173
 pnpm tauri dev                 # desktop build, uses the same env values
 ```
 
@@ -98,6 +106,32 @@ How a Google sign-in travels:
 3. Google returns to `https://imzdblvljdcbnxtwbmbw.supabase.co/auth/v1/callback`.
 4. Supabase returns to `civicflow://auth/callback#access_token=…`. The deep-link
    handler resumes the session and creates the local workspace account.
+
+macOS can hand the same launch URL to the app twice — once through
+`getCurrent()` and once through the open-url event. The handler keeps the first
+answer and ignores the repeat. It also reads the hand-off mark without spending
+it and clears it only after a local session has been adopted, so a repeated
+delivery or a transient exchange error cannot turn a valid link into "this was
+not requested". When a link is refused, the app opens the callback page with the
+reason instead of dropping back to the sign-in screen; an expired OAuth request
+("the state has expired") is reported separately from an expired email link,
+because the two need different next steps.
+
+The native side records every scheme URL the operating system delivers, before
+any page has a chance to read it. That matters because the callback page keeps
+its route in the fragment and rewrites the address as soon as it reads the
+tokens: a reload, a second window, or a delivery that arrives after the page has
+already rendered used to look exactly like an expired link. The callback page now
+looks for the answer in the address, then in the answer this tab kept, then in
+the address the app recorded — and while a hand-off this device started is still
+outstanding it waits for the browser instead of showing an error. Only when none
+of those exist does it say the window has no answer, and the panel offers the
+sign-in screen rather than asking for a new email.
+
+The native test suite runs against the same webview store as the installed app.
+It used to delete that store before every run, which signed the real app out and
+could erase a hand-off that was in flight, so it no longer does; the throwaway
+SQLite database is enough to make the signed-out assertions hold.
 
 The role picked on the form before the hand-off decides the access level of the
 new local account, because Google knows nothing about CivicFlow roles. In the

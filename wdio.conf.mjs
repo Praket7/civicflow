@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 const appBinary = path.resolve("src-tauri/target/debug/civicflow");
@@ -10,9 +9,11 @@ const appBinary = path.resolve("src-tauri/target/debug/civicflow");
 const dataDir = path.resolve(".wdio-data");
 process.env.CIVICFLOW_DATA_DIR = dataDir;
 
-// WebKit stores localStorage outside the app-data folder. Clearing it before
-// launch keeps the "no session" assertion deterministic between runs.
-const webkitData = path.join(os.homedir(), "Library", "WebKit", "org.feedmore.civicflow");
+// The webview store is shared with the installed app, so the suite must not
+// delete it: doing so signs the real app out and can erase a sign-in hand-off
+// that was in flight while the tests ran. A fresh database is enough to keep
+// the "no session" assertion honest — a token from the old run no longer
+// resolves, so the app still lands on the sign-in screen.
 
 export const config = {
   runner: "local",
@@ -32,6 +33,8 @@ export const config = {
       {
         driverProvider: "embedded",
         appBinaryPath: appBinary,
+        // The app's own stderr is the only place a Rust panic shows up.
+        captureBackendLogs: true,
       },
     ],
   ],
@@ -39,15 +42,15 @@ export const config = {
   reporters: ["spec"],
   mochaOpts: {
     // Every element lookup and click waits out the driver's 5s window-state
-    // probe, which never answers in this app, so a long flow (create an
-    // account, sign out, sign back in) needs far more than the default.
-    timeout: 240_000,
+    // probe, which never answers in this app. The longest flow — create an
+    // account, answer setup, join an organization, sign out, sign back in —
+    // runs a hundred of those probes, so it needs several minutes of its own.
+    timeout: 480_000,
   },
   waitforTimeout: 15_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 1,
   onPrepare() {
     fs.rmSync(dataDir, { recursive: true, force: true });
-    fs.rmSync(webkitData, { recursive: true, force: true });
   },
 };

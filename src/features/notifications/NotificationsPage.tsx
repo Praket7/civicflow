@@ -25,7 +25,7 @@ import {
 import { t } from "../../lib/i18n";
 import { useMarkNotificationRead, useNotifications } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
-import type { NotificationItem } from "../../types/domain";
+import type { DemoWorkspace, NotificationItem } from "../../types/domain";
 import {
   currentVolunteer,
   formatDate,
@@ -138,9 +138,13 @@ function seedAction(kind: FeedKind): string {
   return t("View shift");
 }
 
-function seedEntity(notification: NotificationItem, fallback: string): string {
+function seedEntity(
+  notification: NotificationItem,
+  fallback: string,
+  workspace: DemoWorkspace,
+): string {
   if (notification.kind === "coverage" || notification.kind === "waitlist") {
-    return opportunityById("opp-food")?.title ?? fallback;
+    return opportunityById("opp-food", workspace)?.title ?? fallback;
   }
   if (notification.kind === "hours") return t("Hours & verification");
   if (notification.kind === "credential") return t("Credentials & skills");
@@ -176,7 +180,7 @@ export function NotificationsPage() {
       createdAt: notification.createdAt,
       href: notification.href,
       actionLabel: seedAction(notification.kind),
-      entity: seedEntity(notification, workspace.organization.name),
+      entity: seedEntity(notification, workspace.organization.name, workspace),
       unread: !notification.readAt,
     }));
 
@@ -184,8 +188,8 @@ export function NotificationsPage() {
 
     if (isCoordinator) {
       const coverage =
-        getCoverageRows().find((row) => row.status === "critical") ??
-        getCoverageRows().find((row) => row.status === "at-risk");
+        getCoverageRows(workspace).find((row) => row.status === "critical") ??
+        getCoverageRows(workspace).find((row) => row.status === "at-risk");
       if (coverage) {
         const missing = coverage.row.shift.roles.find((role) => role.filled < role.required);
         derived.push({
@@ -207,7 +211,7 @@ export function NotificationsPage() {
         });
       }
 
-      const queue = getHoursQueue(session);
+      const queue = getHoursQueue(session, workspace);
       if (queue.length > 0) {
         derived.push({
           id: "derived-hours-queue",
@@ -228,7 +232,9 @@ export function NotificationsPage() {
       }
 
       const latestBackup = backups[0];
-      if (latestBackup)
+      // A first-launch snapshot protects nothing; telling a coordinator about it
+      // would open the inbox with an event they did not cause and cannot act on.
+      if (latestBackup && latestBackup.rows > 0)
         derived.push({
           id: "derived-backup",
           source: "derived",

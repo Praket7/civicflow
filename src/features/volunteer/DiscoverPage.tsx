@@ -74,7 +74,7 @@ export function DiscoverPage() {
     () => getMatches(volunteer, 12, workspace, session.createdOpportunities),
     [volunteer, workspace, session.createdOpportunities],
   );
-  const saved = getSavedOpportunities(session);
+  const saved = getSavedOpportunities(session, workspace);
   const [query, setQuery] = useState("");
   const [quick, setQuick] = useState<QuickFilter>("for-you");
   const [cause, setCause] = useState<Cause | "all">("all");

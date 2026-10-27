@@ -29,7 +29,7 @@ type Mode = "approve" | "adjust" | "reject";
 
 export function HoursReviewPage() {
   const { workspace, session, actions } = useWorkspace();
-  const queue = getHoursQueue(session);
+  const queue = getHoursQueue(session, workspace);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("approve");

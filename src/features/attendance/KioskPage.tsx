@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ScanQrCode, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../../components/ui";
+import { t } from "../../lib/i18n";
 import { QrScanner } from "../../components/checkin/QrScanner";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
@@ -19,9 +20,48 @@ function publicName(name: string): string {
   return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
 }
 
+type LiveEvent = NonNullable<ReturnType<typeof getLiveEvent>>;
+
+/**
+ * The kiosk shows one shift. A workspace with nothing scheduled has nothing to
+ * check anyone into, so it says so instead of borrowing the sample shift.
+ */
 export function KioskPage() {
-  const { workspace, session, actions } = useWorkspace();
-  const event = getLiveEvent(session);
+  const { workspace, session } = useWorkspace();
+  const event = getLiveEvent(session, workspace);
+  if (!event) {
+    return (
+      <main className={styles.kiosk}>
+        <section className={styles.kioskLeft}>
+          <div className={styles.kioskTop}>
+            <Link className={styles.kioskBrand} to="/coordinator/attendance">
+              <span className={styles.kioskMark} aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="25" height="25" focusable="false">
+                  <path
+                    d="M12 3 4.5 6.4v5.2c0 4.6 3.1 8.2 7.5 9.4 4.4-1.2 7.5-4.8 7.5-9.4V6.4L12 3Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </span>
+              CivicFlow
+            </Link>
+            <p className={styles.kioskEyebrow}>{t("Volunteer check-in")}</p>
+          </div>
+          <div className={styles.kioskStation}>
+            <h1 className={styles.kioskTitle} id="kiosk-title">
+              {t("Nothing is scheduled yet.")}
+            </h1>
+            <p className={styles.kioskSub}>{t("Publish a shift to start filling roles.")}</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+  return <KioskBody event={event} />;
+}
+
+function KioskBody({ event }: { event: LiveEvent }) {
+  const { workspace, actions } = useWorkspace();
   const [code, setCode] = useState("");
   const [selected, setSelected] = useState("");
   const [error, setError] = useState("");

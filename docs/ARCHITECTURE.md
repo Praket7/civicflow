@@ -115,7 +115,7 @@ persist their own copies.
 | Shift registrations                  | `registrations`                      | Live Roster, AutoRoster, volunteer schedules  |
 | Hours review                         | `hour_entries` (`reviewed_at`, etc.) | Hours Review, My Hours, Records, verification |
 | Recruitment stages                   | `applications`                       | Recruitment, Opportunity Management           |
-| Workspace and accessibility settings | `app_settings` + `organizations`     | Settings, Accessibility, Organization Setup   |
+| Workspace and accessibility settings | `app_settings` + `organizations`     | Settings, Accessibility, organization profile |
 | Created programs                     | `opportunities` (`created_at`)       | Opportunities, management, reports            |
 | Notifications                        | `notifications`                      | Inbox, Mission Control badge                  |
 | Audit trail                          | `audit_events`                       | Audit, Activity, confirmation copy            |

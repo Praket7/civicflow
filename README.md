@@ -127,12 +127,14 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [AUTH.md](docs/AUTH.md),
   milestones, spreadsheet import, report totals and exports, impossible writes, and backup
   restore/validation.
 - WebdriverIO drives the embedded WebDriver server inside the real macOS window: sign-in,
-  coordinator Mission Control, volunteer route refusal, sign-out, volunteer home, and
-  coordinator route refusal. `pnpm test:native` is part of CI.
+  coordinator Mission Control (with the page entrance frozen, so an animation that never
+  advances cannot hide the page), volunteer route refusal, sign-out, volunteer home,
+  coordinator route refusal, and creating a volunteer account with the printed code and
+  signing it back in. `pnpm test:native` is part of CI.
 - The accessibility-tree audit reads Chromium's accessibility tree for all 50 routes and
   requires a main landmark, one `h1`, and names on every interactive control. The 200% zoom
   audit renders an 800 × 500 CSS viewport and fails on horizontal overflow or a lost heading.
-- All 50 registered routes plus `/help` and `/credits` were checked at 1600 × 1000, 1280,
+- All 49 registered routes plus `/help` and `/credits` were checked at 1600 × 1000, 1280,
   1024, 820 and 390 during the visual sweep; notes are in [VISUAL_QA.md](docs/VISUAL_QA.md).
 - `pnpm db:verify` reports the live desktop database path, integrity, schema version, table
   count, foreign-key status and record counts without writing to it.

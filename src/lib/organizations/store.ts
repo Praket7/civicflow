@@ -1,4 +1,5 @@
 import { demoWorkspace } from "../workspace/dataset";
+import { stateCode } from "../us-states";
 import type { Account, AccountRole } from "../../types/domain";
 
 export type OrganizationVisibility = "public" | "private";
@@ -80,7 +81,7 @@ const DEMO_ORGANIZATION_ID = "org-feedmore-wny";
 
 const COVER_IMAGES = [
   { src: "/media/opp-food-distribution.jpg", alt: "Volunteers packing food boxes" },
-  { src: "/media/hero-community.jpg", alt: "Neighbours at a community event" },
+  { src: "/media/opp-senior-meals.jpg", alt: "A volunteer helping an older neighbor into a car" },
   { src: "/media/opp-community-garden.jpg", alt: "Volunteers in a community garden" },
 ];
 
@@ -368,6 +369,33 @@ export function updateOrganizationCover(
     ...next,
     organizations: next.organizations.map((organization) =>
       organization.id === organizationId ? { ...organization, image, imageAlt } : organization,
+    ),
+  });
+}
+
+/**
+ * Saves the public details a coordinator edits on the setup screen, so the
+ * address they typed is still there when they come back to the step.
+ */
+export function updateOrganizationDetails(
+  organizationId: string,
+  patch: Partial<
+    Pick<OrganizationProfile, "name" | "description" | "address" | "city" | "state" | "website">
+  >,
+): void {
+  const next = state();
+  if (!next.organizations.some((organization) => organization.id === organizationId)) return;
+  commit({
+    ...next,
+    organizations: next.organizations.map((organization) =>
+      organization.id === organizationId
+        ? {
+            ...organization,
+            ...patch,
+            // A state is stored as its code, never as the name the label shows.
+            ...(patch.state === undefined ? {} : { state: stateCode(patch.state) }),
+          }
+        : organization,
     ),
   });
 }

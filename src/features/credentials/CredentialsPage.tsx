@@ -29,7 +29,6 @@ import {
 } from "../../components/ui";
 import type { CredentialStatus } from "../../types/domain";
 import { t } from "../../lib/i18n";
-import { demoWorkspace } from "../../lib/workspace/dataset";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
   getCredentialSupply,
@@ -49,10 +48,10 @@ const FILTER_LABELS: Record<Filter, string> = {
 };
 
 export function CredentialsPage() {
-  const { session } = useWorkspace();
-  const credentials = getCredentials(session);
-  const supply = getCredentialSupply();
-  const roleRisk = getRoleRisk();
+  const { workspace, session } = useWorkspace();
+  const credentials = getCredentials(session, workspace);
+  const supply = getCredentialSupply(workspace);
+  const roleRisk = getRoleRisk(workspace);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [exported, setExported] = useState("");
@@ -106,7 +105,7 @@ export function CredentialsPage() {
     if (!credential.expiresAt) return { days: null, label: t("No expiry") };
     const days = differenceInCalendarDays(
       parseISO(credential.expiresAt),
-      parseISO(demoWorkspace.demoNow),
+      parseISO(workspace.demoNow),
     );
     if (days < 0) return { days, label: t("{count} days ago", { count: Math.abs(days) }) };
     if (days === 0) return { days, label: t("Today") };
@@ -340,7 +339,7 @@ export function CredentialsPage() {
                       )}&body=${encodeURIComponent(
                         `Hi ${credential.volunteer.firstName},\n\nOur records show your ${credential.name} ${
                           credential.status === "expired" ? "has expired" : "expires soon"
-                        }${credential.expiresAt ? ` on ${format(parseISO(credential.expiresAt), "MMMM d, yyyy")}` : ""}. Could you send an updated copy so we can keep you scheduled?\n\nThank you,\n${demoWorkspace.coordinator.name}\n${demoWorkspace.organization.name}`,
+                        }${credential.expiresAt ? ` on ${format(parseISO(credential.expiresAt), "MMMM d, yyyy")}` : ""}. Could you send an updated copy so we can keep you scheduled?\n\nThank you,\n${workspace.coordinator.name}\n${workspace.organization.name}`,
                       )}`;
                       return (
                         <tr key={credential.id}>

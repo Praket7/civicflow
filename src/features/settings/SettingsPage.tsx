@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Accessibility,
   Bell,
+  Check,
   Database,
   Gauge,
+  ImagePlus,
   KeyRound,
   RotateCcw,
   Save,
   Settings2,
   UserRound,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -19,12 +21,19 @@ import {
   Page,
   PageHeader,
   SelectField,
+  TextareaField,
   TextField,
   Toggle,
 } from "../../components/ui";
 import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
-import { restartSetup } from "../../lib/onboarding/store";
+import { coverPhoto } from "../../lib/images";
+import {
+  ORGANIZATION_COVERS,
+  updateOrganizationCover,
+  updateOrganizationDetails,
+} from "../../lib/organizations/store";
+import { US_STATES, stateCode } from "../../lib/us-states";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import { useWorkspace } from "../../lib/workspace/session";
 import { getHourRows } from "../../lib/workspace/selectors";
@@ -57,7 +66,6 @@ const CATEGORIES = [
 ];
 
 export function SettingsPage() {
-  const navigate = useNavigate();
   const { workspace, session, backups, actions } = useWorkspace();
   const { user, token, signOut } = useAuth();
   const [category, setCategory] = useState("general");
@@ -66,14 +74,31 @@ export function SettingsPage() {
   const [resetFor, setResetFor] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
-  const [orgName, setOrgName] = useState(session.settings.organizationName);
-  const [email, setEmail] = useState(session.settings.contactEmail);
+  // A workspace created before these settings existed has no saved copy, so
+  // the form starts from the organization record instead of empty inputs that
+  // block Save behind a required-field error.
+  const [orgName, setOrgName] = useState(
+    session.settings.organizationName || workspace.organization.name,
+  );
+  const [email, setEmail] = useState(
+    session.settings.contactEmail || workspace.organization.email || user?.email || "",
+  );
+  const [mission, setMission] = useState(workspace.organization.mission);
+  const [address, setAddress] = useState(workspace.organization.address);
+  const [city, setCity] = useState(workspace.organization.city);
+  const [stateValue, setStateValue] = useState(stateCode(workspace.organization.state));
+  const [website, setWebsite] = useState(workspace.organization.website);
+  const [cover, setCover] = useState({
+    src: workspace.organization.image ?? ORGANIZATION_COVERS[0].src,
+    alt: workspace.organization.imageAlt ?? ORGANIZATION_COVERS[0].alt,
+  });
   const [timezone, setTimezone] = useState(session.settings.timezone);
   const [weekStart, setWeekStart] = useState(session.settings.weekStartsOn);
   const [shiftLength, setShiftLength] = useState(String(session.settings.defaultShiftLength));
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
   const [resetArmed, setResetArmed] = useState(false);
+  const coverInput = useRef<HTMLInputElement>(null);
   const [policyLevels, setPolicyLevels] = useState<PriorityLevel[]>([]);
   const [policy, setPolicy] = useState<RosterPolicy | null>(null);
   const [policyError, setPolicyError] = useState("");
@@ -172,6 +197,17 @@ export function SettingsPage() {
     }
   }
 
+  async function uploadCover(file: File | undefined) {
+    if (!file) return;
+    try {
+      const src = await coverPhoto(file);
+      setCover({ src, alt: `${orgName.trim() || "Organization"} cover photo` });
+      setError("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
   function saveGeneral() {
     if (!orgName.trim()) {
       setError("Organization name is required.");
@@ -181,6 +217,21 @@ export function SettingsPage() {
       setError("Enter a valid contact email.");
       return;
     }
+    if (stateValue && !stateCode(stateValue)) {
+      setError("Select a state from the list.");
+      return;
+    }
+    // The organization card, the public profile, and every report read this
+    // record, so the details live there rather than only in local settings.
+    updateOrganizationDetails(workspace.organization.id, {
+      name: orgName.trim(),
+      description: mission.trim(),
+      address: address.trim(),
+      city: city.trim(),
+      state: stateValue,
+      website: website.trim(),
+    });
+    updateOrganizationCover(workspace.organization.id, cover.src, cover.alt);
     actions.updateSettings({
       organizationName: orgName.trim(),
       contactEmail: email.trim(),
@@ -230,7 +281,8 @@ export function SettingsPage() {
             <>
               <h2 className={styles.settingsTitle}>Organization profile</h2>
               <p className={styles.settingsSub}>
-                These details are kept with this local workspace and used in organization setup.
+                These details appear across opportunity pages, reports, and service verification
+                records.
               </p>
               <div className={styles.formGrid}>
                 <TextField
@@ -279,6 +331,164 @@ export function SettingsPage() {
                   value={shiftLength}
                   onChange={(event) => setShiftLength(event.target.value)}
                 />
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <TextareaField
+                    label="Mission"
+                    value={mission}
+                    rows={3}
+                    hint={
+                      mission.trim().length >= 20
+                        ? undefined
+                        : "Write at least one sentence so volunteers understand the mission."
+                    }
+                    onChange={(event) => {
+                      setMission(event.target.value);
+                      setError("");
+                    }}
+                  />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <TextField
+                    label="Street address"
+                    value={address}
+                    onChange={(event) => setAddress(event.target.value)}
+                  />
+                </div>
+                <TextField
+                  label="City"
+                  value={city}
+                  onChange={(event) => setCity(event.target.value)}
+                />
+                <SelectField
+                  label="State"
+                  value={stateValue}
+                  onChange={(event) => {
+                    setStateValue(stateCode(event.target.value));
+                    setError("");
+                  }}
+                >
+                  <option value="">Select a state</option>
+                  {US_STATES.map((state) => (
+                    <option key={state.code} value={state.code}>
+                      {state.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <TextField
+                    label="Website"
+                    value={website}
+                    placeholder="example.org"
+                    onChange={(event) => setWebsite(event.target.value)}
+                  />
+                </div>
+              </div>
+
+              <p style={{ marginTop: 18, fontSize: 13.5, fontWeight: 590 }}>{t("Cover photo")}</p>
+              <p className={styles.settingsSub}>
+                Used on your public card. Pick a sample or upload your own photo.
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gap: 10,
+                  maxWidth: 420,
+                  marginTop: 12,
+                }}
+              >
+                {ORGANIZATION_COVERS.map((option) => (
+                  <button
+                    key={option.src}
+                    type="button"
+                    aria-label={`Use photo: ${option.alt}`}
+                    aria-pressed={cover.src === option.src}
+                    onClick={() => setCover(option)}
+                    style={{
+                      position: "relative",
+                      padding: 0,
+                      width: "100%",
+                      aspectRatio: "8 / 5",
+                      border: `2px solid ${cover.src === option.src ? "var(--color-lime)" : "transparent"}`,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                      background: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <img
+                      src={option.src}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                    {cover.src === option.src ? (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          right: 4,
+                          bottom: 4,
+                          display: "grid",
+                          placeItems: "center",
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: "var(--color-lime)",
+                          color: "var(--color-navy)",
+                        }}
+                      >
+                        <Check size={11} aria-hidden="true" />
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-label={t("Upload")}
+                  aria-pressed={cover.src.startsWith("data:")}
+                  onClick={() => coverInput.current?.click()}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    padding: 0,
+                    width: "100%",
+                    aspectRatio: "8 / 5",
+                    border: "1px dashed var(--border-strong)",
+                    borderRadius: 8,
+                    background: "var(--surface-raised)",
+                    color: "var(--text-secondary)",
+                    fontSize: 11.5,
+                    fontWeight: 560,
+                    cursor: "pointer",
+                    overflow: "hidden",
+                  }}
+                >
+                  {cover.src.startsWith("data:") ? (
+                    <img
+                      src={cover.src}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <>
+                      <ImagePlus size={16} aria-hidden="true" />
+                      {t("Upload")}
+                    </>
+                  )}
+                </button>
+                <input
+                  ref={coverInput}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(event) => {
+                    void uploadCover(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
               </div>
               <div style={{ marginTop: 10 }}>
                 <Toggle
@@ -313,24 +523,6 @@ export function SettingsPage() {
                 </p>
               ) : null}
               <div className={styles.saveRow}>
-                <ButtonLink to="/coordinator/organization/setup" variant="ghost">
-                  Organization setup
-                </ButtonLink>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    if (!user) return;
-                    // Setup is finished for good; this is the only way back in.
-                    restartSetup(user.email, user.role);
-                    navigate(
-                      user.role === "coordinator"
-                        ? "/coordinator/organization/setup"
-                        : "/volunteer/onboarding",
-                    );
-                  }}
-                >
-                  Run setup again
-                </Button>
                 <Button variant="primary" icon={<Save size={13} />} onClick={saveGeneral}>
                   Save changes
                 </Button>

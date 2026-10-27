@@ -71,19 +71,6 @@ pub struct IssuedInvite {
     pub expires_at: String,
 }
 
-/// Invitation metadata for the screen that lists outstanding invitations. The
-/// token is absent by design: it is not recoverable after it is issued.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct InviteSummary {
-    pub id: String,
-    pub role: String,
-    pub created_at: String,
-    pub expires_at: String,
-    pub redeemed_at: Option<String>,
-    pub redeemed_by_user_id: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct NewOrganization {
@@ -370,61 +357,6 @@ pub fn create_organization(
     require_organization(conn, &id)
 }
 
-/// Applies a profile edit. Names are normalized like creation, so the two paths
-/// cannot produce different records.
-#[allow(clippy::too_many_arguments)]
-pub fn update_organization_profile(
-    conn: &Connection,
-    organization_id: &str,
-    name: &str,
-    description: &str,
-    website: &str,
-    address: &str,
-    city: &str,
-    state: &str,
-    contact_emails: &[String],
-    image: Option<&str>,
-    image_alt: Option<&str>,
-) -> Result<OrganizationRecord> {
-    let current = require_organization(conn, organization_id)?;
-    let name = normalize_name(name)?;
-    let contacts = normalize_contacts(contact_emails, &current.email)?;
-    let transaction = conn.unchecked_transaction()?;
-    transaction.execute(
-        "UPDATE organizations
-         SET name = ?2, initials = ?3, mission = ?4, description = ?4, website = ?5,
-             address = ?6, city = ?7, state = ?8, email = ?9,
-             image = COALESCE(?10, image), image_alt = COALESCE(?11, image_alt)
-         WHERE id = ?1",
-        params![
-            organization_id,
-            name,
-            initials_for(&name),
-            description.trim(),
-            website.trim(),
-            address.trim(),
-            city.trim(),
-            state.trim(),
-            contacts.first().cloned().unwrap_or_default(),
-            image,
-            image_alt,
-        ],
-    )?;
-    transaction.execute(
-        "DELETE FROM organization_contacts WHERE organization_id = ?1",
-        params![organization_id],
-    )?;
-    for (position, email) in contacts.iter().enumerate() {
-        transaction.execute(
-            "INSERT INTO organization_contacts (organization_id, email, position)
-             VALUES (?1, ?2, ?3)",
-            params![organization_id, email, position as i64],
-        )?;
-    }
-    transaction.commit()?;
-    require_organization(conn, organization_id)
-}
-
 /// The member list is coordinator-only: a volunteer has no reason to read every
 /// colleague's email address.
 pub fn list_members(
@@ -495,28 +427,6 @@ pub fn create_invite(
         ],
     )?;
     Ok(invite)
-}
-
-pub fn list_invites(conn: &Connection, organization_id: &str) -> Result<Vec<InviteSummary>> {
-    let mut statement = conn.prepare(
-        "SELECT id, role, created_at, expires_at, redeemed_at, redeemed_by_user_id
-         FROM organization_invites
-         WHERE organization_id = ?1
-         ORDER BY created_at DESC",
-    )?;
-    let mut rows = statement.query(params![organization_id])?;
-    let mut invites = Vec::new();
-    while let Some(row) = rows.next()? {
-        invites.push(InviteSummary {
-            id: row.get(0)?,
-            role: row.get(1)?,
-            created_at: row.get(2)?,
-            expires_at: row.get(3)?,
-            redeemed_at: row.get(4)?,
-            redeemed_by_user_id: row.get(5)?,
-        });
-    }
-    Ok(invites)
 }
 
 /// Redeems an invitation for the signed-in account. An invitation is single-use,

@@ -795,30 +795,6 @@ pub fn export(document: &ReportDocument, format: ExportFormat, path: &Path) -> R
     Ok(())
 }
 
-pub fn default_filename(document: &ReportDocument, format: ExportFormat) -> String {
-    let slug = document
-        .template
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-    let extension = match format {
-        ExportFormat::Csv => "csv",
-        ExportFormat::Pdf => "pdf",
-    };
-    format!(
-        "civicflow-{}-{}.{}",
-        slug.trim_matches('-'),
-        &document.period[..10.min(document.period.len())],
-        extension
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

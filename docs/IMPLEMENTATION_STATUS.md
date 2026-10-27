@@ -10,7 +10,7 @@ event before returning a fresh snapshot.
 
 - Tauri 2 desktop shell, React 19 + TypeScript + Vite, Rust core crate, SQLite through
   `rusqlite`.
-- Embedded migrations at schema version 8, deterministic seed, foreign keys, integrity
+- Embedded migrations at schema version 11, deterministic seed, foreign keys, integrity
   checks, and reset-to-seed.
 - Structured IPC errors with `code`, `message`, `field`, and optional `action`.
 - One `WorkspaceRepository` boundary with a desktop implementation and a browser fallback

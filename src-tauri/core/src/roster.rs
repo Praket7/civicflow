@@ -22,11 +22,66 @@ fn parse_datetime(raw: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(raw).ok()
 }
 
-fn load_open_slots(
+/// One role on one shift, with how many of its seats are still open. Recovery
+/// needs the role itself — the seat a move would vacate — while AutoRoster only
+/// ever wants the open seats, so both read this one query.
+pub(crate) struct RoleRow {
+    pub slot: Slot,
+    pub open: i64,
+}
+
+/// One registration in force, with the coordinator's lock on it.
+#[derive(Debug, Clone)]
+pub(crate) struct Assignment {
+    pub shift_id: String,
+    pub volunteer_id: String,
+    pub role: String,
+    pub locked: bool,
+}
+
+/// Volunteers who took themselves out of these shifts. Recovery does not offer a
+/// seat back to somebody who has just canceled or not turned up: they are not
+/// available, and re-adding them would only produce another gap.
+pub(crate) fn declined_on(conn: &Connection, shift_ids: &[String]) -> Result<HashSet<String>> {
+    let mut statement = conn.prepare(
+        "SELECT DISTINCT volunteer_id, shift_id FROM registrations
+         WHERE status IN ('canceled', 'no_show')",
+    )?;
+    let mut rows = statement.query([])?;
+    let mut declined = HashSet::new();
+    while let Some(row) = rows.next()? {
+        let shift_id: String = row.get(1)?;
+        if shift_ids.contains(&shift_id) {
+            declined.insert(row.get::<_, String>(0)?);
+        }
+    }
+    Ok(declined)
+}
+
+pub(crate) fn current_assignments(conn: &Connection) -> Result<Vec<Assignment>> {
+    let mut statement = conn.prepare(
+        "SELECT shift_id, volunteer_id, role, locked FROM registrations
+         WHERE status = 'registered'
+         ORDER BY shift_id, volunteer_id",
+    )?;
+    let mut rows = statement.query([])?;
+    let mut assignments = Vec::new();
+    while let Some(row) = rows.next()? {
+        assignments.push(Assignment {
+            shift_id: row.get(0)?,
+            volunteer_id: row.get(1)?,
+            role: row.get(2)?,
+            locked: row.get::<_, i64>(3)? == 1,
+        });
+    }
+    Ok(assignments)
+}
+
+pub(crate) fn load_role_rows(
     conn: &Connection,
     shift_ids: &[String],
     now: DateTime<FixedOffset>,
-) -> Result<Vec<Slot>> {
+) -> Result<Vec<RoleRow>> {
     let mut statement = conn.prepare(
         "SELECT s.id, s.opportunity_id, o.title, o.cause, s.starts_at, s.ends_at,
                 sr.name, sr.required, sr.filled,
@@ -41,7 +96,7 @@ fn load_open_slots(
          ORDER BY s.starts_at, s.id, sr.rowid",
     )?;
     let mut rows = statement.query([])?;
-    let mut slots = Vec::new();
+    let mut roles = Vec::new();
     while let Some(row) = rows.next()? {
         let shift_id: String = row.get(0)?;
         if !shift_ids.is_empty() && !shift_ids.contains(&shift_id) {
@@ -63,11 +118,11 @@ fn load_open_slots(
         let filled: i64 = row.get(8)?;
         let open = (required - filled).max(0);
         let role: String = row.get(6)?;
-        for index in 1..=open {
-            let skill: Option<String> = row.get(9)?;
-            let credential: Option<String> = row.get(10)?;
-            slots.push(Slot {
-                id: format!("{}-{}-{}", shift_id, role, index),
+        let skill: Option<String> = row.get(9)?;
+        let credential: Option<String> = row.get(10)?;
+        roles.push(RoleRow {
+            slot: Slot {
+                id: format!("{}-{}", shift_id, role),
                 shift_id: shift_id.clone(),
                 opportunity_id: row.get(1)?,
                 shift_title: row.get(2)?,
@@ -80,13 +135,46 @@ fn load_open_slots(
                 required_skill: skill,
                 required_credential: credential,
                 minimum_age: row.get(11)?,
+            },
+            open,
+        });
+    }
+    Ok(roles)
+}
+
+/// The open required seats, one entry per seat rather than per role.
+pub(crate) fn load_open_slots(
+    conn: &Connection,
+    shift_ids: &[String],
+    now: DateTime<FixedOffset>,
+) -> Result<Vec<Slot>> {
+    let mut slots = Vec::new();
+    for row in load_role_rows(conn, shift_ids, now)? {
+        for index in 1..=row.open {
+            slots.push(Slot {
+                id: format!("{}-{}", row.slot.id, index),
+                ..row.slot.clone()
             });
         }
     }
     Ok(slots)
 }
 
-fn load_candidates(
+/// The seat one role holds, whether or not it is filled. A recovery move needs
+/// the seat it vacates, which is by definition not open.
+pub(crate) fn find_role_slot(
+    conn: &Connection,
+    shift_id: &str,
+    role: &str,
+    now: DateTime<FixedOffset>,
+) -> Result<Option<Slot>> {
+    Ok(load_role_rows(conn, &[shift_id.to_string()], now)?
+        .into_iter()
+        .find(|row| row.slot.role == role)
+        .map(|row| row.slot))
+}
+
+pub(crate) fn load_candidates(
     conn: &Connection,
     now: DateTime<FixedOffset>,
     options: &RosterOptions,
@@ -143,6 +231,7 @@ fn load_candidates(
     let mut assigned_blocks: HashMap<String, Vec<TimeBlock>> = HashMap::new();
     let mut assigned_shifts: HashMap<String, HashSet<String>> = HashMap::new();
     let mut weekly_load: HashMap<String, i64> = HashMap::new();
+    let mut weekly_minutes: HashMap<String, i64> = HashMap::new();
     {
         let mut statement = conn.prepare(
             "SELECT r.volunteer_id, r.shift_id, s.starts_at, s.ends_at
@@ -172,7 +261,9 @@ fn load_candidates(
                     ends_at: ends,
                 });
             if starts >= now && starts <= now + chrono::Duration::days(7) {
-                *weekly_load.entry(volunteer).or_insert(0) += 1;
+                *weekly_load.entry(volunteer.clone()).or_insert(0) += 1;
+                *weekly_minutes.entry(volunteer).or_insert(0) +=
+                    (ends - starts).num_minutes().max(0);
             }
         }
     }
@@ -236,6 +327,7 @@ fn load_candidates(
             assigned_shift_ids: assigned_shifts.remove(&id).unwrap_or_default(),
             waitlisted_shift_ids: waitlist,
             weekly_load: weekly_load.remove(&id).unwrap_or(0),
+            weekly_minutes: weekly_minutes.remove(&id).unwrap_or(0),
             id,
         });
     }
@@ -321,6 +413,28 @@ pub fn apply_roster_plan(
     let mut names = HashMap::new();
     for assignment in assignments {
         validate_registration(conn, shift_id, &assignment.candidate_id, &assignment.role)?;
+        // A lock is a coordinator's decision, so a plan may not quietly move the
+        // seat it protects. Filling an open seat is still allowed.
+        let locked: Option<String> = conn
+            .query_row(
+                "SELECT role FROM registrations
+                 WHERE shift_id = ?1 AND volunteer_id = ?2 AND locked = 1",
+                params![shift_id, assignment.candidate_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(role) = locked {
+            if role != assignment.role {
+                return Err(CoreError::rule(
+                    "ASSIGNMENT_LOCKED",
+                    format!(
+                        "That volunteer's seat is locked as {role}. Unlock it before replanning."
+                    ),
+                    Some("role".into()),
+                    Some("REPLAN".into()),
+                ));
+            }
+        }
         let name: String = conn.query_row(
             "SELECT name FROM volunteers WHERE id = ?1",
             params![assignment.candidate_id],
@@ -374,7 +488,8 @@ pub fn apply_roster_plan(
 }
 
 /// Plans the requested shifts (or every future scheduled shift when the list is
-/// empty) against the active volunteer pool.
+/// empty) against the active volunteer pool, following the organization's
+/// current matching policy.
 pub fn plan_roster(
     conn: &Connection,
     shift_ids: &[String],
@@ -386,7 +501,45 @@ pub fn plan_roster(
         ));
     }
     let now = demo_now(conn)?;
+    let policy = policy_for_workspace(conn)?;
     let slots = load_open_slots(conn, shift_ids, now)?;
     let candidates = load_candidates(conn, now, options)?;
-    Ok(plan(&candidates, &slots, options))
+    Ok(plan(&candidates, &slots, &policy, options))
+}
+
+/// The organization this workspace belongs to. One organization lives in a
+/// database, so the oldest row is the workspace itself.
+pub fn workspace_organization_id(conn: &Connection) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM organizations ORDER BY created_at LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+/// The policy of the organization this workspace belongs to. A workspace that
+/// has never been configured follows the shipped defaults.
+pub fn policy_for_workspace(conn: &Connection) -> Result<crate::policy::RosterPolicy> {
+    match workspace_organization_id(conn)? {
+        Some(id) => crate::policy::current_policy(conn, &id),
+        None => Ok(crate::policy::RosterPolicy::default()),
+    }
+}
+
+/// The full answer to "why this person?" or "why not that one?" for one
+/// candidate and one open seat.
+pub fn explain_candidate(
+    conn: &Connection,
+    shift_ids: &[String],
+    options: &RosterOptions,
+    candidate_id: &str,
+    slot_id: &str,
+) -> Result<crate::explain::CandidateAnswer> {
+    let now = demo_now(conn)?;
+    let policy = policy_for_workspace(conn)?;
+    let slots = load_open_slots(conn, shift_ids, now)?;
+    let candidates = load_candidates(conn, now, options)?;
+    crate::explain::explain_candidate(&candidates, &slots, &policy, options, candidate_id, slot_id)
 }

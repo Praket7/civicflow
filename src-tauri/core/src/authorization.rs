@@ -7,7 +7,6 @@
 
 use rusqlite::Connection;
 
-use crate::auth::{require_user, Account};
 use crate::error::{CoreError, Result};
 use crate::organizations::{self, Membership};
 
@@ -54,26 +53,4 @@ pub fn require_coordinator(
         ));
     }
     Ok(membership)
-}
-
-/// Resolves the session token and the organization in one step. Commands that
-/// act on an organization take this pair rather than a token alone.
-pub fn require_member_session(
-    conn: &Connection,
-    token: &str,
-    organization_id: &str,
-) -> Result<(Account, Membership)> {
-    let account = require_user(conn, token)?;
-    let membership = require_membership(conn, organization_id, &account.id)?;
-    Ok((account, membership))
-}
-
-pub fn require_coordinator_session(
-    conn: &Connection,
-    token: &str,
-    organization_id: &str,
-) -> Result<(Account, Membership)> {
-    let account = require_user(conn, token)?;
-    let membership = require_coordinator(conn, organization_id, &account.id)?;
-    Ok((account, membership))
 }

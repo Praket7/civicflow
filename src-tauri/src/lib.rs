@@ -3,12 +3,21 @@ use std::sync::Mutex;
 
 use civicflow_core::auth::{Account, AuthSession};
 use civicflow_core::error::{AppError, CoreError};
+use civicflow_core::explain::CandidateAnswer;
+use civicflow_core::imports::{self, ImportPreview, ImportSummary};
 use civicflow_core::matching::{RosterOptions, RosterPlan};
 use civicflow_core::models::{
     AvailabilitySlot, BackupRestoreResult, BackupSnapshot, CheckinCode, CreateOpportunityResult,
     MissionControlSummary, NewOpportunityInput, NotificationItem, SettingsPatch, WorkspaceHealth,
     WorkspaceSnapshot,
 };
+use civicflow_core::insights::{
+    self, CredentialReadiness, EngagementMetrics, RetentionSignal, VolunteerInsight,
+};
+use civicflow_core::notifications::{self, NotificationRule, RulePatch};
+use civicflow_core::policy::{self, PriorityLevel, RosterPolicy};
+use civicflow_core::recovery::{self, DisruptionReport, RecoveryChangeRequest, RecoveryPlan};
+use civicflow_core::recurrence::{self, RecurrenceRule, SeriesResult, ShiftSeriesRecord};
 use civicflow_core::reports::{self, ExportFormat, ReportDocument, ReportRequest};
 use civicflow_core::Database;
 use civicflow_core::{auth, backups, roster, services, workflows};
@@ -300,6 +309,81 @@ fn auto_roster(
     roster::plan_roster(database.connection(), &shift_ids, &options).map_err(AppError::from)
 }
 
+/// The matching policy in force, plus the named priorities a coordinator may
+/// choose from, so the screen never invents a numeric weight of its own.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RosterPolicyView {
+    policy: RosterPolicy,
+    levels: Vec<PriorityLevel>,
+    organization_id: String,
+}
+
+/// The organization this workspace's data belongs to. Commands that act on an
+/// organization ask for it by id rather than assuming the first row.
+fn workspace_organization(database: &Database) -> Result<String, AppError> {
+    roster::workspace_organization_id(database.connection())
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::from(CoreError::NotFound("the workspace organization".into())))
+}
+
+fn policy_view(database: &Database) -> Result<RosterPolicyView, AppError> {
+    let policy = roster::policy_for_workspace(database.connection()).map_err(AppError::from)?;
+    let organization_id = workspace_organization(database)?;
+    Ok(RosterPolicyView {
+        policy,
+        levels: policy::priority_levels(),
+        organization_id,
+    })
+}
+
+#[tauri::command]
+fn get_roster_policy(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<RosterPolicyView, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    policy_view(&database)
+}
+
+#[tauri::command]
+fn update_roster_policy(
+    state: State<'_, AppState>,
+    token: String,
+    policy: RosterPolicy,
+) -> Result<RosterPolicyView, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    let organization_id = roster::workspace_organization_id(database.connection())
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::from(CoreError::NotFound("the workspace organization".into())))?;
+    policy::save_policy(database.connection(), &account, &organization_id, &policy)
+        .map_err(AppError::from)?;
+    policy_view(&database)
+}
+
+#[tauri::command]
+fn explain_roster_choice(
+    state: State<'_, AppState>,
+    token: String,
+    shift_ids: Vec<String>,
+    options: RosterOptions,
+    candidate_id: String,
+    slot_id: String,
+) -> Result<CandidateAnswer, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    roster::explain_candidate(
+        database.connection(),
+        &shift_ids,
+        &options,
+        &candidate_id,
+        &slot_id,
+    )
+    .map_err(AppError::from)
+}
+
 #[tauri::command]
 fn apply_roster_plan(
     state: State<'_, AppState>,
@@ -312,6 +396,209 @@ fn apply_roster_plan(
     roster::apply_roster_plan(database.connection(), &shift_id, &assignments)
         .map_err(AppError::from)?;
     snapshot_for(&database, &account)
+}
+
+#[tauri::command]
+fn detect_disruptions(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<DisruptionReport, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    recovery::detect(database.connection()).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn plan_recovery(
+    state: State<'_, AppState>,
+    token: String,
+    shift_ids: Vec<String>,
+    options: RosterOptions,
+) -> Result<RecoveryPlan, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    recovery::plan(database.connection(), &shift_ids, &options).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn apply_recovery(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: String,
+    changes: Vec<RecoveryChangeRequest>,
+) -> Result<WorkspaceSnapshot, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    recovery::apply(database.connection(), &account, &shift_id, &changes).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn set_assignment_lock(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: String,
+    volunteer_id: String,
+    locked: bool,
+) -> Result<WorkspaceSnapshot, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    recovery::set_lock(database.connection(), &account, &shift_id, &volunteer_id, locked)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn create_shift_series(
+    state: State<'_, AppState>,
+    token: String,
+    opportunity_id: String,
+    rule: RecurrenceRule,
+    roles: Vec<recurrence::SeriesRole>,
+) -> Result<SeriesResult, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    recurrence::create_series(database.connection(), &account, &opportunity_id, &rule, &roles)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn list_shift_series(
+    state: State<'_, AppState>,
+    token: String,
+    opportunity_id: Option<String>,
+) -> Result<Vec<ShiftSeriesRecord>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    recurrence::list_series(database.connection(), opportunity_id.as_deref()).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn generate_series_instances(
+    state: State<'_, AppState>,
+    token: String,
+    series_id: String,
+) -> Result<SeriesResult, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    recurrence::generate_instances(database.connection(), &account, &series_id).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn retime_shift_series(
+    state: State<'_, AppState>,
+    token: String,
+    series_id: String,
+    starts_local_time: String,
+    duration_minutes: i64,
+    scope: String,
+) -> Result<WorkspaceSnapshot, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    recurrence::retime(
+        database.connection(),
+        &account,
+        &series_id,
+        &starts_local_time,
+        duration_minutes,
+        &scope,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn delete_shift_series(
+    state: State<'_, AppState>,
+    token: String,
+    series_id: String,
+) -> Result<WorkspaceSnapshot, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    recurrence::delete_series(database.connection(), &account, &series_id).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn recommend_replacement(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: String,
+    role: String,
+) -> Result<civicflow_core::waitlist::ReplacementRecommendation, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    civicflow_core::waitlist::rank(database.connection(), &shift_id, &role).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn list_notification_rules(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<NotificationRule>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    notifications::list_rules(database.connection()).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn update_notification_rule(
+    state: State<'_, AppState>,
+    token: String,
+    rule_id: String,
+    patch: RulePatch,
+) -> Result<Vec<NotificationRule>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    notifications::update_rule(database.connection(), &account, &rule_id, &patch)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn queue_due_reminders(state: State<'_, AppState>, token: String) -> Result<usize, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    let run = notifications::generate_due(database.connection(), Some(&account))
+        .map_err(AppError::from)?;
+    Ok(run.created.len())
+}
+
+#[tauri::command]
+fn retention_signals(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<RetentionSignal>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    insights::retention_signals(database.connection()).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn volunteer_insight(
+    state: State<'_, AppState>,
+    token: String,
+    volunteer_id: String,
+) -> Result<VolunteerInsight, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_account(&database, &token)?;
+    require_self_or_coordinator(&account, &volunteer_id)?;
+    insights::volunteer_insight(database.connection(), &volunteer_id).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn engagement_metrics(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<EngagementMetrics, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    insights::engagement_metrics(database.connection()).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn credential_readiness(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<CredentialReadiness, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    insights::credential_readiness(database.connection()).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -655,6 +942,71 @@ fn export_report(
 }
 
 #[tauri::command]
+fn preview_volunteer_import(
+    state: State<'_, AppState>,
+    token: String,
+    text: String,
+) -> Result<ImportPreview, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    let organization_id = workspace_organization(&database)?;
+    imports::preview(database.connection(), &organization_id, &text).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn apply_volunteer_import(
+    state: State<'_, AppState>,
+    token: String,
+    text: String,
+) -> Result<ImportSummary, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    let organization_id = workspace_organization(&database)?;
+    imports::apply(database.connection(), &account, &organization_id, &text).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn export_volunteer_roster(
+    state: State<'_, AppState>,
+    token: String,
+    path: String,
+) -> Result<ExportReceipt, AppError> {
+    let target = PathBuf::from(&path);
+    if target.file_name().is_none() || !target.is_absolute() {
+        return Err(AppError::from(CoreError::Validation(
+            "Choose a file name and folder for the roster export.".into(),
+        )));
+    }
+    if target.extension().and_then(|value| value.to_str()) != Some("csv") {
+        return Err(AppError::from(CoreError::Validation(
+            "The roster exports as a .csv file.".into(),
+        )));
+    }
+    if let Some(parent) = target.parent() {
+        if !parent.is_dir() {
+            return Err(AppError::from(CoreError::Validation(
+                "That folder no longer exists.".into(),
+            )));
+        }
+    }
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    let organization_id = workspace_organization(&database)?;
+    let document =
+        imports::export_roster(database.connection(), &organization_id).map_err(AppError::from)?;
+    std::fs::write(&target, document).map_err(|error| AppError::from(CoreError::from(error)))?;
+    let bytes = std::fs::metadata(&target)
+        .map(|metadata| metadata.len() as usize)
+        .unwrap_or(0);
+    Ok(ExportReceipt {
+        path,
+        bytes,
+        format: "csv".into(),
+        title: "Volunteer roster".into(),
+    })
+}
+
+#[tauri::command]
 fn list_backups(
     state: State<'_, AppState>,
     token: String,
@@ -746,6 +1098,26 @@ pub fn run() {
             get_workspace_snapshot,
             auto_roster,
             apply_roster_plan,
+            get_roster_policy,
+            update_roster_policy,
+            explain_roster_choice,
+            detect_disruptions,
+            plan_recovery,
+            apply_recovery,
+            set_assignment_lock,
+            create_shift_series,
+            list_shift_series,
+            generate_series_instances,
+            retime_shift_series,
+            delete_shift_series,
+            recommend_replacement,
+            list_notification_rules,
+            update_notification_rule,
+            queue_due_reminders,
+            retention_signals,
+            volunteer_insight,
+            engagement_metrics,
+            credential_readiness,
             save_report_view,
             set_saved_opportunity,
             set_application_stage,
@@ -764,6 +1136,9 @@ pub fn run() {
             reset_demo,
             generate_report,
             export_report,
+            preview_volunteer_import,
+            apply_volunteer_import,
+            export_volunteer_roster,
             list_backups,
             create_backup,
             restore_backup

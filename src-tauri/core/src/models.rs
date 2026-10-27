@@ -609,6 +609,25 @@ pub struct CreateOpportunityResult {
     pub snapshot: WorkspaceSnapshot,
 }
 
+/// One roster record as the database holds it. The bundled seed authors its own
+/// display fields, so this carries what SQLite owns: identity, contact, status,
+/// and the lists the matching engine reads. A screen turns it into the shape it
+/// renders, and a coordinator sees the whole roster while a volunteer sees only
+/// their own row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterVolunteer {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+    pub phone: String,
+    pub status: String,
+    pub joined_at: String,
+    pub skills: Vec<String>,
+    pub availability: Vec<String>,
+    pub causes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSnapshot {
@@ -628,6 +647,7 @@ pub struct WorkspaceSnapshot {
     pub saved_views: Vec<SavedView>,
     pub retention: Vec<RetentionCohort>,
     pub checkin_code: Option<CheckinCode>,
+    pub roster: Vec<RosterVolunteer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

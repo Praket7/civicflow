@@ -45,7 +45,7 @@ fn required_setting(conn: &Connection, key: &str) -> Result<String> {
     setting(conn, key)?.ok_or_else(|| CoreError::Validation(format!("Missing setting: {key}")))
 }
 
-fn demo_now(conn: &Connection) -> Result<String> {
+pub(crate) fn demo_now(conn: &Connection) -> Result<String> {
     required_setting(conn, "demo_now")
 }
 
@@ -65,14 +65,42 @@ pub(crate) fn append_audit(
     summary: String,
     detail: Option<String>,
 ) -> Result<()> {
+    let actor = coordinator_name(conn)?;
+    append_actor_audit(
+        conn,
+        "coordinator",
+        &actor,
+        action,
+        entity_type,
+        entity_id,
+        summary,
+        detail,
+    )
+}
+
+/// Records the account that performed the action. Used where the actor is the
+/// signed-in session rather than the workspace's configured coordinator, so the
+/// trail names the person who actually made the change.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn append_actor_audit(
+    conn: &Connection,
+    actor_type: &str,
+    actor_id: &str,
+    action: &str,
+    entity_type: &str,
+    entity_id: &str,
+    summary: String,
+    detail: Option<String>,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO audit_events
          (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary, detail)
-         VALUES (?1, ?2, 'coordinator', ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             uuid::Uuid::new_v4().to_string(),
             demo_now(conn)?,
-            coordinator_name(conn)?,
+            actor_type,
+            actor_id,
             action,
             entity_type,
             entity_id,
@@ -604,7 +632,65 @@ pub fn snapshot(conn: &Connection) -> Result<WorkspaceSnapshot> {
         saved_views: load_saved_views(conn)?,
         retention: load_retention(conn)?,
         checkin_code: None,
+        roster: load_roster(conn)?,
     })
+}
+
+/// The roster as the database holds it, in the display order a coordinator
+/// reads it. Skills come from `volunteer_skills`; availability prefers the
+/// `availability_rules` rows and falls back to the stored JSON, which is the
+/// same order the matching engine reads them in.
+fn load_roster(conn: &Connection) -> Result<Vec<crate::models::RosterVolunteer>> {
+    let mut skills: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut skill_statement = conn.prepare(
+        "SELECT volunteer_id, skill FROM volunteer_skills ORDER BY skill COLLATE NOCASE",
+    )?;
+    let mut skill_rows = skill_statement.query([])?;
+    while let Some(row) = skill_rows.next()? {
+        skills.entry(row.get(0)?).or_default().push(row.get(1)?);
+    }
+
+    let mut windows: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut window_statement = conn.prepare(
+        "SELECT volunteer_id, day, period FROM availability_rules
+         ORDER BY day, period",
+    )?;
+    let mut window_rows = window_statement.query([])?;
+    while let Some(row) = window_rows.next()? {
+        let day: String = row.get(1)?;
+        let period: String = row.get(2)?;
+        windows
+            .entry(row.get(0)?)
+            .or_default()
+            .push(format!("{day}:{period}"));
+    }
+
+    let mut statement = conn.prepare(
+        "SELECT id, name, email, phone, status, joined_at, causes_json, availability_json
+         FROM volunteers ORDER BY name COLLATE NOCASE",
+    )?;
+    let mut rows = statement.query([])?;
+    let mut roster = Vec::new();
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        let causes: Vec<String> = serde_json::from_str(&row.get::<_, String>(6)?)?;
+        let availability = match windows.remove(&id) {
+            Some(found) if !found.is_empty() => found,
+            _ => serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
+        };
+        roster.push(crate::models::RosterVolunteer {
+            skills: skills.remove(&id).unwrap_or_default(),
+            id,
+            name: row.get(1)?,
+            email: row.get(2)?,
+            phone: row.get(3)?,
+            status: row.get(4)?,
+            joined_at: row.get(5)?,
+            availability,
+            causes,
+        });
+    }
+    Ok(roster)
 }
 
 /// The snapshot a signed-in volunteer is allowed to read. Coordinator-only
@@ -648,6 +734,9 @@ pub fn snapshot_for(conn: &Connection, volunteer_id: Option<&str>) -> Result<Wor
     snapshot.impact_metrics.clear();
     snapshot.saved_views.clear();
     snapshot.retention.clear();
+    // The roster is a coordinator read model. A volunteer keeps only their own
+    // record, so the list cannot be read as a directory of the membership.
+    snapshot.roster.retain(|person| person.id == volunteer_id);
     Ok(snapshot)
 }
 
@@ -2343,17 +2432,46 @@ pub fn cancel_registration(
             promoted = true;
         }
     }
+    // The line's reasoning belongs with the decision: a promoted volunteer is
+    // the first person who could take the seat, and the people passed over keep
+    // the reason they were passed over.
+    let recommendation = crate::waitlist::rank(conn, shift_id, &role).ok();
+    let passed_over = recommendation
+        .as_ref()
+        .map(|answer| answer.ranked.iter().filter(|row| !row.eligible).count())
+        .unwrap_or(0);
+    if passed_over > 0 {
+        if let Some(answer) = recommendation.as_ref() {
+            append_audit(
+                conn,
+                "waitlist.skip",
+                "shift",
+                shift_id,
+                format!("{passed_over} waiting volunteer(s) could not take {role}"),
+                Some(answer.summary.clone()),
+            )?;
+        }
+    }
     if !promoted {
         let open = shift.capacity - (shift.confirmed - 1);
-        append_notification(
-            conn,
-            "COVERAGE_REQUEST",
-            "Coverage needed",
-            &format!(
+        let body = match recommendation.as_ref() {
+            Some(answer) => format!(
+                "{} now has {} open seat(s) after a cancellation. {}",
+                shift.title,
+                open.max(0),
+                answer.summary
+            ),
+            None => format!(
                 "{} now has {} open seat(s) after a cancellation.",
                 shift.title,
                 open.max(0)
             ),
+        };
+        append_notification(
+            conn,
+            "COVERAGE_REQUEST",
+            "Coverage needed",
+            &body,
             "high",
             "/coordinator/coverage",
             NotificationTarget {

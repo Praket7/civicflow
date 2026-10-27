@@ -604,7 +604,7 @@ pub fn reset_password(
     Ok(())
 }
 
-fn normalize_email(email: &str) -> Result<String> {
+pub(crate) fn normalize_email(email: &str) -> Result<String> {
     let clean = email.trim().to_lowercase();
     let mut parts = clean.split('@');
     let local = parts.next().unwrap_or_default();
@@ -627,7 +627,7 @@ fn normalize_email(email: &str) -> Result<String> {
     Ok(clean)
 }
 
-fn normalize_name(name: &str) -> Result<String> {
+pub(crate) fn normalize_name(name: &str) -> Result<String> {
     let clean = name.split_whitespace().collect::<Vec<_>>().join(" ");
     if clean.chars().count() < 2 {
         return Err(CoreError::rule(

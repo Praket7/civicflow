@@ -25,7 +25,14 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, Timelike};
 use serde::{Deserialize, Serialize};
 
+use crate::policy::RosterPolicy;
+
 pub const MAX_SCORE: i32 = 100;
+
+/// Availability is a gate rather than a preference: every eligible candidate is
+/// available, so the points are constant and only the policy weights separate
+/// candidates. The default weights plus this constant reach `MAX_SCORE`.
+pub const AVAILABILITY_POINTS: i32 = 25;
 
 /// A mandatory slot is worth more than any difference in match quality, so the
 /// planner fills required roles before optional ones when candidates are scarce.
@@ -108,6 +115,71 @@ pub struct Candidate {
     pub assigned_shift_ids: HashSet<String>,
     pub waitlisted_shift_ids: HashSet<String>,
     pub weekly_load: i64,
+    /// Minutes already committed inside the next seven days, so a policy can cap
+    /// time rather than only shifts.
+    pub weekly_minutes: i64,
+}
+
+/// One hard requirement, evaluated and explained. A coordinator asking "why not
+/// this volunteer?" gets the failed check rather than a single sentence.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstraintCheck {
+    pub name: String,
+    pub passed: bool,
+    pub detail: String,
+}
+
+/// One soft component of a match score.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreComponent {
+    pub label: String,
+    pub awarded: i32,
+    pub maximum: i32,
+}
+
+/// Why one candidate does or does not fit one slot, in full.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchExplanation {
+    pub candidate_id: String,
+    pub candidate_name: String,
+    pub candidate_initials: String,
+    pub slot_id: String,
+    pub shift_id: String,
+    pub role: String,
+    pub eligible: bool,
+    pub checks: Vec<ConstraintCheck>,
+    pub components: Vec<ScoreComponent>,
+    pub total_score: Option<i32>,
+    pub selected: bool,
+    pub selection_reason: String,
+}
+
+/// The outcome of the hard gates for one candidate and slot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Evaluation {
+    pub eligible: bool,
+    pub checks: Vec<ConstraintCheck>,
+}
+
+impl Evaluation {
+    /// The first failed requirement, which is the sentence to show a person.
+    pub fn rejection(&self) -> Option<String> {
+        self.checks
+            .iter()
+            .find(|check| !check.passed)
+            .map(|check| format!("{}: {}", check.name, check.detail))
+    }
+}
+
+/// What this run has already given a candidate inside the next seven days, on
+/// top of the load the database already knows about.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RunLoad {
+    pub shifts: i64,
+    pub minutes: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -155,6 +227,8 @@ pub struct PlannedAssignment {
     pub reasons: Vec<String>,
     pub promote_waitlist: bool,
     pub eligible_roles: Vec<String>,
+    /// The full record of why this person was chosen for this seat.
+    pub explanation: MatchExplanation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -176,6 +250,8 @@ pub struct RosterPlan {
     pub slots_considered: usize,
     pub candidates_considered: usize,
     pub deterministic_seed: u64,
+    /// Which version of the organization's policy produced this plan.
+    pub policy_version: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -349,97 +425,497 @@ fn credential_state(candidate: &Candidate, credential: &str, on: NaiveDate) -> C
     }
 }
 
-fn is_eligible(candidate: &Candidate, slot: &Slot, options: &RosterOptions) -> Result<(), String> {
-    if candidate.assigned_shift_ids.contains(&slot.shift_id) {
-        return Err("Already assigned to this shift".into());
+fn check(name: &str, passed: bool, detail: String) -> ConstraintCheck {
+    ConstraintCheck {
+        name: name.to_string(),
+        passed,
+        detail,
     }
-    if options.block_conflicts
-        && candidate
-            .assigned_blocks
-            .iter()
-            .any(|block| overlaps(block.starts_at, block.ends_at, slot.starts_at, slot.ends_at))
-    {
-        return Err("Already assigned to a shift at that time".into());
-    }
-    if options.cap_weekly && candidate.weekly_load >= 2 {
-        return Err("Weekly assignment cap reached".into());
-    }
-    if candidate.availability.is_empty() {
-        return Err("No availability on record".into());
-    }
-    let availability_key = format!("{}:{}", slot.day_key, period_for(slot.starts_at));
-    if !candidate.availability.contains(&availability_key) {
-        return Err("Not available for this day and time".into());
-    }
-    if let Some(required) = &slot.required_skill {
-        if !has_skill(candidate, required) {
-            return Err(format!("Missing required skill: {required}"));
-        }
-    }
-    if let Some(required) = &slot.required_credential {
-        match credential_state(candidate, required, slot.starts_at.date_naive()) {
-            CredentialState::Current => {}
-            CredentialState::Expired => return Err(format!("Expired credential: {required}")),
-            CredentialState::Missing => {
-                return Err(format!("Missing required credential: {required}"))
-            }
-        }
-    }
-    if let Some(minimum_age) = slot.minimum_age {
-        match candidate.birthdate {
-            Some(birthdate) if age_on(birthdate, slot.starts_at.date_naive()) >= minimum_age => {}
-            Some(_) => return Err(format!("Must be at least {minimum_age} on the shift date")),
-            // A role with a minimum age cannot be filled by a volunteer whose age
-            // is unknown, so a missing birthdate fails closed.
-            None => {
-                return Err(format!(
-                    "Age not verified for a role for ages {minimum_age}+"
-                ))
-            }
-        }
-    }
-    Ok(())
 }
 
-fn score_candidate(candidate: &Candidate, slot: &Slot, options: &RosterOptions) -> ScoreBreakdown {
+fn minutes_between(starts_at: DateTime<FixedOffset>, ends_at: DateTime<FixedOffset>) -> i64 {
+    (ends_at - starts_at).num_minutes().max(0)
+}
+
+fn block_label(block: &TimeBlock) -> String {
+    format!(
+        "{} to {}",
+        block.starts_at.format("%a %-I:%M %p"),
+        block.ends_at.format("%-I:%M %p")
+    )
+}
+
+/// The hard gates for one candidate and slot, each one reported whether it
+/// passed or not. `committed` is every block the candidate already holds from
+/// the database plus anything this run has given them, so the same function
+/// answers for the first pass and for the second.
+fn evaluate(
+    candidate: &Candidate,
+    slot: &Slot,
+    committed: &[TimeBlock],
+    load: RunLoad,
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+) -> Evaluation {
+    let mut checks = Vec::new();
+
+    let same_shift = candidate.assigned_shift_ids.contains(&slot.shift_id);
+    checks.push(check(
+        "Already on this shift",
+        !same_shift,
+        if same_shift {
+            "This volunteer is already registered for the shift".into()
+        } else {
+            "Not registered yet".into()
+        },
+    ));
+
+    if options.block_conflicts {
+        let conflicting = committed
+            .iter()
+            .find(|block| overlaps(block.starts_at, block.ends_at, slot.starts_at, slot.ends_at));
+        checks.push(check(
+            "No overlapping shift",
+            conflicting.is_none(),
+            match conflicting {
+                Some(block) => format!("Already booked {}", block_label(block)),
+                None => "No shift overlaps this time".into(),
+            },
+        ));
+
+        let narrow_gap = committed.iter().find(|block| {
+            !overlaps(block.starts_at, block.ends_at, slot.starts_at, slot.ends_at)
+                && gap_minutes(block, slot) < policy.minimum_gap_minutes
+        });
+
+        checks.push(check(
+            "Rest between shifts",
+            narrow_gap.is_none(),
+            match narrow_gap {
+                Some(block) => format!(
+                    "Only {} minutes after {}",
+                    gap_minutes(block, slot),
+                    block_label(block)
+                ),
+                None if policy.minimum_gap_minutes > 0 => {
+                    format!(
+                        "At least {} minutes either side",
+                        policy.minimum_gap_minutes
+                    )
+                }
+                None => "No minimum gap set".into(),
+            },
+        ));
+    }
+
+    // The workload limits belong to the policy, not to the conflict toggle: an
+    // organization that turns off conflict blocking still means its caps.
+    if policy.max_shifts_per_day.is_some() || policy.max_minutes_per_day.is_some() {
+        let same_day = committed
+            .iter()
+            .filter(|block| block.starts_at.date_naive() == slot.starts_at.date_naive())
+            .count() as i64;
+        let day_limit = policy.max_shifts_per_day();
+        checks.push(check(
+            "Daily shift limit",
+            same_day < day_limit,
+            format!(
+                "{} of {} that day",
+                same_day + 1,
+                if day_limit == crate::policy::NO_LIMIT {
+                    "unlimited".to_string()
+                } else {
+                    day_limit.to_string()
+                }
+            ),
+        ));
+
+        let day_minutes: i64 = committed
+            .iter()
+            .filter(|block| block.starts_at.date_naive() == slot.starts_at.date_naive())
+            .map(|block| minutes_between(block.starts_at, block.ends_at))
+            .sum();
+        let minute_limit = policy.max_minutes_per_day();
+        checks.push(check(
+            "Daily minute limit",
+            day_minutes + minutes_between(slot.starts_at, slot.ends_at) <= minute_limit,
+            format!(
+                "{} of {} minutes that day",
+                day_minutes + minutes_between(slot.starts_at, slot.ends_at),
+                if minute_limit == crate::policy::NO_LIMIT {
+                    "unlimited".to_string()
+                } else {
+                    minute_limit.to_string()
+                }
+            ),
+        ));
+    }
+
+    // The week cap runs when either the coordinator asked for it or the policy
+    // names a number, so a stored limit is never silently ignored.
+    if options.cap_weekly
+        || policy.max_shifts_per_week.is_some()
+        || policy.max_minutes_per_week.is_some()
+    {
+        let shifts = candidate.weekly_load + load.shifts + 1;
+        let limit = policy.max_shifts_per_week();
+        checks.push(check(
+            "Weekly shift limit",
+            shifts <= limit,
+            format!(
+                "{shifts} of {} this week",
+                if limit == crate::policy::NO_LIMIT {
+                    "unlimited".to_string()
+                } else {
+                    limit.to_string()
+                }
+            ),
+        ));
+
+        let minutes =
+            candidate.weekly_minutes + load.minutes + minutes_between(slot.starts_at, slot.ends_at);
+        let limit = policy.max_minutes_per_week();
+        checks.push(check(
+            "Weekly minute limit",
+            minutes <= limit,
+            format!(
+                "{minutes} of {} minutes this week",
+                if limit == crate::policy::NO_LIMIT {
+                    "unlimited".to_string()
+                } else {
+                    limit.to_string()
+                }
+            ),
+        ));
+    }
+
+    let availability_key = format!("{}:{}", slot.day_key, period_for(slot.starts_at));
+    if candidate.availability.is_empty() {
+        checks.push(check(
+            "Availability",
+            false,
+            "No availability on record".into(),
+        ));
+    } else {
+        let available = candidate.availability.contains(&availability_key);
+        checks.push(check(
+            "Availability",
+            available,
+            if available {
+                format!(
+                    "Available {} {}",
+                    slot.day_key.to_uppercase(),
+                    period_for(slot.starts_at)
+                )
+            } else {
+                format!(
+                    "Not available {} {}",
+                    slot.day_key.to_uppercase(),
+                    period_for(slot.starts_at)
+                )
+            },
+        ));
+    }
+
+    if let Some(required) = &slot.required_skill {
+        let matched = has_skill(candidate, required);
+        checks.push(check(
+            "Required skill",
+            matched,
+            if matched {
+                format!("{required} on the profile")
+            } else {
+                format!("Needs {required}")
+            },
+        ));
+    }
+
+    if let Some(required) = &slot.required_credential {
+        let state = credential_state(candidate, required, slot.starts_at.date_naive());
+        let (passed, detail) = match state {
+            CredentialState::Current => (true, format!("{required} current")),
+            CredentialState::Expired => (false, format!("{required} expired")),
+            CredentialState::Missing => (false, format!("No {required} on record")),
+        };
+        // Only an organization that explicitly allows it may treat a missing or
+        // lapsed record as good enough; the default blocks.
+        let allowed = state != CredentialState::Current
+            && policy.unknown_credential_behavior
+                == crate::policy::MissingRequirementBehavior::Allow
+            && state != CredentialState::Expired;
+        checks.push(check(
+            "Required credential",
+            passed || allowed,
+            if passed {
+                detail
+            } else if allowed {
+                format!("{detail}; the policy allows this")
+            } else {
+                detail
+            },
+        ));
+    }
+
+    if let Some(minimum_age) = slot.minimum_age {
+        let shift_date = slot.starts_at.date_naive();
+        let (passed, detail) = match candidate.birthdate {
+            Some(birthdate) => {
+                let age = age_on(birthdate, shift_date);
+                (
+                    age >= minimum_age,
+                    if age >= minimum_age {
+                        format!("{age} on the shift date")
+                    } else {
+                        format!("{age} on the shift date, needs {minimum_age}")
+                    },
+                )
+            }
+            None => (
+                policy.unknown_age_behavior == crate::policy::MissingRequirementBehavior::Allow,
+                if policy.unknown_age_behavior == crate::policy::MissingRequirementBehavior::Allow {
+                    "No birthdate on record; the policy allows this".to_string()
+                } else {
+                    "No birthdate on record".to_string()
+                },
+            ),
+        };
+        checks.push(check("Minimum age", passed, detail));
+    }
+
+    let eligible = checks.iter().all(|check| check.passed);
+    Evaluation { eligible, checks }
+}
+
+/// Minutes of rest between a committed block and this slot, in either direction.
+fn gap_minutes(block: &TimeBlock, slot: &Slot) -> i64 {
+    if block.ends_at <= slot.starts_at {
+        (slot.starts_at - block.ends_at).num_minutes()
+    } else {
+        (block.starts_at - slot.ends_at).num_minutes()
+    }
+}
+
+/// The explanation a caller can build outside a plan, such as when a volunteer
+/// asks about a seat the plan did not give them.
+pub fn explain_selection(
+    candidate: &Candidate,
+    slot: &Slot,
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+    selected: bool,
+) -> MatchExplanation {
+    explain(
+        candidate,
+        slot,
+        &candidate.assigned_blocks,
+        RunLoad::default(),
+        policy,
+        options,
+        selected,
+    )
+}
+
+/// True when every hard requirement for this seat is met, using only what the
+/// database already knows about the candidate's commitments.
+pub fn is_eligible_explained(
+    candidate: &Candidate,
+    slot: &Slot,
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+) -> bool {
+    evaluate(
+        candidate,
+        slot,
+        &candidate.assigned_blocks,
+        RunLoad::default(),
+        policy,
+        options,
+    )
+    .eligible
+}
+
+/// Convenience for callers that only need the verdict.
+fn is_eligible(
+    candidate: &Candidate,
+    slot: &Slot,
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+) -> Result<(), String> {
+    let evaluation = evaluate(
+        candidate,
+        slot,
+        &candidate.assigned_blocks,
+        RunLoad::default(),
+        policy,
+        options,
+    );
+    if evaluation.eligible {
+        Ok(())
+    } else {
+        Err(evaluation
+            .rejection()
+            .unwrap_or_else(|| "Not eligible".into()))
+    }
+}
+
+fn speaks_spanish(candidate: &Candidate) -> bool {
+    candidate.languages.iter().any(|value| value == "Spanish") || has_skill(candidate, "Spanish")
+}
+
+/// Shapes a weight into the fraction of it this candidate earned. The fractions
+/// are the ones the scoring table documents, so the default policy reproduces the
+/// shipped numbers exactly while an organization can move its own priorities.
+fn share(weight: i32, numerator: i32, denominator: i32) -> i32 {
+    (weight * numerator) / denominator
+}
+
+fn score_candidate(
+    candidate: &Candidate,
+    slot: &Slot,
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+) -> (ScoreBreakdown, Vec<ScoreComponent>) {
     let skill = match &slot.required_skill {
-        Some(required) if has_skill(candidate, required) => 35,
+        Some(required) if has_skill(candidate, required) => policy.skill_weight,
         Some(_) => 0,
-        None => 30,
+        // A role with no requirement fits anyone who is eligible, a little less
+        // precisely than a matched requirement.
+        None => share(policy.skill_weight, 6, 7),
     };
-    let availability = 25;
-    let interest = if candidate.causes.iter().any(|cause| cause == &slot.cause) {
-        15
+    let availability = AVAILABILITY_POINTS;
+    let interested = candidate.causes.iter().any(|cause| cause == &slot.cause);
+    let interest = if interested {
+        policy.interest_weight
     } else {
         0
     };
     let role_lower = slot.role.to_lowercase();
-    let preference = if role_lower.contains("spanish")
-        && (candidate.languages.iter().any(|value| value == "Spanish")
-            || has_skill(candidate, "Spanish"))
-    {
-        10
-    } else if options.prefer_spanish && candidate.languages.iter().any(|value| value == "Spanish") {
-        8
+    let spanish = speaks_spanish(candidate);
+    let preference = if role_lower.contains("spanish") && spanish {
+        policy.language_weight
+    } else if options.prefer_spanish && spanish {
+        share(policy.language_weight, 8, 10)
     } else {
-        6
+        share(policy.language_weight, 6, 10)
     };
-    let fairness = 10 - (candidate.weekly_load.min(4) * 2) as i32;
+    let fairness = share(
+        policy.fairness_weight,
+        10 - (candidate.weekly_load.min(4) * 2) as i32,
+        10,
+    );
     let reliability = if candidate.events_completed == 0 {
-        3
+        share(policy.reliability_weight, 3, 5)
     } else {
-        ((candidate.attendance_rate as f64 / 100.0) * 5.0).round() as i32
+        ((candidate.attendance_rate as f64 / 100.0) * policy.reliability_weight as f64).round()
+            as i32
     };
     let total =
-        (skill + availability + interest + preference + fairness + reliability).clamp(0, 100);
-    ScoreBreakdown {
-        skill,
-        availability,
-        interest,
-        preference,
-        fairness,
-        reliability,
-        total,
+        (skill + availability + interest + preference + fairness + reliability).clamp(0, MAX_SCORE);
+    (
+        ScoreBreakdown {
+            skill,
+            availability,
+            interest,
+            preference,
+            fairness,
+            reliability,
+            total,
+        },
+        vec![
+            ScoreComponent {
+                label: "Skill".into(),
+                awarded: skill,
+                maximum: policy.skill_weight,
+            },
+            ScoreComponent {
+                label: "Availability".into(),
+                awarded: availability,
+                maximum: AVAILABILITY_POINTS,
+            },
+            ScoreComponent {
+                label: "Interest".into(),
+                awarded: interest,
+                maximum: policy.interest_weight,
+            },
+            ScoreComponent {
+                label: "Language".into(),
+                awarded: preference,
+                maximum: policy.language_weight,
+            },
+            ScoreComponent {
+                label: "Fairness".into(),
+                awarded: fairness,
+                maximum: policy.fairness_weight,
+            },
+            ScoreComponent {
+                label: "Reliability".into(),
+                awarded: reliability,
+                maximum: policy.reliability_weight,
+            },
+        ],
+    )
+}
+
+/// The sentence a coordinator reads first: why this person, or why not.
+fn selection_reason(
+    candidate: &Candidate,
+    slot: &Slot,
+    evaluation: &Evaluation,
+    score: Option<&ScoreBreakdown>,
+) -> String {
+    let Some(failed) = evaluation.checks.iter().find(|check| !check.passed) else {
+        let mut parts = Vec::new();
+        if let Some(required) = &slot.required_skill {
+            if has_skill(candidate, required) {
+                parts.push(format!("matches the required {required} skill"));
+            }
+        } else {
+            parts.push("passes every requirement".to_string());
+        }
+        if candidate.causes.iter().any(|cause| cause == &slot.cause) {
+            parts.push(format!("is interested in {}", slot.cause));
+        }
+        if let Some(score) = score {
+            if score.reliability >= 4 {
+                parts.push(format!("has {}% attendance", candidate.attendance_rate));
+            }
+        }
+        return format!("{} {}", candidate.name, parts.join(", "));
+    };
+    format!(
+        "{} failed one requirement — {}",
+        candidate.name,
+        failed.name.to_lowercase() + ": " + &failed.detail
+    )
+}
+
+/// The full answer for one candidate and one slot.
+#[allow(clippy::too_many_arguments)]
+fn explain(
+    candidate: &Candidate,
+    slot: &Slot,
+    committed: &[TimeBlock],
+    load: RunLoad,
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+    selected: bool,
+) -> MatchExplanation {
+    let evaluation = evaluate(candidate, slot, committed, load, policy, options);
+    let (breakdown, components) = score_candidate(candidate, slot, policy, options);
+    let total_score = evaluation.eligible.then_some(breakdown.total);
+    MatchExplanation {
+        candidate_id: candidate.id.clone(),
+        candidate_name: candidate.name.clone(),
+        candidate_initials: candidate.initials.clone(),
+        slot_id: slot.id.clone(),
+        shift_id: slot.shift_id.clone(),
+        role: slot.role.clone(),
+        eligible: evaluation.eligible,
+        checks: evaluation.checks.clone(),
+        components,
+        total_score,
+        selected,
+        selection_reason: selection_reason(candidate, slot, &evaluation, Some(&breakdown)),
     }
 }
 
@@ -476,13 +952,17 @@ fn reasons(candidate: &Candidate, slot: &Slot, score: &ScoreBreakdown) -> Vec<St
 
 /// Builds one assignment. Shared by both passes so a slot filled by either one
 /// reports the same score, reasons, and eligible roles.
+#[allow(clippy::too_many_arguments)]
 fn assignment_for(
     candidate: &Candidate,
     slot: &Slot,
+    committed: &[TimeBlock],
+    load: RunLoad,
+    policy: &RosterPolicy,
     options: &RosterOptions,
     slots: &[&Slot],
 ) -> PlannedAssignment {
-    let score = score_candidate(candidate, slot, options);
+    let (score, _) = score_candidate(candidate, slot, policy, options);
     PlannedAssignment {
         shift_id: slot.shift_id.clone(),
         opportunity_id: slot.opportunity_id.clone(),
@@ -499,22 +979,26 @@ fn assignment_for(
         eligible_roles: slots
             .iter()
             .filter(|other| other.shift_id == slot.shift_id)
-            .filter(|other| is_eligible(candidate, other, options).is_ok())
+            .filter(|other| is_eligible(candidate, other, policy, options).is_ok())
             .map(|other| other.role.clone())
             .collect(),
+        explanation: explain(candidate, slot, committed, load, policy, options, true),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Offers the slots the flow pass left unfilled to candidates who still have the
 /// time, scarcest slot first and best-scoring candidate first within a slot. The
 /// flow pass allows one slot per candidate per day, so a volunteer who is free
 /// from 2pm can take a 2pm shift even after a 9am one; this is where that
 /// assignment is made. Only runs when conflicts are being respected, so it can
-/// never add an overlapping pair.
+/// never add an overlapping pair, and it never touches a decided candidate.
 fn fill_same_day_slots(
     candidates: &[&Candidate],
     slots: &[&Slot],
+    policy: &RosterPolicy,
     options: &RosterOptions,
+    decided: &HashSet<&str>,
     committed: &mut HashMap<String, Vec<TimeBlock>>,
     assignments: &mut Vec<PlannedAssignment>,
     filled_slots: &mut HashSet<usize>,
@@ -535,7 +1019,22 @@ fn fill_same_day_slots(
     let eligible_count = |index: usize| -> usize {
         candidates
             .iter()
-            .filter(|candidate| is_eligible(candidate, slots[index], options).is_ok())
+            .filter(|candidate| !decided.contains(candidate.id.as_str()))
+            .filter(|candidate| {
+                let blocks = committed
+                    .get(&candidate.id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                evaluate(
+                    candidate,
+                    slots[index],
+                    blocks,
+                    RunLoad::default(),
+                    policy,
+                    options,
+                )
+                .eligible
+            })
             .count()
     };
     pending.sort_by(|left, right| {
@@ -548,42 +1047,45 @@ fn fill_same_day_slots(
             .then_with(|| left_slot.id.cmp(&right_slot.id))
     });
 
-    let mut run_load: HashMap<String, i64> = HashMap::new();
+    let mut run_load: HashMap<String, RunLoad> = HashMap::new();
     for assignment in assignments.iter() {
-        *run_load.entry(assignment.candidate_id.clone()).or_insert(0) += 1;
+        if let Some(slot) = slots
+            .iter()
+            .find(|slot| slot.role == assignment.role && slot.shift_id == assignment.shift_id)
+        {
+            let entry = run_load.entry(assignment.candidate_id.clone()).or_default();
+            entry.shifts += 1;
+            entry.minutes += minutes_between(slot.starts_at, slot.ends_at);
+        }
     }
 
     for index in pending {
         let slot = slots[index];
-        let mut chosen: Option<(&Candidate, i32)> = None;
+        let mut chosen: Option<(&Candidate, i32, RunLoad)> = None;
         for candidate in candidates {
-            if options.cap_weekly {
-                let load =
-                    candidate.weekly_load + run_load.get(&candidate.id).copied().unwrap_or(0);
-                if load >= 2 {
-                    continue;
-                }
-            }
-            let busy = committed.get(&candidate.id).is_some_and(|blocks| {
-                blocks.iter().any(|block| {
-                    overlaps(block.starts_at, block.ends_at, slot.starts_at, slot.ends_at)
-                })
-            });
-            if busy || is_eligible(candidate, slot, options).is_err() {
+            if decided.contains(candidate.id.as_str()) {
                 continue;
             }
-            let total = score_candidate(candidate, slot, options).total;
+            let load = run_load.get(&candidate.id).copied().unwrap_or_default();
+            let blocks = committed
+                .get(&candidate.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            if !evaluate(candidate, slot, blocks, load, policy, options).eligible {
+                continue;
+            }
+            let (score, _) = score_candidate(candidate, slot, policy, options);
             // Candidates arrive ordered by id, so keeping the first on a tie is
             // deterministic without a second comparison.
-            let better = match chosen {
+            let better = match &chosen {
                 None => true,
-                Some((_, best)) => total > best,
+                Some((_, best, _)) => score.total > *best,
             };
             if better {
-                chosen = Some((candidate, total));
+                chosen = Some((candidate, score.total, load));
             }
         }
-        let Some((candidate, _)) = chosen else {
+        let Some((candidate, _, load)) = chosen else {
             continue;
         };
         filled_slots.insert(index);
@@ -594,8 +1096,18 @@ fn fill_same_day_slots(
                 starts_at: slot.starts_at,
                 ends_at: slot.ends_at,
             });
-        *run_load.entry(candidate.id.clone()).or_insert(0) += 1;
-        assignments.push(assignment_for(candidate, slot, options, slots));
+        let entry = run_load.entry(candidate.id.clone()).or_default();
+        entry.shifts += 1;
+        entry.minutes += minutes_between(slot.starts_at, slot.ends_at);
+        assignments.push(assignment_for(
+            candidate,
+            slot,
+            &committed.get(&candidate.id).cloned().unwrap_or_default(),
+            load,
+            policy,
+            options,
+            slots,
+        ));
     }
 }
 
@@ -604,7 +1116,57 @@ fn fill_same_day_slots(
 /// The returned assignments are deterministic for the same inputs. The solver
 /// maximizes the number of filled slots first, then total match quality, while
 /// required roles carry a priority bonus when candidates are scarce.
-pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -> RosterPlan {
+pub fn plan(
+    candidates: &[Candidate],
+    slots: &[Slot],
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+) -> RosterPlan {
+    plan_inner(candidates, slots, policy, options, &[])
+}
+
+/// The plan a coordinator would get if these assignments were already fixed.
+/// Used to answer "why not that person?" by running the same solver with the
+/// questioned assignment decided, and comparing the two plans.
+pub fn plan_with_forced(
+    candidates: &[Candidate],
+    slots: &[Slot],
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+    forced: &[(String, String)],
+) -> RosterPlan {
+    plan_inner(candidates, slots, policy, options, forced)
+}
+
+fn plan_inner(
+    candidates: &[Candidate],
+    slots: &[Slot],
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+    forced: &[(String, String)],
+) -> RosterPlan {
+    let forced_slot_for = |candidate_id: &str| -> Option<&Slot> {
+        forced
+            .iter()
+            .find(|(forced_candidate, _)| forced_candidate == candidate_id)
+            .and_then(|(_, slot_id)| slots.iter().find(|slot| &slot.id == slot_id))
+    };
+    let is_forced = |candidate_id: &str, slot: &Slot| -> bool {
+        forced.iter().any(|(forced_candidate, forced_slot)| {
+            forced_candidate == candidate_id && forced_slot == &slot.id
+        })
+    };
+    // A decided seat is out of the solver's pool entirely, and so is the person
+    // already holding it. Otherwise the flow would hand the same seat to a second
+    // volunteer, or give the fixed volunteer a second shift, and the plan would
+    // no longer describe what the coordinator fixed.
+    let forced_slot_ids: HashSet<&str> =
+        forced.iter().map(|(_, slot_id)| slot_id.as_str()).collect();
+    let forced_candidate_ids: HashSet<&str> = forced
+        .iter()
+        .map(|(candidate_id, _)| candidate_id.as_str())
+        .collect();
+
     let mut ordered_candidates: Vec<&Candidate> = candidates.iter().collect();
     ordered_candidates.sort_by(|a, b| a.id.cmp(&b.id));
 
@@ -636,42 +1198,8 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
     let sink = nodes;
     nodes += 1;
 
-    let mut flow = Flow::new(nodes);
-    for node in day_nodes.values() {
-        flow.add_edge(source, *node, 1, 0);
-    }
-
-    let mut candidate_by_id: HashMap<&str, &Candidate> = HashMap::new();
-    for candidate in &ordered_candidates {
-        candidate_by_id.insert(candidate.id.as_str(), candidate);
-    }
-    for (slot_index, slot) in ordered_slots.iter().enumerate() {
-        let slot_node = slot_offset + slot_index;
-        let priority = if slot.mandatory {
-            MANDATORY_SLOT_BONUS
-        } else {
-            0
-        };
-        flow.add_edge(slot_node, sink, 1, -priority);
-        for ((candidate_id, day), node) in &day_nodes {
-            if day != &slot.day_key {
-                continue;
-            }
-            let Some(candidate) = candidate_by_id.get(candidate_id.as_str()) else {
-                continue;
-            };
-            if is_eligible(candidate, slot, options).is_err() {
-                continue;
-            }
-            let score = score_candidate(candidate, slot, options);
-            let tie = (slot_index as i32) % SCORE_UNIT;
-            let cost = (MAX_SCORE - score.total) * SCORE_UNIT + tie;
-            flow.add_edge(*node, slot_node, 1, cost);
-        }
-    }
-
-    flow.min_cost_max_flow(source, sink);
-
+    // A forced assignment is decided before the solver runs: its slot leaves the
+    // pool and its candidate starts out holding that time.
     let mut assignments = Vec::new();
     let mut filled_slots: HashSet<usize> = HashSet::new();
     let mut committed: HashMap<String, Vec<TimeBlock>> = HashMap::new();
@@ -684,6 +1212,86 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
             .or_default()
             .extend(candidate.assigned_blocks.iter().cloned());
     }
+    for candidate in &ordered_candidates {
+        let Some(slot) = forced_slot_for(&candidate.id) else {
+            continue;
+        };
+        let Some(index) = ordered_slots.iter().position(|other| other.id == slot.id) else {
+            continue;
+        };
+        filled_slots.insert(index);
+        committed
+            .entry(candidate.id.clone())
+            .or_default()
+            .push(TimeBlock {
+                starts_at: slot.starts_at,
+                ends_at: slot.ends_at,
+            });
+        assignments.push(assignment_for(
+            candidate,
+            slot,
+            &committed.get(&candidate.id).cloned().unwrap_or_default(),
+            RunLoad::default(),
+            policy,
+            options,
+            &ordered_slots,
+        ));
+    }
+
+    let mut flow = Flow::new(nodes);
+    for node in day_nodes.values() {
+        flow.add_edge(source, *node, 1, 0);
+    }
+
+    let mut candidate_by_id: HashMap<&str, &Candidate> = HashMap::new();
+    for candidate in &ordered_candidates {
+        candidate_by_id.insert(candidate.id.as_str(), candidate);
+    }
+    for (slot_index, slot) in ordered_slots.iter().enumerate() {
+        if forced_slot_ids.contains(slot.id.as_str()) {
+            continue;
+        }
+        let slot_node = slot_offset + slot_index;
+        let priority = if slot.mandatory {
+            MANDATORY_SLOT_BONUS
+        } else {
+            0
+        };
+        flow.add_edge(slot_node, sink, 1, -priority);
+        for ((candidate_id, day), node) in &day_nodes {
+            if day != &slot.day_key {
+                continue;
+            }
+            if forced_candidate_ids.contains(candidate_id.as_str()) {
+                continue;
+            }
+            let Some(candidate) = candidate_by_id.get(candidate_id.as_str()) else {
+                continue;
+            };
+            if is_forced(&candidate.id, slot) {
+                continue;
+            }
+            if !evaluate(
+                candidate,
+                slot,
+                &committed.get(&candidate.id).cloned().unwrap_or_default(),
+                RunLoad::default(),
+                policy,
+                options,
+            )
+            .eligible
+            {
+                continue;
+            }
+            let (score, _) = score_candidate(candidate, slot, policy, options);
+            let tie = (slot_index as i32) % SCORE_UNIT;
+            let cost = (MAX_SCORE - score.total) * SCORE_UNIT + tie;
+            flow.add_edge(*node, slot_node, 1, cost);
+        }
+    }
+
+    flow.min_cost_max_flow(source, sink);
+
     for ((candidate_id, _), node) in &day_nodes {
         let Some(candidate) = candidate_by_id.get(candidate_id.as_str()) else {
             continue;
@@ -695,7 +1303,19 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
             }
             let slot_index = edge.to - slot_offset;
             let slot = ordered_slots[slot_index];
+            if is_forced(&candidate.id, slot) {
+                continue;
+            }
             filled_slots.insert(slot_index);
+            assignments.push(assignment_for(
+                candidate,
+                slot,
+                &committed.get(&candidate.id).cloned().unwrap_or_default(),
+                RunLoad::default(),
+                policy,
+                options,
+                &ordered_slots,
+            ));
             committed
                 .entry(candidate.id.clone())
                 .or_default()
@@ -703,14 +1323,15 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
                     starts_at: slot.starts_at,
                     ends_at: slot.ends_at,
                 });
-            assignments.push(assignment_for(candidate, slot, options, &ordered_slots));
         }
     }
 
     fill_same_day_slots(
         &ordered_candidates,
         &ordered_slots,
+        policy,
         options,
+        &forced_candidate_ids,
         &mut committed,
         &mut assignments,
         &mut filled_slots,
@@ -733,7 +1354,7 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
             "No candidates supplied".to_string()
         } else if ordered_candidates
             .iter()
-            .any(|candidate| is_eligible(candidate, slot, options).is_ok())
+            .any(|candidate| is_eligible(candidate, slot, policy, options).is_ok())
         {
             "Eligible candidates were already assigned".to_string()
         } else {
@@ -761,6 +1382,7 @@ pub fn plan(candidates: &[Candidate], slots: &[Slot], options: &RosterOptions) -
         slots_considered: ordered_slots.len(),
         candidates_considered: ordered_candidates.len(),
         deterministic_seed: 20_261_013,
+        policy_version: policy.version,
     }
 }
 
@@ -770,6 +1392,14 @@ mod tests {
 
     fn date(value: &str) -> DateTime<FixedOffset> {
         DateTime::parse_from_rfc3339(value).unwrap()
+    }
+
+    fn policy() -> RosterPolicy {
+        RosterPolicy::default()
+    }
+
+    fn options() -> RosterOptions {
+        RosterOptions::default()
     }
 
     fn candidate(id: &str, skills: &[&str], availability: &[&str]) -> Candidate {
@@ -789,6 +1419,7 @@ mod tests {
             assigned_shift_ids: HashSet::new(),
             waitlisted_shift_ids: HashSet::new(),
             weekly_load: 0,
+            weekly_minutes: 0,
         }
     }
 
@@ -826,7 +1457,7 @@ mod tests {
             ),
             slot("s2", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
         ];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(plan.assignments.len(), 2);
         assert!(plan.total_score >= 180);
         assert!(plan.unfilled.is_empty());
@@ -841,7 +1472,7 @@ mod tests {
             Some("Spanish"),
             "2026-10-17T09:00:00-04:00",
         )];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert!(plan.assignments.is_empty());
         assert_eq!(plan.unfilled.len(), 1);
         assert_eq!(plan.unfilled[0].required_skill.as_deref(), Some("Spanish"));
@@ -854,7 +1485,7 @@ mod tests {
             slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
             slot("s2", "Driver", Some("Driver"), "2026-10-17T11:00:00-04:00"),
         ];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(plan.assignments.len(), 1);
         assert_eq!(plan.unfilled.len(), 1);
     }
@@ -870,7 +1501,7 @@ mod tests {
             slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
             slot("s2", "Driver", Some("Driver"), "2026-10-17T14:00:00-04:00"),
         ];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(plan.assignments.len(), 2);
         assert!(plan.unfilled.is_empty());
         assert!(plan
@@ -890,7 +1521,7 @@ mod tests {
             slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
             slot("s2", "Driver", Some("Driver"), "2026-10-17T12:00:00-04:00"),
         ];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(plan.assignments.len(), 2);
     }
 
@@ -911,7 +1542,8 @@ mod tests {
         assert!(plan(
             std::slice::from_ref(&busy),
             &overlapping,
-            &RosterOptions::default()
+            &policy(),
+            &options()
         )
         .assignments
         .is_empty());
@@ -923,13 +1555,9 @@ mod tests {
             "2026-10-17T14:00:00-04:00",
         )];
         assert_eq!(
-            plan(
-                std::slice::from_ref(&busy),
-                &later,
-                &RosterOptions::default()
-            )
-            .assignments
-            .len(),
+            plan(std::slice::from_ref(&busy), &later, &policy(), &options())
+                .assignments
+                .len(),
             1
         );
     }
@@ -941,9 +1569,10 @@ mod tests {
         let mut restricted = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
         restricted.minimum_age = Some(18);
 
-        let reason = is_eligible(&unknown, &restricted, &RosterOptions::default()).unwrap_err();
-        assert!(reason.contains("Age not verified"), "{reason}");
-        let plan = plan(&[unknown], &[restricted], &RosterOptions::default());
+        let reason = is_eligible(&unknown, &restricted, &policy(), &options()).unwrap_err();
+        assert!(reason.contains("Minimum age"), "{reason}");
+        assert!(reason.contains("No birthdate on record"), "{reason}");
+        let plan = plan(&[unknown], &[restricted], &policy(), &options());
         assert!(plan.assignments.is_empty());
         assert_eq!(plan.unfilled.len(), 1);
     }
@@ -961,8 +1590,8 @@ mod tests {
 
         assert_eq!(age_on(exact.birthdate.unwrap(), shift_date), 18);
         assert_eq!(age_on(a_day_short.birthdate.unwrap(), shift_date), 17);
-        assert!(is_eligible(&exact, &restricted, &options).is_ok());
-        assert!(is_eligible(&a_day_short, &restricted, &options).is_err());
+        assert!(is_eligible(&exact, &restricted, &policy(), &options).is_ok());
+        assert!(is_eligible(&a_day_short, &restricted, &policy(), &options).is_err());
     }
 
     #[test]
@@ -986,25 +1615,27 @@ mod tests {
         let options = RosterOptions::default();
 
         let unverified = candidate("a", &["Driver"], &["sat:morning"]);
-        let missing = is_eligible(&unverified, &restricted, &options).unwrap_err();
-        assert!(missing.contains("Missing required credential"), "{missing}");
+        let missing = is_eligible(&unverified, &restricted, &policy(), &options).unwrap_err();
+        assert!(missing.contains("Required credential"), "{missing}");
+        assert!(missing.contains("No Safe driver clearance"), "{missing}");
 
         let mut expired = candidate("b", &["Driver"], &["sat:morning"]);
         expired.credentials = vec![Credential {
             name: "Safe driver clearance".into(),
             valid_through: shift_date - chrono::Duration::days(1),
         }];
-        let lapsed = is_eligible(&expired, &restricted, &options).unwrap_err();
-        assert!(lapsed.contains("Expired credential"), "{lapsed}");
+        let lapsed = is_eligible(&expired, &restricted, &policy(), &options).unwrap_err();
+        assert!(lapsed.contains("Required credential"), "{lapsed}");
+        assert!(lapsed.contains("expired"), "{lapsed}");
 
         let mut current = candidate("c", &["Driver"], &["sat:morning"]);
         current.credentials = vec![Credential {
             name: "Safe driver clearance".into(),
             valid_through: shift_date,
         }];
-        assert!(is_eligible(&current, &restricted, &options).is_ok());
+        assert!(is_eligible(&current, &restricted, &policy(), &options).is_ok());
 
-        let plan = plan(&[unverified, expired], &[restricted], &options);
+        let plan = plan(&[unverified, expired], &[restricted], &policy(), &options);
         assert!(plan.assignments.is_empty());
     }
 
@@ -1022,7 +1653,7 @@ mod tests {
             ),
             general,
         ];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(plan.assignments.len(), 1);
         assert_eq!(plan.assignments[0].role, "Spanish Support");
     }
@@ -1036,7 +1667,7 @@ mod tests {
             slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
             optional,
         ];
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(plan.assignments.len(), 1);
         assert_eq!(plan.assignments[0].role, "Driver");
     }
@@ -1068,10 +1699,12 @@ mod tests {
                 if self.used_days.contains(&day) {
                     continue;
                 }
-                if is_eligible(candidate, slot, self.options).is_err() {
+                if is_eligible(candidate, slot, &policy(), self.options).is_err() {
                     continue;
                 }
-                let points = score_candidate(candidate, slot, self.options).total;
+                let points = score_candidate(candidate, slot, &policy(), self.options)
+                    .0
+                    .total;
                 self.used_slots[slot_index] = true;
                 self.used_days.insert(day.clone());
                 self.walk(index + 1, count + 1, score + points);
@@ -1116,7 +1749,7 @@ mod tests {
             slot("s3", "General", None, "2026-10-17T13:00:00-04:00"),
         ];
         let options = RosterOptions::default();
-        let plan = plan(&candidates, &slots, &options);
+        let plan = plan(&candidates, &slots, &policy(), &options);
         let oracle = brute_force(&candidates, &slots, &options);
         assert_eq!(plan.assignments.len(), oracle.0);
         assert_eq!(plan.total_score, oracle.1);
@@ -1134,10 +1767,240 @@ mod tests {
             Some("Spanish"),
             "2026-10-17T09:00:00-04:00",
         )];
-        let first = plan(&candidates, &slots, &RosterOptions::default());
-        let second = plan(&candidates, &slots, &RosterOptions::default());
+        let first = plan(&candidates, &slots, &policy(), &options());
+        let second = plan(&candidates, &slots, &policy(), &options());
         assert_eq!(first, second);
         assert_eq!(first.assignments[0].candidate_id, "a");
+    }
+
+    fn policy_with(change: impl FnOnce(&mut RosterPolicy)) -> RosterPolicy {
+        let mut policy = RosterPolicy::default();
+        change(&mut policy);
+        policy
+    }
+
+    #[test]
+    fn a_daily_shift_cap_stops_a_second_shift_on_the_same_day() {
+        let candidates = vec![candidate(
+            "a",
+            &["Driver"],
+            &["sat:morning", "sat:afternoon"],
+        )];
+        let slots = vec![
+            slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
+            slot("s2", "Driver", Some("Driver"), "2026-10-17T14:00:00-04:00"),
+        ];
+
+        let one = policy_with(|policy| policy.max_shifts_per_day = Some(1));
+        let capped = plan(&candidates, &slots, &one, &options());
+        assert_eq!(capped.assignments.len(), 1);
+        assert_eq!(capped.unfilled.len(), 1);
+
+        let two = policy_with(|policy| policy.max_shifts_per_day = Some(2));
+        let generous = plan(&candidates, &slots, &two, &options());
+        assert_eq!(generous.assignments.len(), 2);
+        assert!(generous.unfilled.is_empty());
+    }
+
+    #[test]
+    fn a_daily_minute_cap_counts_time_rather_than_shifts() {
+        let candidates = vec![candidate(
+            "a",
+            &["Driver"],
+            &["sat:morning", "sat:afternoon"],
+        )];
+        let slots = vec![
+            slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00"),
+            slot("s2", "Driver", Some("Driver"), "2026-10-17T14:00:00-04:00"),
+        ];
+
+        // Two three-hour shifts do not fit inside four hours.
+        let four_hours = policy_with(|policy| policy.max_minutes_per_day = Some(240));
+        assert_eq!(
+            plan(&candidates, &slots, &four_hours, &options())
+                .assignments
+                .len(),
+            1
+        );
+
+        let roomy = policy_with(|policy| policy.max_minutes_per_day = Some(960));
+        assert_eq!(
+            plan(&candidates, &slots, &roomy, &options())
+                .assignments
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn a_weekly_shift_cap_counts_the_shifts_already_committed() {
+        let mut loaded = candidate("a", &["Driver"], &["sat:morning"]);
+        loaded.weekly_load = 2;
+        let mut almost = candidate("b", &["Driver"], &["sat:morning"]);
+        almost.weekly_load = 1;
+
+        let slots = vec![slot(
+            "s1",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T09:00:00-04:00",
+        )];
+        let two = policy_with(|policy| policy.max_shifts_per_week = Some(2));
+        let plan = plan(&[loaded, almost], &slots, &two, &options());
+        assert_eq!(plan.assignments.len(), 1);
+        assert_eq!(plan.assignments[0].candidate_id, "b");
+    }
+
+    #[test]
+    fn a_weekly_minute_cap_counts_the_minutes_already_committed() {
+        let mut loaded = candidate("a", &["Driver"], &["sat:morning"]);
+        loaded.weekly_minutes = 540;
+        let slots = vec![slot(
+            "s1",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T09:00:00-04:00",
+        )];
+        let ten_hours = policy_with(|policy| policy.max_minutes_per_week = Some(600));
+        assert!(plan(&[loaded], &slots, &ten_hours, &options())
+            .assignments
+            .is_empty());
+    }
+
+    #[test]
+    fn a_minimum_gap_keeps_a_shift_from_following_too_closely() {
+        let mut rested = candidate("a", &["Driver"], &["sat:morning", "sat:afternoon"]);
+        rested.assigned_blocks = vec![TimeBlock {
+            starts_at: date("2026-10-17T09:00:00-04:00"),
+            ends_at: date("2026-10-17T12:00:00-04:00"),
+        }];
+        let two_hours = policy_with(|policy| policy.minimum_gap_minutes = 120);
+
+        let soon = vec![slot(
+            "s1",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T13:00:00-04:00",
+        )];
+        assert!(
+            plan(std::slice::from_ref(&rested), &soon, &two_hours, &options())
+                .assignments
+                .is_empty()
+        );
+
+        let later = vec![slot(
+            "s2",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T15:00:00-04:00",
+        )];
+        assert_eq!(
+            plan(
+                std::slice::from_ref(&rested),
+                &later,
+                &two_hours,
+                &options()
+            )
+            .assignments
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn an_unknown_age_may_be_allowed_by_policy() {
+        let mut unknown = candidate("a", &["Driver"], &["sat:morning"]);
+        unknown.birthdate = None;
+        let mut restricted = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
+        restricted.minimum_age = Some(18);
+
+        assert!(is_eligible(&unknown, &restricted, &policy(), &options()).is_err());
+
+        let permissive = policy_with(|policy| {
+            policy.unknown_age_behavior = crate::policy::MissingRequirementBehavior::Allow
+        });
+        assert!(is_eligible(&unknown, &restricted, &permissive, &options()).is_ok());
+    }
+
+    #[test]
+    fn a_missing_credential_may_be_allowed_by_policy_but_a_lapsed_one_never_is() {
+        let mut required = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
+        required.required_credential = Some("Safe driver clearance".into());
+        let permissive = policy_with(|policy| {
+            policy.unknown_credential_behavior = crate::policy::MissingRequirementBehavior::Allow
+        });
+
+        let missing = candidate("a", &["Driver"], &["sat:morning"]);
+        assert!(is_eligible(&missing, &required, &permissive, &options()).is_ok());
+
+        let mut expired = candidate("b", &["Driver"], &["sat:morning"]);
+        expired.credentials = vec![Credential {
+            name: "Safe driver clearance".into(),
+            valid_through: NaiveDate::from_ymd_opt(2026, 10, 16).unwrap(),
+        }];
+        assert!(is_eligible(&expired, &required, &permissive, &options()).is_err());
+    }
+
+    #[test]
+    fn a_plan_names_the_policy_version_it_followed() {
+        let policy = policy_with(|policy| policy.version = 9);
+        let candidates = vec![candidate("a", &["Driver"], &["sat:morning"])];
+        let slots = vec![slot(
+            "s1",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T09:00:00-04:00",
+        )];
+        let plan = plan(&candidates, &slots, &policy, &options());
+        assert_eq!(plan.policy_version, 9);
+    }
+
+    #[test]
+    fn a_policy_weight_moves_the_score_without_moving_the_rules() {
+        let candidates = vec![candidate("a", &["Driver"], &["sat:morning"])];
+        let slots = vec![slot(
+            "s1",
+            "Driver",
+            Some("Driver"),
+            "2026-10-17T09:00:00-04:00",
+        )];
+
+        let shipped = plan(&candidates, &slots, &policy(), &options());
+        assert_eq!(shipped.assignments[0].breakdown.skill, 35);
+
+        let lowered = policy_with(|policy| policy.skill_weight = 15);
+        let lowered_plan = plan(&candidates, &slots, &lowered, &options());
+        assert_eq!(lowered_plan.assignments[0].breakdown.skill, 15);
+        assert!(lowered_plan.assignments[0].score < shipped.assignments[0].score);
+        assert_eq!(lowered_plan.assignments.len(), 1);
+    }
+
+    #[test]
+    fn every_assignment_carries_the_checks_and_components_behind_it() {
+        let mut required = slot("s1", "Driver", Some("Driver"), "2026-10-17T09:00:00-04:00");
+        required.required_credential = Some("Safe driver clearance".into());
+        let mut qualified = candidate("a", &["Driver"], &["sat:morning"]);
+        qualified.credentials = vec![Credential {
+            name: "Safe driver clearance".into(),
+            valid_through: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+        }];
+
+        let plan = plan(&[qualified], &[required], &policy(), &options());
+        assert_eq!(plan.assignments.len(), 1);
+        let explanation = &plan.assignments[0].explanation;
+        assert!(explanation.eligible);
+        assert!(explanation.selected);
+        assert_eq!(explanation.total_score, Some(plan.assignments[0].score));
+        assert!(explanation.checks.iter().all(|check| check.passed));
+        assert!(explanation
+            .checks
+            .iter()
+            .any(|check| check.name == "Required credential" && check.detail.contains("current")));
+        let awarded: i32 = explanation.components.iter().map(|row| row.awarded).sum();
+        assert_eq!(awarded, explanation.total_score.unwrap());
+        assert!(explanation
+            .selection_reason
+            .contains("matches the required Driver skill"));
     }
 
     use proptest::prelude::*;
@@ -1180,7 +2043,7 @@ mod tests {
                 ));
             }
             let options = RosterOptions::default();
-            let plan = plan(&candidates, &slots, &options);
+            let plan = plan(&candidates, &slots, &policy(), &options);
             let oracle = brute_force(&candidates, &slots, &options);
             prop_assert_eq!(plan.assignments.len(), oracle.0);
             prop_assert_eq!(plan.total_score, oracle.1);
@@ -1226,7 +2089,7 @@ mod tests {
             slots.push(slot);
         }
         let started = std::time::Instant::now();
-        let plan = plan(&candidates, &slots, &RosterOptions::default());
+        let plan = plan(&candidates, &slots, &policy(), &options());
         let elapsed = started.elapsed();
         assert_eq!(plan.assignments.len(), 100);
         assert!(elapsed.as_secs_f64() < 5.0, "planner took {elapsed:?}");

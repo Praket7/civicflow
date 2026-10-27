@@ -592,7 +592,7 @@ pub fn generate(conn: &Connection, request: &ReportRequest) -> Result<ReportDocu
     })
 }
 
-fn csv_cell(value: &str) -> String {
+pub(crate) fn csv_cell(value: &str) -> String {
     // A cell that starts with one of these is read as a formula by Excel and
     // Sheets when the export is opened. Names and notes are entered by people,
     // so an export must not hand a spreadsheet a command to run.

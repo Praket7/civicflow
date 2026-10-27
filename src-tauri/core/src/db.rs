@@ -14,7 +14,7 @@ pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
 /// start from the same state.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
 /// Bumped with every migration so backups can check they match this build.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 11;
 /// "CIFV" — marks a database as a CivicFlow workspace so restore can refuse
 /// an arbitrary SQLite file.
 pub const APPLICATION_ID: i64 = 0x4349_4656;
@@ -27,6 +27,10 @@ const VOLUNTEER_PHOTO_SCHEMA: &str = include_str!("../migrations/0005_volunteer_
 const AUTH_ATTEMPT_SCHEMA: &str = include_str!("../migrations/0006_auth_attempts.sql");
 const ORGANIZATION_SCHEMA: &str =
     include_str!("../migrations/0007_organizations_memberships_invites.sql");
+const ROSTER_POLICY_SCHEMA: &str = include_str!("../migrations/0008_roster_policy.sql");
+const ASSIGNMENT_LOCK_SCHEMA: &str = include_str!("../migrations/0009_assignment_locks.sql");
+const SHIFT_SERIES_SCHEMA: &str = include_str!("../migrations/0010_shift_series.sql");
+const NOTIFICATION_RULE_SCHEMA: &str = include_str!("../migrations/0011_notification_rules.sql");
 const WORKFLOW_SEED_MARKER: &str = "workflow_seed_version";
 
 const CREDENTIAL_TYPES: [(&str, i64); 6] = [
@@ -94,7 +98,7 @@ fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>)
 /// Every schema step, in order. Kept as a free function as well as a method
 /// because restoring an older snapshot replaces the live database in place and
 /// the restored copy then has to catch up to this build.
-const MIGRATIONS: [(i64, &str); 7] = [
+const MIGRATIONS: [(i64, &str); 11] = [
     (1, INITIAL_SCHEMA),
     (2, WORKFLOW_SCHEMA),
     (3, LIFECYCLE_SCHEMA),
@@ -102,6 +106,10 @@ const MIGRATIONS: [(i64, &str); 7] = [
     (5, VOLUNTEER_PHOTO_SCHEMA),
     (6, AUTH_ATTEMPT_SCHEMA),
     (7, ORGANIZATION_SCHEMA),
+    (8, ROSTER_POLICY_SCHEMA),
+    (9, ASSIGNMENT_LOCK_SCHEMA),
+    (10, SHIFT_SERIES_SCHEMA),
+    (11, NOTIFICATION_RULE_SCHEMA),
 ];
 
 pub fn apply_migrations(conn: &Connection) -> Result<()> {

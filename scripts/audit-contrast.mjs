@@ -327,10 +327,32 @@ try {
       });
       await send("Page.navigate", { url: BASE + routePath });
       await sleep(900);
+      // Theme switching animates colors, and a pair read mid-transition is a
+      // false failure. Freeze transitions, pin the theme, and wait for the
+      // frame to commit before measuring.
       await send("Runtime.evaluate", {
-        expression: `document.documentElement.dataset.theme = "${theme}"; void 0`,
+        awaitPromise: true,
+        expression: `(async () => {
+          if (!document.getElementById("civicflow-contrast-freeze")) {
+            const style = document.createElement("style");
+            style.id = "civicflow-contrast-freeze";
+            style.textContent =
+              "*, *::before, *::after { transition: none !important; animation: none !important; }";
+            document.head.appendChild(style);
+          }
+          const nextFrame = () => new Promise((done) => requestAnimationFrame(done));
+          document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+          await nextFrame();
+          await nextFrame();
+          // The app writes the stored preference back on render; win that race.
+          if (document.documentElement.dataset.theme !== ${JSON.stringify(theme)}) {
+            document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+            await nextFrame();
+            await nextFrame();
+          }
+          return document.documentElement.dataset.theme;
+        })()`,
       });
-      await sleep(250);
       const { result } = await send("Runtime.evaluate", {
         expression: AUDIT,
         returnByValue: true,

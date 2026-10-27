@@ -1216,10 +1216,6 @@
 }
 
 @media (max-width: 900px) {
-  .attentionStrip {
-    grid-template-columns: 1fr;
-  }
-
   .formGrid {
     grid-template-columns: 1fr;
   }

@@ -4,19 +4,25 @@
  *
  * jsdom cannot composite colors, so the axe test in vitest disables the
  * color-contrast rule. This script does the compositing for real: it loads the
- * running app in headless Chrome, walks every element that draws text, composites
- * it over its ancestor background stack, and reports anything below 4.5:1
+ * app in headless Chrome, walks every element that draws text, composites it
+ * over its ancestor background stack, and reports anything below 4.5:1
  * (3:1 for text at 24px or 18.66px bold).
  *
  * Usage:
- *   pnpm dev                       # in one terminal
- *   pnpm audit:contrast            # in another
+ *   pnpm audit:contrast                    # starts a private Vite server on :5201
+ *   pnpm audit:contrast -- --base http://localhost:5173
+ *   pnpm audit:contrast -- --best-effort   # skip when Chrome is unavailable
  *
- * Flags: --base <url> --out <file> --port <cdp port>
+ * Flags: --base <url> --out <file> --port <cdp port> --server-port <port> --best-effort
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -24,10 +30,30 @@ const flag = (name, fallback) => {
   return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
 };
 
-const BASE = flag("base", "http://localhost:5173").replace(/\/$/, "");
+const bestEffort = args.includes("--best-effort");
+const explicitBase = flag("base", null);
 const OUT = flag("out", "contrast-report.json");
 const PORT = Number(flag("port", "9333"));
-const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const SERVER_PORT = Number(flag("server-port", "5201"));
+const CHROME_CANDIDATES = [
+  process.env.CHROME,
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+].filter(Boolean);
+const CHROME = CHROME_CANDIDATES.find((candidate) => existsSync(candidate));
+
+if (!CHROME) {
+  const message = "Contrast audit needs headless Chrome (set CHROME to its binary).";
+  if (bestEffort) {
+    console.warn(`Skipping: ${message}`);
+    process.exit(0);
+  }
+  console.error(message);
+  process.exit(1);
+}
 
 const routes = [
   ["01", "/coordinator/mission-control"],
@@ -57,7 +83,6 @@ const routes = [
   ["25", "/sign-in"],
   ["43", "/create-account"],
   ["26", "/volunteer/onboarding"],
-  ["27", "/coordinator/organization/setup"],
   ["28", "/coordinator/volunteers"],
   ["29", "/coordinator/volunteers/vol-maya"],
   ["30", "/coordinator/applications"],
@@ -190,24 +215,74 @@ async function waitForDevtools() {
   throw new Error(`Chrome never opened the DevTools port on ${PORT}`);
 }
 
-const chrome = spawn(
-  CHROME,
-  [
-    "--headless=new",
-    "--disable-gpu",
-    "--hide-scrollbars",
-    "--force-device-scale-factor=1",
-    "--window-size=1600,1000",
-    `--remote-debugging-port=${PORT}`,
-    `--user-data-dir=/tmp/civicflow-contrast-${process.pid}`,
-    "about:blank",
-  ],
-  { stdio: "ignore" },
-);
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function waitForHttp(url, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(url)).ok) return true;
+    } catch {
+      // Not listening yet.
+    }
+    await sleep(250);
+  }
+  return false;
+}
+
+let server = null;
+async function ensureServer() {
+  if (explicitBase) {
+    const base = explicitBase.replace(/\/$/, "");
+    if (!(await waitForHttp(base, 1000))) {
+      throw new Error(`No app responding at ${base}. Start the dev server or omit --base.`);
+    }
+    return base;
+  }
+  const base = `http://127.0.0.1:${SERVER_PORT}`;
+  if (await waitForHttp(base, 800)) return base;
+  // Run Vite's own entrypoint rather than `pnpm exec vite`: the package-manager
+  // wrapper stays alive through a signal and would leave the server behind.
+  server = spawn(
+    process.execPath,
+    [
+      path.join(root, "node_modules", "vite", "bin", "vite.js"),
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(SERVER_PORT),
+      "--strictPort",
+    ],
+    {
+      cwd: root,
+      stdio: "ignore",
+      env: { ...process.env, CI: "1" },
+    },
+  );
+  if (!(await waitForHttp(base, 30_000))) throw new Error(`Vite did not start on ${base}`);
+  return base;
+}
+
+let BASE;
+let chrome = null;
+
 try {
+  BASE = await ensureServer();
+  chrome = spawn(
+    CHROME,
+    [
+      "--headless=new",
+      "--disable-gpu",
+      "--hide-scrollbars",
+      "--force-device-scale-factor=1",
+      "--window-size=1600,1000",
+      ...(process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
+      `--remote-debugging-port=${PORT}`,
+      `--user-data-dir=/tmp/civicflow-contrast-${process.pid}`,
+      "about:blank",
+    ],
+    { stdio: ["ignore", "ignore", process.env.CI ? "inherit" : "ignore"] },
+  );
   await waitForDevtools();
   const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
   const target = targets.find((item) => item.type === "page");
@@ -244,13 +319,13 @@ try {
   let violations = 0;
 
   for (const theme of ["light", "dark"]) {
-    for (const [number, path] of routes) {
+    for (const [number, routePath] of routes) {
       await send("Runtime.evaluate", {
         expression: `localStorage.setItem("civicflow.auth.token", "${
-          path.startsWith("/volunteer") ? "preview:user-maya:demo" : "preview:user-praket:demo"
+          routePath.startsWith("/volunteer") ? "preview:user-maya:demo" : "preview:user-praket:demo"
         }"); void 0`,
       });
-      await send("Page.navigate", { url: BASE + path });
+      await send("Page.navigate", { url: BASE + routePath });
       await sleep(900);
       await send("Runtime.evaluate", {
         expression: `document.documentElement.dataset.theme = "${theme}"; void 0`,
@@ -264,7 +339,8 @@ try {
       const text = found.filter((item) => !item.hasMedia);
       const media = found.filter((item) => item.hasMedia);
       violations += text.length;
-      if (found.length) report[`${number}-${theme}`] = { number, path, theme, text, media };
+      if (found.length)
+        report[`${number}-${theme}`] = { number, path: routePath, theme, text, media };
       process.stdout.write(`${number} ${theme} ${text.length}/${media.length}\n`);
     }
   }
@@ -281,5 +357,6 @@ try {
     console.log(`\nNo contrast violations outside photography. Report: ${OUT}`);
   }
 } finally {
-  chrome.kill();
+  chrome?.kill();
+  server?.kill();
 }

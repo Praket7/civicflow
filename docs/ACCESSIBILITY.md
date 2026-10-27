@@ -91,14 +91,14 @@ Automated:
 
 ```bash
 pnpm test                 # route render + print contract, axe on all 50 routes
-pnpm dev                  # in one terminal
-pnpm audit:contrast       # headless Chrome, 50 routes, light and dark
+pnpm audit:contrast       # headless Chrome, every route, light and dark
 pnpm audit:print          # certificate and report under print media
 ```
 
 - `scripts/audit-contrast.mjs` opens every registered route in headless Chromium, composites
   each text element over its ancestor background stack, and fails below 4.5:1 (3:1 for large
-  text). The last recorded run reported no violations outside photography, where a computed
+  text). It starts a private Vite server unless `--base` is given, and CI runs it on every
+  push. The last recorded run reported no violations outside photography, where a computed
   background is unavailable; those panels were checked visually. The stricter rendered-pixel
   pass described in `VISUAL_QA.md` produced the same result.
 - `jest-axe` runs on every registered route and fails serious or critical violations. The

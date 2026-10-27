@@ -548,7 +548,7 @@
 }
 
 .noticeQuiet {
-  background: rgba(226, 248, 236, 0.45);
+  background: var(--tone-green-soft);
   border-color: rgba(33, 182, 111, 0.18);
 }
 

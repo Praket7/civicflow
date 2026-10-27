@@ -37,6 +37,8 @@ jobs:
         run: node scripts/audit-accessibility-tree.mjs
       - name: 200% zoom audit
         run: node scripts/audit-zoom.mjs
+      - name: Contrast audit
+        run: node scripts/audit-contrast.mjs
 
   security:
     name: Dependency audit

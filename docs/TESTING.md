@@ -17,6 +17,7 @@ pnpm build:web    # tsc && vite build
 pnpm audit:print  # headless Chrome; certificate and report must print content
 pnpm audit:a11y   # Chromium accessibility tree, all 50 routes
 pnpm audit:zoom   # 800 × 500 CSS viewport (200% zoom), all 50 routes
+pnpm audit:contrast # headless Chrome, every route, light and dark
 pnpm test:native  # WebdriverIO inside the real macOS window
 ```
 
@@ -36,16 +37,18 @@ The axe suite disables the `color-contrast` rule because jsdom cannot compute co
 colors. Color is verified in a real engine instead:
 
 ```bash
-pnpm dev               # leaves the app on localhost:5173
-pnpm audit:contrast    # headless Chrome, all 50 routes, light + dark
+pnpm audit:contrast    # headless Chrome, every route, light + dark
 ```
 
 `scripts/audit-contrast.mjs` launches headless Chrome over the DevTools protocol, walks every
 element that draws text, composites it over its ancestor background stack, and fails the run
 for anything under 4.5:1 (3:1 for large text). It sets both themes per route and writes a
-report with selectors, colors, and ratios. The last run reported no violations outside
-photography, where the background cannot be computed; those panels were checked visually.
-The token decisions behind the result are recorded in [VISUAL_QA.md](VISUAL_QA.md).
+report with selectors, colors, and ratios. Like the print audit it starts a private Vite
+server unless `--base` is given, and `scripts/verify.sh` and CI both run it with
+`--best-effort`, which skips only when no Chrome binary is installed. The last run reported
+no violations outside photography, where the background cannot be computed; those panels were
+checked visually. The token decisions behind the result are recorded in
+[VISUAL_QA.md](VISUAL_QA.md).
 
 `scripts/audit-print.mjs` (`pnpm audit:print`) is the print counterpart. It starts a private
 Vite server unless `--base` is given, renders `/volunteer/verification` and

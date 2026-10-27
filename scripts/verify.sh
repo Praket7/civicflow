@@ -17,6 +17,8 @@ echo "accessibility tree audit"
 node scripts/audit-accessibility-tree.mjs --best-effort
 echo "200% zoom audit"
 node scripts/audit-zoom.mjs --best-effort
+echo "contrast audit"
+node scripts/audit-contrast.mjs --best-effort
 
 pushd src-tauri/core >/dev/null
 cargo fmt --check

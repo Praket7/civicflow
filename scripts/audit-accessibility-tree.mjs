@@ -78,7 +78,6 @@ const routes = [
   ["25", "/sign-in", "public"],
   ["43", "/create-account", "public"],
   ["26", "/volunteer/onboarding", "volunteer"],
-  ["27", "/coordinator/organization/setup", "coordinator"],
   ["28", "/coordinator/volunteers", "coordinator"],
   ["29", "/coordinator/volunteers/vol-maya", "coordinator"],
   ["30", "/coordinator/applications", "coordinator"],

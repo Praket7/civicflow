@@ -150,9 +150,18 @@ async function ensureServer() {
   }
   const base = `http://127.0.0.1:${SERVER_PORT}`;
   if (await waitForHttp(base, 800)) return base;
+  // Run Vite's own entrypoint rather than `pnpm exec vite`: the package-manager
+  // wrapper stays alive through a signal and would leave the server behind.
   server = spawn(
-    "pnpm",
-    ["exec", "vite", "--host", "127.0.0.1", "--port", String(SERVER_PORT), "--strictPort"],
+    process.execPath,
+    [
+      path.join(root, "node_modules", "vite", "bin", "vite.js"),
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(SERVER_PORT),
+      "--strictPort",
+    ],
     {
       cwd: root,
       stdio: "ignore",

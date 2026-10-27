@@ -9,7 +9,7 @@
  * (3:1 for text at 24px or 18.66px bold).
  *
  * Usage:
- *   pnpm audit:contrast                    # starts a private Vite server on :5201
+ *   pnpm audit:contrast                    # starts a private Vite server on :5202
  *   pnpm audit:contrast -- --base http://localhost:5173
  *   pnpm audit:contrast -- --best-effort   # skip when Chrome is unavailable
  *
@@ -34,7 +34,7 @@ const bestEffort = args.includes("--best-effort");
 const explicitBase = flag("base", null);
 const OUT = flag("out", "contrast-report.json");
 const PORT = Number(flag("port", "9333"));
-const SERVER_PORT = Number(flag("server-port", "5201"));
+const SERVER_PORT = Number(flag("server-port", "5202"));
 const CHROME_CANDIDATES = [
   process.env.CHROME,
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",

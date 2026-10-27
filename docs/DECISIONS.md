@@ -251,3 +251,117 @@ unifying the data path and hardening the rules.
 the security hardening, the passing test suites, the accessibility audits, and the browser
 preview that runs without an install. A rebuild is an onboarding answer to an architecture
 question, and the architecture question is answered by this log.
+
+## 025 — The matching policy is versioned data, not optimizer constants
+
+**Decision:** what AutoRoster may do is an organization's own versioned document
+(`organization_roster_policies`, migration 8): four optional workload limits, a rest gap, what
+an unknown age or credential means, and five weights. The screen offers named priorities
+(none/low/medium/high/top) that map to 0/5/10/15/35, validation runs on every save, the change
+is audited as `policy.updated`, and every plan records the `policyVersion` that produced it.
+**Rejected:** leaving the caps and weights as constants in the solver, and exposing raw
+optimizer numbers in the interface.
+**Why:** a nonprofit's staffing rules are its own — one organization caps a volunteer at one
+shift a day, another has no cap at all — and a rule that cannot be seen cannot be defended
+when a coordinator asks why the plan did what it did. Recording the version on each plan is
+what keeps an old roster explainable after the rules change. Weight validation prevents the
+one configuration that would make the score meaningless: priorities that add up past a perfect
+match. A missing policy row means the shipped defaults, so an upgrade changes no behavior.
+
+## 026 — "Why not?" is a counterfactual the solver runs, not a paragraph written about it
+
+**Decision:** `explain::explain_candidate` answers a question about one seat by deciding the
+questioned assignment before the solver runs (`plan_with_forced`) and comparing the two plans
+on filled seats, required seats filled, total score and changed assignments.
+**Rejected:** generating the answer with a language model, and hardening the smaller option of
+reporting the two scores side by side.
+**Why:** "Diego was eligible, but assigning him here would leave the Driver seat uncovered:
+the plan fills 8 of 8 required seats instead of 7" is only true if the second plan was actually
+solved. It is also deterministic, inspectable, and testable, which a generated sentence is not.
+A forced seat is removed from the solver's pool entirely — otherwise the flow hands the same
+seat to a second volunteer — and the volunteer who was moved is not offered anything else,
+because the question is about one decision.
+
+## 027 — A spreadsheet import is checked in full before it is written
+
+**Decision:** `imports::preview` reads the file and reports what each row would do, and
+`imports::apply` re-checks the file and refuses it whole while any row has a problem. Valid
+rows are inserted in one transaction that also appends the `volunteers.imported` audit event.
+**Rejected:** importing the good rows and returning the bad ones as a list to fix later, and
+importing row by row so a coordinator can watch progress.
+**Why:** a roster that is 80% of the file is worse than no roster, because nothing in the data
+says which 20% is missing. Refusing the whole file also makes the operation idempotent from a
+coordinator's point of view: fix the two bad lines, import the file again, and the accepted rows
+appear exactly once. Preview and apply run the same code path, so what the screen shows is what
+the write does.
+
+## 028 — The roster read model travels in the snapshot, not in a second store
+
+**Decision:** `WorkspaceSnapshot` carries a `roster` list read from SQLite, and the workspace
+provider merges it into the volunteer list a screen renders, skipping anyone the authored seed
+already describes.
+**Rejected:** keeping imported volunteers only in the browser store, and writing a separate
+frontend store of locally added people.
+**Why:** the bundled seed authors the demo organization's people, including their service
+history, while SQLite owns everyone added since — an account created on this device, and now an
+imported file. Two sources already existed, so the fix is that the database's half reaches the
+same screens rather than a third place to look. A seeded person keeps the seed's richer record;
+anyone else reads as "nothing recorded yet" instead of borrowing another volunteer's numbers.
+
+## 029 — A series owns the shifts it generated
+
+**Decision:** a repeating shift is a `shift_series` row plus the shifts it produced, each
+carrying `series_id` and the occurrence date it stands for. Topping up adds only the
+occurrences the calendar is missing, and a retime is scoped to the next shift or to the rule
+and every shift it made.
+**Rejected:** cloning a shift N times with no parentage, and matching instances by comparing
+timestamps when a rule changes.
+**Why:** "this week's shift moved, the rest did not" and "we added a week" are normal
+coordinator requests, and both are unanswerable without parentage. Timestamps move; an
+occurrence date does not, so a top-up can tell which weeks already exist instead of
+generating a second copy of them. Deleting the series deletes its shifts together and refuses
+a series somebody is already registered for.
+
+## 030 — Waitlist order is the fairness rule, eligibility is the qualification rule
+
+**Decision:** the replacement recommendation walks the waiting line in order and returns the
+first person who passes the same registration gate a sign-up goes through. Skipped people keep
+the reason they were skipped, and that sentence is shown and audited.
+**Rejected:** ranking by suitability score, and promoting the first entry that happens to be
+eligible without saying who was passed over.
+**Why:** a waitlist is a promise about order, so quietly reordering it by preference would make
+the queue meaningless. Qualification still has to come first — a lapsed credential means a seat
+cannot be filled by that person — so the two rules are separated and the outcome is explained
+rather than asserted. Promotion itself still goes through the workflow command, which re-checks
+instead of trusting the caller.
+
+## 031 — A locked assignment is never moved by a plan
+
+**Decision:** `registrations.locked` is set by a coordinator and read by recovery and
+AutoRoster. The lock records who set it and when.
+**Rejected:** warning about a move after the fact, and keeping locks only in the browser.
+**Why:** the optimizer's job is to be helpful, not to overrule a person who already decided
+something about a specific volunteer. A lock has to survive a reload and reach the planner, so
+it lives on the row. Both planners treat it as fixed and report the seats they could not fill
+because of it.
+
+## 032 — Reminders are rules with an audit trail, not messages
+
+**Decision:** reminders are `notification_rules` rows — trigger, offset, audience, switch — and
+every notification records the rule that produced it. Running the generation pass twice writes
+the due reminder once.
+**Rejected:** a scheduler daemon, and an email/SMS integration.
+**Why:** the product is a standalone desktop application, so "did this alert have a reason?" has
+to be answerable from the database rather than from a queue. A rule a coordinator turned off
+stops writing, which is different from hiding rows that were already written. Idempotence keeps
+the feed from filling with duplicates when the pass runs again.
+
+## 033 — Read models describe rules; they do not predict people
+
+**Decision:** retention signals, engagement metrics, credential readiness, and milestones are
+computed in Rust as counts and rates over stored rows. Each signal names its threshold in the
+reason it carries, along with the history that produced it and a suggested action.
+**Rejected:** a fitted "attrition risk" score, a leaderboard, and an opaque ranking.
+**Why:** "Nico has not served in 94 days and completed 7 food-access shifts, so send the
+food-access opportunities" is something a coordinator can act on and defend. A score would be
+a number nobody can explain, and the rubric rewards decisions a judge can trace.

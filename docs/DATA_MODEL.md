@@ -14,7 +14,7 @@ database.
 - Connection settings: WAL journal mode, `foreign_keys = ON`, a 5-second busy timeout, and
   `application_id = 0x43494656` (`CIFV`) so a foreign SQLite file can be rejected.
 - Migrations are embedded in the binary from `src-tauri/core/migrations/` and applied in
-  order. `SCHEMA_VERSION` is 3 and is also written to `PRAGMA user_version`.
+  order. `SCHEMA_VERSION` is 8 and is also written to `PRAGMA user_version`.
 
 ## Migration ledger
 
@@ -31,6 +31,10 @@ version before running it:
 | 5       | `0005_volunteer_photo.sql`                     | Volunteer photo                                                                                                                  |
 | 6       | `0006_auth_attempts.sql`                       | Failed sign-in attempt throttling                                                                                                |
 | 7       | `0007_organizations_memberships_invites.sql`   | Organization profile columns, contacts, memberships, invitations, updates                                                        |
+| 8       | `0008_roster_policy.sql`                       | Versioned matching policy per organization                                                                                       |
+| 9       | `0009_assignment_locks.sql`                    | A coordinator-held assignment: `locked`, `locked_by`, `locked_at` on `registrations`                                             |
+| 10      | `0010_shift_series.sql`                        | Repeating shift series: the rule, its timezone, and the shifts it generated                                                      |
+| 11      | `0011_notification_rules.sql`                  | Reminder rules: trigger, offset, audience, switch, and the rule each notification records                                        |
 
 Each new migration runs inside a transaction and inserts its version only after the SQL
 succeeds. Existing rows are preserved by nullable/defaulted `ALTER TABLE` columns. A database
@@ -41,19 +45,20 @@ silently upgraded.
 
 ### Organization, identity, and configuration
 
-| Table                       | Purpose and important columns                                                                                                                                                                                                                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `organizations`             | An organization: name, initials, mission, description, address, website, email, timezone, visibility, image, and who created it. Parent of volunteers, opportunities, and impact totals. The seeded organization is one row.                                                                                   |
-| `organization_contacts`     | Contact emails for an organization, ordered. `(organization_id, email)` is the key, so the same address cannot be listed twice.                                                                                                                                                                                |
-| `organization_memberships`  | Who belongs to an organization and in what role. `(organization_id, user_id)` is the primary key; `role` is `coordinator` or `volunteer` and `status` is `active`, `invited`, or `disabled`. `require_membership` and `require_coordinator` read this table, so access is decided here and not by the screens. |
-| `organization_invites`      | One-time invitations: role, expiry, and the SHA-256 hash of the token. The token itself is shown once when it is issued and never stored. `redeemed_at` and `redeemed_by_user_id` record the single use.                                                                                                       |
-| `organization_updates`      | Coordinator announcements and events: kind, title, body, optional link, author.                                                                                                                                                                                                                                |
-| `organization_update_reads` | Per-account read state for an update, keyed by `(update_id, user_id)`.                                                                                                                                                                                                                                         |
-| `app_settings`              | Key/value store for runtime settings: the demo clock (`demo_now`), coordinator identity, current volunteer id, schema version, workflow-seed marker, backup note/time, and the workspace settings edited in Settings.                                                                                          |
-| `users`                     | Local sign-in identity: name, unique email, role (`coordinator` or `volunteer`), optional `volunteer_id`, Argon2id `password_hash`, `status`, and `last_login_at`. A volunteer account is linked to exactly one volunteer row.                                                                                 |
-| `auth_sessions`             | Opaque session records: user id, SHA-256 token hash, creation and expiry, and `revoked_at`. A password reset revokes every live session for the account.                                                                                                                                                       |
-| `report_saved_views`        | Persisted report filters keyed by owner, scope, and name. `filters_json` is a JSON object; owner is deliberately not a foreign key so reports survive staff changes.                                                                                                                                           |
-| `backup_snapshots`          | Metadata for snapshots written into the backup directory: path, trigger, bytes, SHA-256, schema version, integrity, and a JSON count summary. The authoritative backup is the `.db` file, not this row.                                                                                                        |
+| Table                          | Purpose and important columns                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `organizations`                | An organization: name, initials, mission, description, address, website, email, timezone, visibility, image, and who created it. Parent of volunteers, opportunities, and impact totals. The seeded organization is one row.                                                                                                                                       |
+| `organization_contacts`        | Contact emails for an organization, ordered. `(organization_id, email)` is the key, so the same address cannot be listed twice.                                                                                                                                                                                                                                    |
+| `organization_memberships`     | Who belongs to an organization and in what role. `(organization_id, user_id)` is the primary key; `role` is `coordinator` or `volunteer` and `status` is `active`, `invited`, or `disabled`. `require_membership` and `require_coordinator` read this table, so access is decided here and not by the screens.                                                     |
+| `organization_invites`         | One-time invitations: role, expiry, and the SHA-256 hash of the token. The token itself is shown once when it is issued and never stored. `redeemed_at` and `redeemed_by_user_id` record the single use.                                                                                                                                                           |
+| `organization_updates`         | Coordinator announcements and events: kind, title, body, optional link, author.                                                                                                                                                                                                                                                                                    |
+| `organization_update_reads`    | Per-account read state for an update, keyed by `(update_id, user_id)`.                                                                                                                                                                                                                                                                                             |
+| `organization_roster_policies` | The matching rules AutoRoster follows, one row per accepted version: `policy_json` holds the typed policy, `updated_at` and `updated_by` record who changed it. `(organization_id, version)` is the key and versions accumulate, because every generated plan names the version that produced it. No row means the shipped defaults, so nothing needs backfilling. |
+| `app_settings`                 | Key/value store for runtime settings: the demo clock (`demo_now`), coordinator identity, current volunteer id, schema version, workflow-seed marker, backup note/time, and the workspace settings edited in Settings.                                                                                                                                              |
+| `users`                        | Local sign-in identity: name, unique email, role (`coordinator` or `volunteer`), optional `volunteer_id`, Argon2id `password_hash`, `status`, and `last_login_at`. A volunteer account is linked to exactly one volunteer row.                                                                                                                                     |
+| `auth_sessions`                | Opaque session records: user id, SHA-256 token hash, creation and expiry, and `revoked_at`. A password reset revokes every live session for the account.                                                                                                                                                                                                           |
+| `report_saved_views`           | Persisted report filters keyed by owner, scope, and name. `filters_json` is a JSON object; owner is deliberately not a foreign key so reports survive staff changes.                                                                                                                                                                                               |
+| `backup_snapshots`             | Metadata for snapshots written into the backup directory: path, trigger, bytes, SHA-256, schema version, integrity, and a JSON count summary. The authoritative backup is the `.db` file, not this row.                                                                                                                                                            |
 
 ### People and eligibility
 
@@ -87,13 +92,15 @@ ordered display lists, not records queried independently.
 
 ### Participation and recruitment
 
-| Table                     | Purpose and important columns                                                                                                                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `saved_opportunities`     | Volunteer shortlist, primary key `(volunteer_id, opportunity_id)`, plus `saved_at`.                                                                                                                                 |
-| `applications`            | Recruitment pipeline row with stage (`applied`, `review`, `onboarding`, `active`), source, cause, note, and `skills_json`.                                                                                          |
-| `volunteer_stage_history` | Immutable stage transitions for an application: from/to stage, time, actor, note. Exists so stage changes are not just overwrites.                                                                                  |
-| `registrations`           | A volunteer’s place on a shift: role, created/updated time, and status (`registered` by default; canceled, completed, and no-show are written by workflows). Status is enforced in Rust, not by a CHECK constraint. |
-| `waitlist_entries`        | Ordered recovery queue: shift, volunteer, created time, status (`waiting`, `promoted`, `declined`, `expired`, `removed`), positive position, and eligible role. Unique per shift and volunteer.                     |
+| Table                     | Purpose and important columns                                                                                                                                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `saved_opportunities`     | Volunteer shortlist, primary key `(volunteer_id, opportunity_id)`, plus `saved_at`.                                                                                                                                                                                            |
+| `applications`            | Recruitment pipeline row with stage (`applied`, `review`, `onboarding`, `active`), source, cause, note, and `skills_json`.                                                                                                                                                     |
+| `volunteer_stage_history` | Immutable stage transitions for an application: from/to stage, time, actor, note. Exists so stage changes are not just overwrites.                                                                                                                                             |
+| `registrations`           | A volunteer’s place on a shift: role, created/updated time, status (`registered` by default; canceled, completed, and no-show are written by workflows), and the coordinator lock (`locked`, `locked_by`, `locked_at`). Status is enforced in Rust, not by a CHECK constraint. |
+| `waitlist_entries`        | Ordered recovery queue: shift, volunteer, created time, status (`waiting`, `promoted`, `declined`, `expired`, `removed`), positive position, and eligible role. Unique per shift and volunteer.                                                                                |
+| `shift_series`            | A repeating rule: kind (`none` or `weekly`), interval weeks, weekday set, start time, duration, start date, optional end date or occurrence count, timezone, coordinator, and the opportunity it belongs to.                                                                   |
+| `shift_series_roles`      | The roles each generated shift should carry: name and required count, keyed by `(series_id, name)`.                                                                                                                                                                            |
 
 Waitlist order is deterministic: `(shift_id, position)`, and promotion checks the role
 requirement before moving an entry to `promoted` and creating its registration in the same
@@ -129,11 +136,12 @@ outcomes.
 
 ### Activity, notifications, and audit
 
-| Table             | Purpose and important columns                                                                                                                                                                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `notifications`   | Local alert: domain kind, title, body, priority (`high`/`normal`), created/read times, href, `audience` (`coordinator`, `volunteer`, `all`), and optional `volunteer_id`. Read state is persisted, not just component state. The read model filters on both columns. |
-| `activity_events` | Short human-readable feed shown on Mission Control: volunteer, name, action, detail, tone, time. Separate from the compliance audit.                                                                                                                                 |
-| `audit_events`    | Append-only audit trail: time, actor type/id, action, entity type/id, summary, and optional detail. The UI relabels the seeded actor id with the current coordinator name.                                                                                           |
+| Table                | Purpose and important columns                                                                                                                                                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notifications`      | Local alert: domain kind, title, body, priority (`high`/`normal`), created/read times, href, `audience` (`coordinator`, `volunteer`, `all`), optional `volunteer_id`, and the reminder rule that produced it (`rule_id`). Read state is persisted, not just component state. The read model filters on both columns. |
+| `notification_rules` | A reminder rule: trigger (`shift_reminder`, `checkin_soon`, `missed_shift_follow_up`, `credential_expiring`), offset minutes, audience, and an on/off switch. A disabled rule stops writing at the next generation pass rather than hiding rows.                                                                     |
+| `activity_events`    | Short human-readable feed shown on Mission Control: volunteer, name, action, detail, tone, time. Separate from the compliance audit.                                                                                                                                                                                 |
+| `audit_events`       | Append-only audit trail: time, actor type/id, action, entity type/id, summary, and optional detail. The UI relabels the seeded actor id with the current coordinator name.                                                                                                                                           |
 
 ## Relationships and delete behavior
 
@@ -187,6 +195,12 @@ Stored tables are not sent raw. The core assembles these models on every command
   current volunteer profile, credentials, verifications, impact metrics, saved views,
   retention cohorts, and an optional check-in code. `checkin_code` is `None` in the generic
   snapshot; the kiosk calls a dedicated command for the live code.
+- **`roster`** — the roster as SQLite holds it: identity, contact, status, skills from
+  `volunteer_skills`, availability from `availability_rules` (falling back to
+  `availability_json`), and causes. It exists so people a coordinator added or imported are
+  visible on the roster screens, which otherwise read the authored seed. A coordinator
+  receives every record; a volunteer receives only their own row, so the list cannot be read
+  as a membership directory.
 - **`MissionControlSummary`** — derived from upcoming shifts and roles, hour entries,
   unread notifications, `impact_totals`, `impact_results`, and the activity feed. Attention
   items are computed from gaps, not stored.
@@ -196,11 +210,30 @@ Stored tables are not sent raw. The core assembles these models on every command
   exists.
 - **Reports and coverage** — generated on demand in `reports.rs` from the same tables;
   exports are rendered from the generated document, not from the screen.
+- **`ReplacementRecommendation`** — `waitlist.rs` walks the waiting line in order, asks
+  `validate_registration` about each person, and returns the first eligible volunteer plus
+  the sentence naming everyone passed over and why. Promotion still goes through
+  `promote_waitlist`, which re-checks rather than trusting the recommendation.
+- **`DisruptionReport` / `RecoveryPlan`** — `recovery.rs` detects open required seats and
+  credentials that lapse before a shift starts, then plans a repair ranked by coverage,
+  how few assignments it disturbs, and match quality. A locked assignment is never moved.
+- **Retention signals, volunteer insight, engagement metrics, credential readiness** —
+  `insights.rs` computes each from the same rows, one rule per signal with its threshold in
+  the reason. Nothing here is a prediction or a stored score.
 - **`WorkspaceHealth`** — counts, schema version, demo clock, timezone, and integrity
   results for diagnostics.
 
 This keeps a single source of truth: changing a registration changes coverage, Mission
 Control, attendance, and reports on the next read without a cache to invalidate.
+
+### Imported and exported rosters
+
+`imports.rs` reads a fixed column set (`Name`, `Email`, `Phone`, `Status`, `Skills`,
+`Availability`, `Interests`, `Causes`) and writes one `volunteers` row plus its
+`volunteer_skills` and `availability_rules` rows per accepted line, in a single transaction
+that also appends the audit event. Emails are unique per roster, so a duplicate inside the file
+or an address already stored is reported instead of overwritten. `export_roster` writes the
+same columns, which makes an export editable in a spreadsheet and readable back.
 
 ## JSON columns
 

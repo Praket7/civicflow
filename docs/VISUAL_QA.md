@@ -66,7 +66,7 @@ The last pass treated the whole product as one surface rather than a set of scre
   rendered-pixel contrast sweep reported no text violations in light or dark theme. **22**
   scripted interaction checks and **9** persistence checks passed, including save/reload,
   hours approval, kiosk check-in, CSV export, and demo reset. `pnpm db:verify` reads the live
-  desktop file and checks integrity, schema v7, 38 tables, foreign keys and record counts.
+  desktop file and checks integrity, schema v8, 39 tables, foreign keys and record counts.
 
 ## Collapsed navigation rail
 

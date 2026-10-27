@@ -17,6 +17,19 @@ session layer is a cache of one snapshot returned by the core.
 - **Coordinator operations.** Mission Control, coverage and AutoRoster, schedule, programs,
   live rosters, attendance, the kiosk, hours review, credentials, recruitment, analytics,
   reports, records, audit, backups, settings, accounts, and accessibility.
+- **Disruption recovery.** The coverage rescue card detects open required seats and credentials
+  that lapse before a shift starts, then plans a repair ranked by coverage, the fewest disturbed
+  assignments, and match quality. Every change is reviewed before it is applied, a locked
+  assignment is never moved, and each accepted change writes its own audit event.
+- **Repeating shifts.** A coordinator schedules a weekly rule once; the series owns the shifts
+  it generated, so a top-up adds only the missing weeks, a retime reaches the next shift or the
+  whole series, and deleting a series removes its shifts together.
+- **Who takes the seat.** When a role opens, the waitlist is ranked in order and the first
+  person who still meets every requirement is recommended — with everyone passed over named and
+  the reason stated, because “why was I skipped?” deserves a sentence.
+- **Decisions, not dashboards.** Retention signals, recognition milestones, engagement metrics,
+  and credential readiness are rules over the service record: each carries its threshold, the
+  history behind it, and the action it suggests. Nothing is a prediction or a stored score.
 - **Volunteer service.** Home, discovery and opportunity detail, saved shortlist, schedule,
   shift preparation, check-in, hours, verification, personal impact, notifications, and
   profile.
@@ -100,17 +113,19 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [AUTH.md](docs/AUTH.md),
 ## Verification
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm build:web`: clean.
-- 180 frontend tests: axe checks across all 50 routes, coverage maths, selector consistency,
+- 184 frontend tests: axe checks across all 50 routes, coverage maths, selector consistency,
   the IPC command/argument map including the session token, preview cancellation recovery,
-  the preview fallback, hosted identity and email-link parsing, preview snapshot restore, and
-  the Ask CivicFlow matcher and totals.
-- 71 Rust tests: migrations/seed, foreign keys, account creation and its refusals, hosted
-  account linking, coverage
-  totals, attention ordering,
-  notifications and their audience scoping, sign-in/sign-out, role refusal, volunteer
-  snapshot redaction, registration and check-in rules including QR payloads, the AutoRoster
-  flow solver and its brute-force oracle, the cancellation → waitlist → hours → verification
-  lifecycle, report totals and exports, impossible writes, and backup restore/validation.
+  the preview fallback, hosted identity and email-link parsing, preview snapshot restore, the
+  catalog completeness gate, and the Ask CivicFlow matcher and totals.
+- 172 Rust tests: migrations/seed, foreign keys, accounts and organization membership, invite
+  redemption, coverage totals, attention ordering, notifications and their audience scoping,
+  reminder rules and their idempotence, sign-in/sign-out, role refusal, volunteer snapshot
+  redaction, registration and check-in rules including QR payloads, the AutoRoster flow solver
+  and its brute-force oracle, matching-policy versions, why/why-not explanations, seat
+  replacement ranking, disruption detection and recovery plans, series expansion and retimes,
+  the cancellation → waitlist → hours → verification lifecycle, retention signals and
+  milestones, spreadsheet import, report totals and exports, impossible writes, and backup
+  restore/validation.
 - WebdriverIO drives the embedded WebDriver server inside the real macOS window: sign-in,
   coordinator Mission Control, volunteer route refusal, sign-out, volunteer home, and
   coordinator route refusal. `pnpm test:native` is part of CI.

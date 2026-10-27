@@ -167,12 +167,18 @@ async function translateLocale(meta) {
 
   const path = join(CATALOG_DIR, `${code}.json`);
   const existing = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
-  if (!force && Object.keys(existing).length >= strings.length) {
+  // An entry that still holds its English source is waiting for a translation,
+  // which is what a key added while the endpoint was unreachable looks like. A
+  // single-word key can legitimately read the same in both languages, so only
+  // sentence-length entries are re-requested.
+  const untranslated = (string) =>
+    !existing[string] || (existing[string] === string && string.includes(" "));
+  if (!force && !strings.some(untranslated)) {
     console.log(`${code}: complete (${Object.keys(existing).length})`);
     return;
   }
 
-  const missing = strings.filter((string) => force || !existing[string]);
+  const missing = strings.filter((string) => force || untranslated(string));
   console.log(`${code}: translating ${missing.length} strings`);
   let completed = 0;
 
@@ -183,7 +189,8 @@ async function translateLocale(meta) {
         existing[string] = translated[index] || string;
       });
       completed += batch.length;
-      writeFileSync(path, JSON.stringify(existing));
+      // Keep the committed two-space layout so a run leaves a readable diff.
+      writeFileSync(path, `${JSON.stringify(existing, null, 2)}\n`);
       console.log(`${code}: ${completed}/${missing.length}`);
     } catch (error) {
       console.error(`${code}: batch failed after retries — ${error.message}`);

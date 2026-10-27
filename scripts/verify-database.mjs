@@ -78,10 +78,14 @@ const requiredTables = [
   "audit_events",
   "report_saved_views",
   "backup_snapshots",
+  "organization_roster_policies",
+  "shift_series",
+  "shift_series_roles",
+  "notification_rules",
 ];
 
 // Keep in step with SCHEMA_VERSION in src-tauri/core/src/db.rs.
-const expectedSchemaVersion = 7;
+const expectedSchemaVersion = 11;
 const db = new DatabaseSync(dbPath, { readOnly: true });
 
 try {

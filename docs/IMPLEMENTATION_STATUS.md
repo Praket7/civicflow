@@ -10,7 +10,7 @@ event before returning a fresh snapshot.
 
 - Tauri 2 desktop shell, React 19 + TypeScript + Vite, Rust core crate, SQLite through
   `rusqlite`.
-- Embedded migrations at schema version 7, deterministic seed, foreign keys, integrity
+- Embedded migrations at schema version 8, deterministic seed, foreign keys, integrity
   checks, and reset-to-seed.
 - Structured IPC errors with `code`, `message`, `field`, and optional `action`.
 - One `WorkspaceRepository` boundary with a desktop implementation and a browser fallback
@@ -43,6 +43,9 @@ event before returning a fresh snapshot.
   filter on both, so a coordinator does not see volunteer alerts and a volunteer does not
   see another volunteer's alert.
 - Settings → Accounts lists the local accounts and lets a coordinator reset a password.
+- Settings → Local data offers the roster import: choose or paste a CSV, check it row by row,
+  add the accepted rows, fill the field from the template, or export the roster in the columns the
+  import reads. A coordinator-only section, like the rest of the workspace-level operations.
 - Kiosk is a coordinator-authenticated route. It is still the same webview, not a separate
   capability-scoped window.
 
@@ -60,9 +63,35 @@ no account request. See [AUTH.md](AUTH.md).
 
 ### Domain engine
 
-- AutoRoster is Rust: eligibility gates, six-component score, candidate-day to role-slot
-  min-cost max-flow, deterministic ordering, explanation strings, brute-force oracle,
-  proptest, and a 500-candidate/100-slot performance gate.
+- AutoRoster is Rust: an organization's versioned matching policy (workload caps, a rest
+  gap, what an unknown age or credential means, and five weighted match priorities),
+  eligibility gates that report every check, a six-component score, candidate-day to
+  role-slot min-cost max-flow, deterministic ordering, brute-force oracle, proptest, and a
+  500-candidate/100-slot performance gate.
+- Every assignment carries a typed explanation: the constraint checks with pass or fail and
+  a detail sentence, the score components, the total, and a selection reason. Settings →
+  Scheduling → Matching policy edits the policy, each save creates a version audited as
+  `policy.updated`, and every plan records the `policyVersion` it followed.
+- "Why not that person?" is a real counterfactual: the questioned assignment is decided
+  before the solver runs and the two plans are compared on filled seats, required seats
+  filled, total score and the assignments that changed. The AutoRoster screen shows it per
+  seat, and names any seat the forced decision would leave uncovered.
+- A coordinator schedules a repeating rule once: `shift_series` owns the rule and the shifts
+  it generated, so a top-up adds only the occurrences the calendar is missing, a retime
+  reaches the next shift or the whole series, and a delete refuses a series somebody is
+  already registered for.
+- When a seat opens, `waitlist.rs` ranks the line: waitlist order is the fairness rule and
+  the eligibility gate is the qualification rule, so the recommendation is the first person
+  who can actually take the role — with everyone passed over named and the reason stated.
+  **Open seats** on the shift roster shows that answer and promotes from it; the promotion
+  still runs through `promote_waitlist`, which re-checks rather than trusting the caller.
+- Disruption recovery: `recovery.rs` detects open required seats and credentials that lapse
+  before a shift starts, then plans a repair ranked by coverage, the fewest disturbed
+  assignments, and match quality. A locked assignment is never moved, the review screen is
+  per-change, and applying writes one audit event per accepted change.
+- Reminder rules are deterministic rows: a trigger, an offset, an audience, and a switch.
+  Each notification records the rule that wrote it, so the feed can explain itself, and a
+  disabled rule stops writing rather than hiding.
 - Registration validates active status, shift window, duplicate state, role capacity,
   required skill, credential expiry, minimum age, weekly availability, and time overlap.
 - An approved AutoRoster plan applies in one transaction and cannot overfill a role or a
@@ -76,7 +105,22 @@ no account request. See [AUTH.md](AUTH.md).
   another shift. Check-out writes calculated minutes into a pending hour entry.
 - Hours review accepts only pending entries, requires a note, enforces 1–1440 approved
   minutes, and issues a `service_verifications` record from approved minutes only.
-- Reports, CSV, and PDF are generated in Rust from stored rows.
+- Reports, CSV, and PDF are generated in Rust from stored rows. The Reports screen also
+  reads the decision models directly: coverage decisions, volunteer engagement (30/60/90-day
+  return, no-show rate, inactive), and credential readiness with future shifts at risk.
+- Retention signals, recognition milestones, engagement metrics, and credential readiness all
+  come from `insights.rs` as rules over the service record. None of them is a prediction or a
+  stored score, and each signal carries the history that produced it and the action it
+  suggests.
+- A volunteer roster arrives from a spreadsheet: `imports.rs` reads a fixed column set, checks
+  every row (required name and email, a status and cause vocabulary, `mon:morning` availability
+  windows, duplicates inside the file and against the stored roster), and refuses the whole file
+  while any row has a problem. An accepted file is one transaction that inserts the volunteers,
+  their skills and their availability windows and appends a `volunteers.imported` audit event.
+  `export_roster` writes the same columns, so an export can be edited and imported back.
+- `WorkspaceSnapshot.roster` is the roster as SQLite holds it, so people added since the seed
+  authored the bundled roster — an account created here, an imported file — reach the roster
+  screens. A coordinator receives every record and a volunteer only their own row.
 
 ### Screens
 
@@ -101,7 +145,7 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
 
 ### Evidence and documentation
 
-- 180 frontend tests, 71 Rust tests, typecheck, lint, format, web build, contrast audit,
+- 184 frontend tests, 172 Rust tests, typecheck, lint, format, web build, contrast audit,
   print audit, accessibility-tree audit, and 200% zoom audit.
 - The accessibility-tree audit reads Chromium's accessibility tree on all 50 routes and
   requires a main landmark, one level-one heading, and a name on every interactive control.
@@ -115,7 +159,7 @@ Personal Impact, Volunteer Detail, Reports, and the Impact Report.
   `METRICS.md`, `SECURITY.md`, `SIGNING.md`, `ACCESSIBILITY.md`, `TESTING.md`,
   `USER_GUIDE.md`, `ENVIRONMENT.md`, `DECISIONS.md`, and `OPEN_SOURCE_CREDITS.md`.
 - Visual QA notes and the full route sweep are in [VISUAL_QA.md](VISUAL_QA.md).
-- `pnpm db:verify` reads the running desktop database and checks integrity, schema v7, 38
+- `pnpm db:verify` reads the running desktop database and checks integrity, schema v11, 42
   tables, foreign keys and record counts.
 
 ### Release artifacts

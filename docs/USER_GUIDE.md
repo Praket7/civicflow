@@ -79,7 +79,7 @@ shift to see its roster or continue to AutoRoster.
 1. Choose the shift.
 2. Set options such as Spanish preference, conflict blocking, weekly cap, and whether the
    waitlist may be included.
-3. Choose **Generate plan**.
+3. Choose **Run optimizer**.
 4. Review each suggested volunteer, the score breakdown, and the plain-language reasons.
 5. Choose **Apply N assignments**. The core validates every seat and writes the whole plan in
    one transaction. If one assignment is invalid, none are applied.
@@ -87,13 +87,39 @@ shift to see its roster or continue to AutoRoster.
 A planned volunteer who is already waiting is promoted; everyone else is registered. The
 result is visible immediately in Coverage, the live roster, Mission Control, and Audit.
 
+Under each suggested seat, **Why this person?** lists every hard requirement the solver
+checked with a pass or fail and the score components that built the number. **Ask why not**
+offers the other people who could take that seat:
+
+- someone who fails a requirement is shown the check that failed and nothing else;
+- someone who was eligible but passed over gets a real answer — the assignment is decided,
+  the plan is solved again, and the two plans are compared. It reads like
+  "required seats filled 8 to 7" and names the seat that would go uncovered.
+
+AutoRoster follows the organization's **matching policy** (Settings → Scheduling → Matching
+policy): how many shifts or minutes one volunteer may take on per day and per week, the
+minimum rest between shifts, what a missing age or credential means for a role that requires
+one, and how much the skill, cause-interest, language, fairness and reliability components
+weigh. Saving a change creates a version, recorded in the audit log, and every plan names the
+version it used — so a roster can still be explained after the rules change.
+
 ### Schedule and live roster — `/coordinator/schedule`, `/coordinator/shifts/:id`
 
 **Schedule** switches between week and list views, moves between weeks, filters by program or
-role, and opens a shift. The shift detail is the live roster: **Check in**, **Check out**,
+role, and opens a shift. **Repeating series** lists every rule the workspace is running with
+its generated shifts: **Add missing shifts** tops up the occurrences the calendar is not
+holding yet, **Change the time** retimes either the next shift only or the whole series, and
+**Remove series** deletes the rule with the shifts it made, refusing a shift somebody is
+already registered for. The shift detail is the live roster: **Check in**, **Check out**,
 mark a no-show, and **Promote** a waiting volunteer. Each action writes attendance or the
 registration and records an audit event. A shift opens its check-in window 30 minutes before
 the start.
+
+When a shift has an open required seat, **Open seats** answers who should take it: the
+ranking walks the waitlist in order and reports the first volunteer who still meets every
+requirement for that role, naming anyone ahead who could not take the seat and the reason
+(“no longer holds the required credential”). **Promote** puts that person on the roster, and
+the card stops offering a seat that person already holds.
 
 ### Attendance and kiosk — `/coordinator/attendance`, `/coordinator/kiosk`
 
@@ -135,7 +161,13 @@ minutes count toward reports and certificates.
 - `/coordinator/reports/custom` builds a report from an allow-listed field set.
 - `/coordinator/reports/preview` is the printable impact report.
 - `/coordinator/impact` shows approved-hours impact by cause.
-- `/coordinator/insights` shows retention cohorts and at-risk volunteers.
+- `/coordinator/insights` shows retention cohorts and at-risk volunteers, plus **Retention
+  signals**: one row per volunteer a rule fired for, with the rule's threshold in the reason,
+  the history that produced it, and a suggested action.
+- `/coordinator/reports` also carries **Decision readouts**: coverage decisions (late
+  cancellations, waitlist promotions, promotion success, average sign-up lead), volunteer
+  engagement (new volunteers, 30/60/90-day return, inactive, completed shifts, no-show rate),
+  and credential readiness (current, expiring in 30 days, expired, future shifts at risk).
 - `/coordinator/records` is the unified searchable ledger.
 - `/coordinator/audit` lists every write with actor, action, entity, and time. Both Records and
   Audit export CSV.
@@ -148,11 +180,31 @@ second **Confirm restore** applies it, keeping a safety snapshot first. The newe
 snapshots are retained.
 
 **Settings** (`/coordinator/settings`) validates and saves organization identity, week start,
-default shift length, digest cadence, and display preferences. **Reset demo data** arms a
-confirmation and then restores the seed; this cannot be undone.
+default shift length, digest cadence, and display preferences. **Reminder rules** switches the
+deterministic reminders on and off and queues the ones that are due; each notification records
+the rule that wrote it. Under **Scheduling**, the
+**Matching policy** section edits what AutoRoster may do: workload limits, the minimum rest
+between shifts, what an unknown age or credential means, and the five match priorities. Each
+save appends a version, shows it beside the heading, and writes `policy.updated` to the audit
+log. **Reset demo data** arms a confirmation and then restores the seed; this cannot be
+undone.
 
 **Accessibility** (`/coordinator/accessibility`) applies text scale, contrast, reduced motion,
 and underlined links live. The same page documents keyboard and screen-reader support.
+
+### Importing a volunteer spreadsheet — Settings → Local data
+
+**Import a volunteer spreadsheet** takes a CSV of the roster a nonprofit already keeps. The
+file is read row by row first and nothing is written until the whole file is clean: every
+problem names the line number, the value that was rejected, and the accepted vocabulary, and a
+file with any problem is refused whole, so a roster is never left half imported. A name and an
+email are required; `Status` defaults to `onboarding`, because a spreadsheet says who exists,
+not who has been screened. Skills, availability (`mon:morning; wed:evening`) and causes arrive
+as semicolon-separated lists, and different skill or availability spellings on two rows are
+reported rather than silently dropped. **Fill with the template** puts a header and one example
+row in the paste area, **Export the roster** writes the current roster in exactly the columns
+the import reads, and a finished import writes one `volunteers.imported` audit event with the
+row counts.
 
 ## Volunteer tour
 
@@ -197,6 +249,8 @@ one-page document; the app does not claim a code that is not in the database.
 ### Impact and profile — `/volunteer/impact`, `/volunteer/profile`
 
 Personal Impact turns approved hours into program outcomes and provides a copyable summary.
+It also shows **Recognition milestones**: verified hours, completed shifts, and years of
+service as they are recorded, with the next one and what is still missing.
 Profile shows skills, availability, credentials, and match links. Use **Edit profile** to
 return to onboarding (`/volunteer/onboarding`) and choose **Save & continue** there.
 

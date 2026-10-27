@@ -455,6 +455,33 @@ or signature, despite the “tamper-evident” badge.
 | At-risk count                                     | derived from stored profile fields | `volunteers.attendance_rate/events_completed`   |
 | Report rows and summaries                         | derived                            | SQL over workflow tables                        |
 | Directory “verified hours”                        | stored summary                     | `volunteers.hours_verified`                     |
+| Retention signals                                 | derived                            | `insights.rs` rules over service rows           |
+| Milestones (hours, shifts, service years)         | derived                            | verified hour entries and completed shifts      |
+| Engagement metrics (return 30/60/90, no-show %)   | derived                            | registrations, attendance, waitlist promotions  |
+| Credential readiness (current/expiring/expired)   | derived                            | `volunteer_credentials` against the demo date   |
+| Replacement recommendation                        | derived                            | waitlist order plus `validate_registration`     |
+| Recovery plan cost and coverage change            | derived                            | the planner's own comparison, per plan          |
+
+### Decision readouts
+
+`insights.rs` is the source for the numbers a coordinator decides with, and each one is a
+count or a rate over stored rows. Nothing is a model output:
+
+```text
+new_volunteers        volunteers whose first service date is within 90 days
+return_30/60/90       percentage of new starters with another service date in the window
+inactive_volunteers   no completed shift in 90 days
+no_show_rate          no-show attendance rows / registrations for shifts that started
+late_cancellation     cancellations within 48 hours of the shift start
+waitlist_promotions   waitlist entries moved to promoted
+promotion_rate        promotions that ended in a completed shift
+credential_readiness  credentials valid today / expiring in 30 days / already expired
+assignments_at_risk   future assignments whose credential lapses before the shift starts
+```
+
+Percentages are rounded to whole numbers for display, and a denominator of zero reads as
+zero rather than as a fabricated baseline. The Reports screen renders the same fields the
+report service reads, so the card and a report cannot disagree.
 
 ## 8. Known inconsistencies
 

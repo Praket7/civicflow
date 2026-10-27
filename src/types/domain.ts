@@ -37,7 +37,7 @@ export interface Organization {
   imageAlt?: string;
 }
 
-export interface Person {
+interface Person {
   id: string;
   name: string;
   firstName: string;
@@ -109,7 +109,7 @@ export interface Shift {
   roles: ShiftRole[];
 }
 
-export interface HourEntry {
+interface HourEntry {
   id: string;
   volunteerId: string;
   opportunityId: string;
@@ -175,7 +175,7 @@ export interface NotificationItem {
   href: string;
 }
 
-export interface SavedView {
+interface SavedView {
   id: string;
   name: string;
   filters: Record<string, string[] | undefined>;
@@ -282,7 +282,7 @@ export interface CheckinCode {
   payload: string;
 }
 
-export interface ScoreBreakdown {
+interface ScoreBreakdown {
   skill: number;
   availability: number;
   interest: number;
@@ -321,7 +321,7 @@ export interface MatchExplanation {
 }
 
 /** One seat that a different person holds once a decision is forced. */
-export interface AssignmentChange {
+interface AssignmentChange {
   kind: "lost" | "moved" | "gained" | string;
   shiftId: string;
   shiftTitle: string;
@@ -355,7 +355,7 @@ export interface CandidateAnswer {
 }
 
 /** What an unknown age or credential means for the role that requires it. */
-export type MissingRequirementBehavior = "block" | "allow";
+type MissingRequirementBehavior = "block" | "allow";
 
 /** The organization's own matching rules, in the words a coordinator chose. */
 export interface RosterPolicy {
@@ -404,7 +404,7 @@ export interface PlannedAssignment {
   explanation: MatchExplanation;
 }
 
-export interface UnfilledSlot {
+interface UnfilledSlot {
   shiftId: string;
   role: string;
   reason: string;
@@ -455,7 +455,7 @@ export interface DisruptedShift {
   reasons: string[];
 }
 
-export interface AtRiskAssignment {
+interface AtRiskAssignment {
   shiftId: string;
   shiftTitle: string;
   startsAt: string;
@@ -475,7 +475,7 @@ export interface DisruptionReport {
   atRisk: AtRiskAssignment[];
 }
 
-export type RecoveryChangeKind = "assign" | "promote" | "move";
+type RecoveryChangeKind = "assign" | "promote" | "move";
 
 export interface RecoveryChange {
   kind: RecoveryChangeKind;
@@ -529,7 +529,7 @@ export interface AuditEvent {
   detail?: string;
 }
 
-export interface BackupCounts {
+interface BackupCounts {
   volunteers: number;
   programs: number;
   shifts: number;
@@ -623,7 +623,7 @@ export interface NewOpportunityInput {
   requirements: string[];
 }
 
-export interface RegistrationInput {
+interface RegistrationInput {
   shiftId: string;
   volunteerId: string;
   role: string;

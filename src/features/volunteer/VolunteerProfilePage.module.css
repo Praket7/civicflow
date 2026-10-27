@@ -741,10 +741,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sparkle {
-  color: var(--color-violet);
-}
-
 .impactCard {
   background: var(--color-navy);
 }

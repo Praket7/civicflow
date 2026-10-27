@@ -23,7 +23,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  * Reads a photo the person picked and shrinks it to a square (or a wide cover)
  * that fits comfortably in local storage. Everything stays on the device.
  */
-export async function photoToDataUrl(
+async function photoToDataUrl(
   file: File,
   options: { width?: number; height?: number; quality?: number } = {},
 ): Promise<string> {

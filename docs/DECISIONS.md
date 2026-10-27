@@ -364,4 +364,4 @@ reason it carries, along with the history that produced it and a suggested actio
 **Rejected:** a fitted "attrition risk" score, a leaderboard, and an opaque ranking.
 **Why:** "Nico has not served in 94 days and completed 7 food-access shifts, so send the
 food-access opportunities" is something a coordinator can act on and defend. A score would be
-a number nobody can explain, and the rubric rewards decisions a judge can trace.
+a number nobody can explain; a stated threshold is one a coordinator can check.

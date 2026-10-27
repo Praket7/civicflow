@@ -9,7 +9,7 @@ export function hasLetters(text) {
   return /\p{L}/u.test(text);
 }
 
-export function isInlineNode(node) {
+function isInlineNode(node) {
   if (!node) return false;
   return (
     node.type === "JSXElement" ||

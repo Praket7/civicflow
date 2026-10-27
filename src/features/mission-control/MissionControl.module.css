@@ -216,10 +216,6 @@
   background: var(--surface-paper);
 }
 
-.metricText {
-  display: contents;
-}
-
 .metricValue {
   font-family: var(--font-mono);
   font-size: 34px;

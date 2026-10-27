@@ -31,7 +31,7 @@ export function weeklyCoverage(shifts: Shift[], demoNow: string): CoverageDay[] 
   });
 }
 
-export function isUpcoming(shift: Shift, demoNow: string): boolean {
+function isUpcoming(shift: Shift, demoNow: string): boolean {
   return parseISO(shift.startsAt).getTime() > parseISO(demoNow).getTime();
 }
 

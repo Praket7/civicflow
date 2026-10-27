@@ -31,7 +31,7 @@ export interface OrganizationMembership {
   joinedAt: string;
 }
 
-export type OrganizationUpdateKind = "event" | "announcement";
+type OrganizationUpdateKind = "event" | "announcement";
 
 export interface OrganizationUpdate {
   id: string;

@@ -8,7 +8,7 @@ use civicflow_core::imports::{self, ImportPreview, ImportSummary};
 use civicflow_core::matching::{RosterOptions, RosterPlan};
 use civicflow_core::models::{
     AvailabilitySlot, BackupRestoreResult, BackupSnapshot, CheckinCode, CreateOpportunityResult,
-    MissionControlSummary, NewOpportunityInput, NotificationItem, SettingsPatch, WorkspaceHealth,
+    MissionControlSummary, NewOpportunityInput, NotificationItem, SettingsPatch,
     WorkspaceSnapshot,
 };
 use civicflow_core::insights::{
@@ -303,16 +303,6 @@ fn mark_notification_read(
         &account.name,
     )
     .map_err(AppError::from)
-}
-
-#[tauri::command]
-fn workspace_health(
-    state: State<'_, AppState>,
-    token: String,
-) -> Result<WorkspaceHealth, AppError> {
-    let database = state.database.lock().map_err(|_| lock_error())?;
-    require_coordinator(&database, &token)?;
-    database.health().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -1126,7 +1116,6 @@ pub fn run() {
             get_mission_control,
             list_notifications,
             mark_notification_read,
-            workspace_health,
             get_workspace_snapshot,
             auto_roster,
             apply_roster_plan,

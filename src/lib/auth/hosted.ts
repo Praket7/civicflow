@@ -359,7 +359,7 @@ export function rememberPendingSignup(identity: HostedIdentity): void {
   }
 }
 
-export function pendingHostedIdentity(email?: string | null): HostedIdentity | null {
+function pendingHostedIdentity(email?: string | null): HostedIdentity | null {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
     if (!raw) return null;
@@ -454,7 +454,7 @@ function sessionFromFragment(hash: string): {
   };
 }
 
-export type HostedProblemKind = "canceled" | "state" | "expired" | "other";
+type HostedProblemKind = "canceled" | "state" | "expired" | "other";
 
 export interface HostedProblem {
   /** The provider's own words, or the sentence the app attached. */

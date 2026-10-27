@@ -71,19 +71,6 @@ export function completeSetup(email: string, role: AccountRole): void {
   write(PENDING_KEY, { ...pending, [key]: roles });
 }
 
-/** Settings can send an account through setup again. */
-export function restartSetup(email: string, role: AccountRole): void {
-  const key = clean(email);
-  if (!key) return;
-  const done = read(DONE_KEY);
-  const roles = (done[key] ?? []).filter((entry) => entry !== role);
-  const nextDone = { ...done };
-  if (roles.length === 0) delete nextDone[key];
-  else nextDone[key] = roles;
-  write(DONE_KEY, nextDone);
-  write(PENDING_KEY, add(read(PENDING_KEY), email, role));
-}
-
 /**
  * Where a new account finishes setup, before it reaches a workspace. A
  * coordinator's organization details live in Workspace settings now, so the

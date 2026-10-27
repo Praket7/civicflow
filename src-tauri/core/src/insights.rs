@@ -157,7 +157,8 @@ fn completed_programs(conn: &Connection, volunteer_id: &str) -> Result<Vec<(Stri
 }
 
 /// The transparent rules. Each one names its threshold in the reason, so the
-/// same sentence explains the signal to a volunteer and to a judge.
+/// same sentence explains the signal to a coordinator and to the volunteer it
+/// is about.
 pub fn retention_signals(conn: &Connection) -> Result<Vec<RetentionSignal>> {
     let now = demo_now(conn)?;
     let today = now.date_naive();

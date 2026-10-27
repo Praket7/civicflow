@@ -19,7 +19,7 @@ import { useWorkspaceScope } from "./scope";
 
 const repository = getWorkspaceRepository();
 
-export const workspaceKeys = {
+const workspaceKeys = {
   missionControl: ["mission-control"] as const,
   notifications: ["notifications"] as const,
   disruptions: ["disruptions"] as const,

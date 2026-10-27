@@ -9,7 +9,7 @@ import { Search } from "lucide-react";
 import { t } from "../../lib/i18n";
 import styles from "./ui.module.css";
 
-export function Field({
+function Field({
   label,
   hint,
   error,

@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 
 export type ThemePreference = "light" | "dark" | "system";
-export type SpacingPreference = "standard" | "comfortable";
-export type TransparencyPreference = "standard" | "reduced";
+type SpacingPreference = "standard" | "comfortable";
+type TransparencyPreference = "standard" | "reduced";
 
 export interface DisplayPreferences {
   theme: ThemePreference;
@@ -12,7 +12,7 @@ export interface DisplayPreferences {
   transparency: TransparencyPreference;
 }
 
-export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
+const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   theme: "light",
   spacing: "standard",
   alwaysShowFocus: false,
@@ -49,10 +49,7 @@ function resolveTheme(theme: ThemePreference, systemDark: boolean): "light" | "d
   return theme === "system" ? (systemDark ? "dark" : "light") : theme;
 }
 
-export function applyDisplayPreferences(
-  preferences: DisplayPreferences,
-  resolvedTheme: "light" | "dark",
-) {
+function applyDisplayPreferences(preferences: DisplayPreferences, resolvedTheme: "light" | "dark") {
   const root = document.documentElement;
   root.dataset.theme = resolvedTheme;
   root.dataset.themePreference = preferences.theme;

@@ -31,7 +31,7 @@ import {
 
 export type AskRole = "coordinator" | "volunteer";
 
-export interface AskCitation {
+interface AskCitation {
   id: string;
   label: string;
   detail: string;
@@ -59,7 +59,7 @@ export interface AskAnswer {
   recordsRead: number;
 }
 
-export interface AskContext {
+interface AskContext {
   role: AskRole;
   workspace: DemoWorkspace;
   session: Partial<SessionSnapshot>;
@@ -973,7 +973,7 @@ export function ask(request: AskRequest): AskAnswer {
 }
 
 /**
- * The sentence under every answer: how much of the workspace it read. A judge
+ * The sentence under every answer: how much of the workspace it read. Anyone
  * can check the claim, and a coordinator learns how narrow the answer is.
  */
 function evidenceFor(context: AskContext): string {
@@ -1007,5 +1007,3 @@ function nameFromQuestion(query: string, workspace: DemoWorkspace): string | und
   const first = candidates.find((candidate) => words.includes(candidate.first));
   return first?.first;
 }
-
-export { stamp as formatShiftStamp };

@@ -6,15 +6,7 @@ export { AreaChart, BarChart, DonutChart } from "./Charts";
 export { DataTable } from "./DataTable";
 export type { Column } from "./DataTable";
 export { EmptyState, ProgressBar } from "./Feedback";
-export {
-  CheckboxField,
-  Field,
-  SearchField,
-  SelectField,
-  TextareaField,
-  TextField,
-  Toggle,
-} from "./Form";
+export { CheckboxField, SearchField, SelectField, TextareaField, TextField, Toggle } from "./Form";
 export { Page, PageHeader } from "./Page";
 export { Tabs } from "./Tabs";
 export type { TabItem } from "./Tabs";

@@ -503,25 +503,6 @@
   background: var(--color-cobalt-hover);
 }
 
-.kioskSecondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 52px;
-  padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: var(--radius-control);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 580;
-}
-
-.kioskSecondary:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-
 .kioskTrust {
   display: flex;
   align-items: center;
@@ -728,15 +709,6 @@
   border-radius: 50%;
   background: var(--color-teal);
   flex: none;
-}
-
-.kioskQuote {
-  max-width: 660px;
-  margin: 0 auto;
-  text-align: center;
-  font-family: var(--font-serif);
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.58);
 }
 
 @media (max-width: 1180px) {

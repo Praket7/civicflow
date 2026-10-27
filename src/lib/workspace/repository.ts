@@ -44,7 +44,6 @@ import type {
 } from "../../types/domain";
 import type { HostedIdentity } from "../auth/hosted";
 import { isTauri } from "../platform";
-import { demoWorkspace } from "./dataset";
 import { previewRepository } from "./previewRepository";
 
 /**
@@ -385,5 +384,3 @@ export function getWorkspaceRepository(): WorkspaceRepository {
  * local SQLite demo workspace.
  */
 export { previewRepository };
-
-export const demoOrganization = demoWorkspace.organization;

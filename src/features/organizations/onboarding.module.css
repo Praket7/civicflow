@@ -172,11 +172,6 @@
   background: var(--surface-sunken);
 }
 
-.panelLive {
-  border-color: var(--color-cobalt);
-  background: color-mix(in srgb, var(--color-cobalt) 6%, var(--surface-raised));
-}
-
 .codeRow {
   display: flex;
   flex-wrap: wrap;
@@ -413,11 +408,6 @@
   text-transform: uppercase;
   background: var(--tone-green-soft, var(--surface-sunken));
   color: var(--tone-green-ink, var(--text-secondary));
-}
-
-.badgePrivate {
-  background: var(--surface-sunken);
-  color: var(--text-muted);
 }
 
 .footerNote {

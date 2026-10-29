@@ -29,7 +29,7 @@ use crate::matching::{
 };
 use crate::models::WorkspaceSnapshot;
 use crate::roster;
-use crate::services::demo_now;
+use crate::services::now;
 use crate::workflows::{append_actor_audit, snapshot};
 
 /// What it costs to pull a volunteer off the seat they hold so they can cover a
@@ -152,7 +152,7 @@ pub struct RecoveryPlan {
 
 /// Which required seats are open, and what happened to them.
 pub fn detect(conn: &Connection) -> Result<DisruptionReport> {
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let mut statement = conn.prepare(
         "SELECT s.id, s.opportunity_id, o.title, s.starts_at, s.capacity, s.confirmed,
                 sr.name, sr.required, sr.filled
@@ -451,7 +451,7 @@ pub fn plan(
             "Choose at least one shift to recover".into(),
         ));
     }
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let policy = roster::policy_for_workspace(conn)?;
     let report = detect(conn)?;
     let affected: Vec<DisruptedShift> = report
@@ -766,7 +766,7 @@ pub fn apply(
         }
     }
 
-    let now = demo_now(conn)?.to_rfc3339();
+    let now = now(conn)?.to_rfc3339();
     let mut names = std::collections::HashMap::new();
     for change in changes {
         let name: String = conn.query_row(
@@ -879,7 +879,7 @@ pub fn set_lock(
         params![volunteer_id],
         |row| row.get(0),
     )?;
-    let now = demo_now(conn)?.to_rfc3339();
+    let now = now(conn)?.to_rfc3339();
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "UPDATE registrations SET locked = ?1, locked_by = ?2, locked_at = ?3

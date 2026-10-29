@@ -82,8 +82,8 @@ const PERIOD_LABELS = { morning: "Morning", afternoon: "Afternoon", evening: "Ev
 export function MySchedulePage() {
   const { workspace, session } = useWorkspace();
   const volunteer = currentVolunteer(workspace);
-  const [month, setMonth] = useState(() => parseISO(workspace.demoNow));
-  const [weekAnchor, setWeekAnchor] = useState(() => parseISO(workspace.demoNow));
+  const [month, setMonth] = useState(() => parseISO(workspace.now));
+  const [weekAnchor, setWeekAnchor] = useState(() => parseISO(workspace.now));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("agenda");
   const [filter, setFilter] = useState<ListFilter>("upcoming");
@@ -114,8 +114,8 @@ export function MySchedulePage() {
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   }, [session, volunteer.id, workspace]);
 
-  const upcoming = myShifts.filter((shift) => shift.startsAt >= workspace.demoNow);
-  const completed = myShifts.filter((shift) => shift.startsAt < workspace.demoNow);
+  const upcoming = myShifts.filter((shift) => shift.startsAt >= workspace.now);
+  const completed = myShifts.filter((shift) => shift.startsAt < workspace.now);
   const hours = getHoursSummary(volunteer.id, session, workspace);
   const availability = session.volunteerProfile.availability;
 
@@ -159,7 +159,7 @@ export function MySchedulePage() {
     setSelectedDate(format(day, "yyyy-MM-dd"));
     setWeekAnchor(day);
     setFilter((value) =>
-      value === "completed" && day >= parseISO(workspace.demoNow) ? "upcoming" : value,
+      value === "completed" && day >= parseISO(workspace.now) ? "upcoming" : value,
     );
     if (!isSameMonth(day, month)) setMonth(day);
   }
@@ -215,7 +215,7 @@ export function MySchedulePage() {
                 const iso = format(day, "yyyy-MM-dd");
                 const shifts = shiftsByDate.get(iso) ?? [];
                 const active = selectedDate === iso;
-                const today = isSameDay(day, parseISO(workspace.demoNow));
+                const today = isSameDay(day, parseISO(workspace.now));
                 return (
                   <button
                     key={iso}
@@ -350,7 +350,7 @@ export function MySchedulePage() {
                   nextShift
                     ? t("Next up: {program} · {day}", {
                         program: nextShift.title,
-                        day: relativeDayLabel(nextShift.startsAt, workspace.demoNow),
+                        day: relativeDayLabel(nextShift.startsAt, workspace.now),
                       })
                     : t("No upcoming shifts on the calendar yet.")
                 }
@@ -408,7 +408,7 @@ export function MySchedulePage() {
                           <div className={styles.shiftFoot}>
                             <span className={styles.roleChip}>{shift.role}</span>
                             <span className={styles.dayHint}>
-                              {relativeDayLabel(shift.startsAt, workspace.demoNow)}
+                              {relativeDayLabel(shift.startsAt, workspace.now)}
                             </span>
                             <ButtonLink
                               to={`/volunteer/shifts/${shift.id}`}
@@ -457,7 +457,7 @@ export function MySchedulePage() {
                 {weekDays.map((day) => {
                   const iso = format(day, "yyyy-MM-dd");
                   const dayShifts = shiftsByDate.get(iso) ?? [];
-                  const today = isSameDay(day, parseISO(workspace.demoNow));
+                  const today = isSameDay(day, parseISO(workspace.now));
                   return (
                     <div key={iso} className={styles.weekColumn} data-today={today}>
                       <div className={styles.weekDayHead}>

@@ -154,7 +154,7 @@ export function SavedPage() {
       const match = scores.get(opportunity.id);
       const nextShift =
         getShiftRowsForOpportunity(opportunity.id, workspace).find(
-          (row) => row.shift.startsAt > workspace.demoNow,
+          (row) => row.shift.startsAt > workspace.now,
         )?.shift ?? null;
       return {
         opportunity,

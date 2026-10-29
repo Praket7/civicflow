@@ -12,19 +12,12 @@ import {
 } from "../../lib/auth/hosted";
 import { accountHome, useAuth } from "../../lib/auth/session";
 import { markSetupPending } from "../../lib/onboarding/store";
-import type { AccountRole } from "../../types/domain";
 import { AuthPortrait } from "./AuthPortrait";
 import { GoogleSignIn } from "./GoogleSignIn";
 import styles from "./auth.module.css";
 import local from "./SignUpPage.module.css";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const ROLE_COPY: Record<AccountRole, string> = {
-  volunteer:
-    "Volunteers browse organizations, join with a code, and keep their service record in one place.",
-  coordinator: "Coordinators run the workspace: schedule, roster, hours review, and reporting.",
-};
 
 type FieldErrors = {
   name?: string;
@@ -54,7 +47,6 @@ function newCode(): string {
 export function SignUpPage() {
   const navigate = useNavigate();
   const { user, signUp, adoptHostedIdentity } = useAuth();
-  const [role, setRole] = useState<AccountRole>("volunteer");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -91,14 +83,14 @@ export function SignUpPage() {
       setBusy(true);
       setNotice("");
       try {
-        const identity = { name: cleanName, email: cleanEmail.toLowerCase(), role };
+        const identity = { name: cleanName, email: cleanEmail.toLowerCase() };
         rememberPendingSignup(identity);
         const result = await hostedSignUp(identity, password);
         if (result.session?.user) {
-          const resolved = identityFromUser(result.session.user, role);
+          const resolved = identityFromUser(result.session.user);
           if (!resolved) throw new Error("That account has no email address.");
           const session = await adoptHostedIdentity(resolved, remember);
-          markSetupPending(session.user.email, session.user.role);
+          markSetupPending(session.user.email);
           navigate(accountHome(session.user), { replace: true });
           return;
         }
@@ -147,10 +139,9 @@ export function SignUpPage() {
         name.trim().replace(/\s+/g, " "),
         email.trim(),
         password,
-        role,
         remember,
       );
-      markSetupPending(session.user.email, session.user.role);
+      markSetupPending(session.user.email);
       navigate(accountHome(session.user), { replace: true });
     } catch (caught) {
       const { message, field } = readError(caught);
@@ -201,30 +192,6 @@ export function SignUpPage() {
 
           {step === "details" ? (
             <form className={styles.form} onSubmit={beginVerification} noValidate>
-              <div className={styles.segmented} role="group" aria-label="Account type">
-                <button
-                  type="button"
-                  className={styles.segment}
-                  data-role="volunteer"
-                  data-active={role === "volunteer"}
-                  aria-pressed={role === "volunteer"}
-                  onClick={() => setRole("volunteer")}
-                >
-                  Volunteer
-                </button>
-                <button
-                  type="button"
-                  className={styles.segment}
-                  data-role="coordinator"
-                  data-active={role === "coordinator"}
-                  aria-pressed={role === "coordinator"}
-                  onClick={() => setRole("coordinator")}
-                >
-                  Coordinator
-                </button>
-              </div>
-              <p className={local.roleHint}>{ROLE_COPY[role]}</p>
-
               <div className={styles.fields}>
                 <TextField
                   label="Full name"
@@ -304,7 +271,6 @@ export function SignUpPage() {
 
               {hostedAuthConfigured ? (
                 <GoogleSignIn
-                  role={role}
                   label="Sign up with Google"
                   disabled={busy}
                   onError={(message) => setErrors({ form: message })}
@@ -314,9 +280,8 @@ export function SignUpPage() {
               <ul className={local.checklist}>
                 <li>
                   <Check size={13} strokeWidth={2.6} aria-hidden="true" />
-                  {role === "volunteer"
-                    ? "Next: find an organization near you or use a 6-digit code."
-                    : "Next: join a team with a 10-digit code, or start a new organization."}
+                  Next: create an organization or redeem an invitation. Your role comes from that
+                  membership.
                 </li>
                 <li>
                   <Check size={13} strokeWidth={2.6} aria-hidden="true" />
@@ -399,8 +364,8 @@ export function SignUpPage() {
                 <div>
                   <p className={styles.localTitle}>Confirm {email.trim().toLowerCase()}</p>
                   <p className={styles.localBody}>
-                    The link opens this app and finishes creating your {role} account. Check spam if
-                    it does not arrive within a minute.
+                    The link opens this app and finishes creating your account. Check spam if it
+                    does not arrive within a minute.
                   </p>
                 </div>
               </div>

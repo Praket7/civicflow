@@ -39,7 +39,7 @@ import type { ShellRole } from "../../app/routes";
 import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
 import { initialsOf } from "../../lib/initials";
-import { setCurrentOrganization } from "../../lib/organizations/store";
+import { selectOrganization } from "../../lib/organizations/store";
 import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
 import { useNotifications } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
@@ -189,9 +189,10 @@ export function Sidebar({
 
   function switchWorkspace(organizationId: string) {
     if (!user) return;
-    setCurrentOrganization(user.email, organizationId);
+    void selectOrganization(user, organizationId).then(() => {
+      navigate(isCoordinator ? "/coordinator/mission-control" : "/volunteer/home");
+    });
     dismissOnNavigate();
-    navigate(isCoordinator ? "/coordinator/mission-control" : "/volunteer/home");
   }
 
   return (

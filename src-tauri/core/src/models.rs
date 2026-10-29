@@ -60,7 +60,7 @@ pub struct MissionControlSummary {
     pub coordinator_name: String,
     pub first_name: String,
     pub organization_name: String,
-    pub demo_now: String,
+    pub now: String,
     pub active_volunteers: i64,
     pub coverage_percent: u8,
     pub hours_this_month: i64,
@@ -95,7 +95,7 @@ pub struct WorkspaceHealth {
     pub volunteer_count: i64,
     pub opportunity_count: i64,
     pub shift_count: i64,
-    pub demo_now: String,
+    pub now: String,
     pub timezone: String,
 }
 
@@ -107,7 +107,7 @@ pub struct WorkspaceHealth {
 #[serde(rename_all = "camelCase")]
 pub struct SeedWorkspace {
     pub schema_version: i64,
-    pub demo_now: String,
+    pub now: String,
     pub current_volunteer_id: String,
     pub organization: SeedOrganization,
     pub coordinator: SeedCoordinator,
@@ -331,7 +331,7 @@ impl SeedWorkspace {
     /// read models never depend on compile-time constants.
     pub fn settings(&self) -> Vec<(String, String)> {
         vec![
-            ("demo_now".into(), self.demo_now.clone()),
+            (crate::clock::CLOCK_SETTING.into(), self.now.clone()),
             ("coordinator_name".into(), self.coordinator.name.clone()),
             (
                 "coordinator_first_name".into(),

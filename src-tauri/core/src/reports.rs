@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
 use crate::models::RetentionCohort;
-use crate::services::demo_now;
+use crate::services::now;
 use crate::workflows::retention_cohorts;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -96,7 +96,7 @@ fn organization(conn: &Connection) -> Result<String> {
 }
 
 fn demo_date(conn: &Connection) -> Result<String> {
-    Ok(demo_now(conn)?.format("%Y-%m-%d").to_string())
+    Ok(now(conn)?.format("%Y-%m-%d").to_string())
 }
 
 fn range(request: &ReportRequest, conn: &Connection) -> Result<(String, String)> {
@@ -287,7 +287,7 @@ fn participation(
 }
 
 fn coverage(conn: &Connection, request: &ReportRequest) -> Result<ReportTable> {
-    let now = demo_now(conn)?.to_rfc3339();
+    let now = now(conn)?.to_rfc3339();
     let cause = request.cause.clone().unwrap_or_default();
     let mut statement = conn.prepare(
         "SELECT substr(s.starts_at, 1, 10), o.title, r.name, r.required, r.filled,
@@ -584,7 +584,7 @@ pub fn generate(conn: &Connection, request: &ReportRequest) -> Result<ReportDocu
         title: title_for(&template).to_string(),
         organization: organization(conn)?,
         period: format!("{start} – {end}"),
-        generated_at: demo_now(conn)?.to_rfc3339(),
+        generated_at: now(conn)?.to_rfc3339(),
         template,
         headers,
         rows,

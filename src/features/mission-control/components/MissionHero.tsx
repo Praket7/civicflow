@@ -21,16 +21,16 @@ function greetingFor(iso: string): string {
 
 export function MissionHero({ data }: MissionHeroProps) {
   const { workspace, session } = useWorkspace();
-  const now = parseISO(data.demoNow);
+  const now = parseISO(data.now);
   const today = workspace.shifts.find(
-    (shift) => shift.startsAt.slice(0, 10) === data.demoNow.slice(0, 10),
+    (shift) => shift.startsAt.slice(0, 10) === data.now.slice(0, 10),
   );
   const todayOpportunity = today
     ? [...workspace.opportunities, ...session.createdOpportunities].find(
         (row) => row.id === today.opportunityId,
       )
     : undefined;
-  const greeting = t(greetingFor(data.demoNow));
+  const greeting = t(greetingFor(data.now));
   const openToday = today ? timeRange(today.startsAt, today.endsAt) : t("No shift today");
   const organization = workspace.organization;
   const ownWorkspace = !isDemoOrganization(organization.id);

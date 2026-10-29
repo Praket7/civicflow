@@ -191,7 +191,7 @@ export function OnboardingPage() {
       causes,
       photo,
     });
-    if (user) completeSetup(user.email, "volunteer");
+    if (user) completeSetup(user.email);
     setSaving(false);
     // Setup gives the account a profile, not a team. A volunteer who already
     // belongs somewhere goes straight home; everyone else joins an organization

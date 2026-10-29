@@ -157,7 +157,7 @@ fn a_future_assignment_that_depends_on_a_lapsed_credential_is_counted() {
              JOIN role_requirements rr ON rr.shift_id = r.shift_id AND rr.role_name = r.role
              WHERE r.status = 'registered' AND s.status = 'scheduled'
                AND rr.credential_type_id IS NOT NULL
-               AND s.starts_at > (SELECT value FROM app_settings WHERE key = 'demo_now')
+               AND s.starts_at > (SELECT value FROM app_settings WHERE key = 'workspace_clock')
              ORDER BY s.starts_at
              LIMIT 1",
             [],

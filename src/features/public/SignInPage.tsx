@@ -10,9 +10,6 @@ import { AuthPortrait } from "./AuthPortrait";
 import { GoogleSignIn } from "./GoogleSignIn";
 import styles from "./auth.module.css";
 
-type AccountRole = "coordinator" | "volunteer";
-
-const DEMO_EMAIL = "praket@feedmorewny.org";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function describeError(caught: unknown): string {
@@ -25,11 +22,10 @@ function describeError(caught: unknown): string {
 export function SignInPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signIn, signOut, expired } = useAuth();
+  const { user, signIn, openDemo, expired } = useAuth();
   // A deep link that bounced through RequireAuth leaves the page it wanted.
   // Only honour it when the signed-in role can actually open that section.
   const from = (location.state as { from?: string } | null)?.from ?? "";
-  const [role, setRole] = useState<AccountRole>("coordinator");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
@@ -56,13 +52,6 @@ export function SignInPage() {
     setBusy(true);
     try {
       const session = await signIn(cleanEmail, password, remember);
-      if (session.user.role !== role) {
-        await signOut();
-        setErrors({
-          email: `That is a ${session.user.role} account. Choose ${session.user.role} above and sign in again.`,
-        });
-        return;
-      }
       leaving.current = true;
       navigate(destination(session.user), { replace: true });
     } catch (caught) {
@@ -78,13 +67,10 @@ export function SignInPage() {
   }
 
   async function openDemoWorkspace() {
-    const demoEmail = role === "coordinator" ? DEMO_EMAIL : "maya.chen@gmail.com";
-    setEmail(demoEmail);
-    setPassword("civicflow-demo");
     setErrors({});
     setBusy(true);
     try {
-      const session = await signIn(demoEmail, "civicflow-demo", remember);
+      const session = await openDemo(remember);
       leaving.current = true;
       navigate(destination(session.user), { replace: true });
     } catch (caught) {
@@ -124,29 +110,6 @@ export function SignInPage() {
           ) : null}
 
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <div className={styles.segmented} role="group" aria-label="Account type">
-              <button
-                type="button"
-                className={styles.segment}
-                data-role="coordinator"
-                data-active={role === "coordinator"}
-                aria-pressed={role === "coordinator"}
-                onClick={() => setRole("coordinator")}
-              >
-                Coordinator
-              </button>
-              <button
-                type="button"
-                className={styles.segment}
-                data-role="volunteer"
-                data-active={role === "volunteer"}
-                aria-pressed={role === "volunteer"}
-                onClick={() => setRole("volunteer")}
-              >
-                Volunteer
-              </button>
-            </div>
-
             <div className={styles.fields}>
               <TextField
                 label="Email"
@@ -223,7 +186,6 @@ export function SignInPage() {
 
             {hostedAuthConfigured ? (
               <GoogleSignIn
-                role={role}
                 label="Continue with Google"
                 disabled={busy}
                 onError={(message) => setErrors({ form: message })}

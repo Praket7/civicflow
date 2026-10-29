@@ -236,7 +236,7 @@ pub fn save_policy(
         ..policy.clone()
     };
     let json = serde_json::to_string(&next)?;
-    let now = crate::services::demo_now(conn)?.to_rfc3339();
+    let now = crate::services::now(conn)?.to_rfc3339();
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "INSERT INTO organization_roster_policies

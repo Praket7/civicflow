@@ -72,6 +72,7 @@ import type {
   WaitlistEntry,
   WorkspaceSettings,
 } from "../../types/domain";
+import * as previewOrganizations from "../organizations/preview";
 import { buildMissionControl } from "./compute";
 import { demoWorkspace } from "./dataset";
 import { blankWorkspaceForOrganization, withRoster } from "./organizationWorkspace";
@@ -96,7 +97,6 @@ const DEMO_SCOPE: OrganizationScope = {
 };
 
 let organization: OrganizationScope | null = DEMO_SCOPE;
-let selectedScope = DEMO_ORGANIZATION_ID;
 
 function scopeId(): string {
   return organization?.id ?? NO_ORGANIZATION_ID;
@@ -122,7 +122,9 @@ function storedPreviewAccounts(): Account[] {
         typeof candidate.id === "string" &&
         typeof candidate.name === "string" &&
         typeof candidate.email === "string" &&
-        (candidate.role === "coordinator" || candidate.role === "volunteer"),
+        (candidate.role === "coordinator" ||
+          candidate.role === "volunteer" ||
+          candidate.role === "none"),
       );
     });
   } catch {
@@ -139,6 +141,16 @@ function previewPasswords(): Record<string, string> {
     // The preview keeps the demo password when storage is unavailable.
   }
   return {};
+}
+
+/** The identity the preview screens are operating as. */
+let activePreviewAccount: Account | null = null;
+
+function requirePreviewAccount(): Account {
+  if (activePreviewAccount) return activePreviewAccount;
+  const demo = previewAccounts.find((row) => row.role !== "none") ?? previewAccounts[0];
+  if (!demo) throw new Error("Sign in before opening an organization.");
+  return demo;
 }
 
 function previewAccountFromToken(token: string): Account | null {
@@ -189,7 +201,6 @@ function blankSeed(organization: OrganizationScope | null): SessionSeed {
 
 function applyScope(next: OrganizationScope | null): void {
   organization = next;
-  selectedScope = next?.id ?? NO_ORGANIZATION_ID;
   if (next && next.id === DEMO_ORGANIZATION_ID) {
     workspace = demoWorkspaceData;
     seed = demoSeed;
@@ -231,14 +242,12 @@ const previewAccounts: Account[] = [...seededAccounts, ...storedPreviewAccounts(
 
 function defaultCredentials(): Credential[] {
   return workspace.credentials.map((credential) => {
-    const today = workspace.demoNow.slice(0, 10);
+    const today = workspace.now.slice(0, 10);
     const status =
       credential.validThrough < today
         ? "expired"
         : credential.validThrough <=
-            new Date(new Date(workspace.demoNow).getTime() + 45 * 86_400_000)
-              .toISOString()
-              .slice(0, 10)
+            new Date(new Date(workspace.now).getTime() + 45 * 86_400_000).toISOString().slice(0, 10)
           ? "expiring"
           : "current";
     return { ...credential, status };
@@ -263,7 +272,7 @@ function defaultVerifications(): ServiceVerification[] {
         dateStart: entry.date,
         dateEnd: entry.date,
         totalMinutes: entry.minutes,
-        issuedAt: workspace.demoNow,
+        issuedAt: workspace.now,
         issuedBy: workspace.coordinator.name,
       });
     }
@@ -291,7 +300,7 @@ function defaultRetention(): RetentionCohort[] {
 }
 
 function defaultAttendance(): SessionSnapshot["attendance"] {
-  const arrivedAt = new Date(new Date(workspace.demoNow).getTime() - 18 * 60_000).toISOString();
+  const arrivedAt = new Date(new Date(workspace.now).getTime() - 18 * 60_000).toISOString();
   const rows = workspace.registrations
     .filter(
       (row) => row.shiftId === "sh-tue-pantry" && row.volunteerId !== workspace.currentVolunteerId,
@@ -314,7 +323,7 @@ function defaultSavedViews(): SavedViewRecord[] {
     scope: "records",
     name: view.name,
     filtersJson: JSON.stringify(view.filters),
-    createdAt: workspace.demoNow,
+    createdAt: workspace.now,
   }));
 }
 
@@ -571,7 +580,7 @@ function audit(
 ): AuditEvent {
   return {
     id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    at: workspace.demoNow,
+    at: workspace.now,
     actor: workspace.coordinator.name,
     action,
     entityType,
@@ -582,7 +591,7 @@ function audit(
 }
 
 function previewCheckinCode(shiftId: string): string {
-  const window = Math.floor(new Date(workspace.demoNow).getTime() / (15 * 60_000));
+  const window = Math.floor(new Date(workspace.now).getTime() / (15 * 60_000));
   const seed = `${shiftId}:${window}`;
   let hash = 0xcbf29ce4;
   for (let index = 0; index < seed.length; index += 1) {
@@ -640,7 +649,7 @@ const REPORT_FIELD_LABELS: Record<string, string> = {
 };
 
 function buildPreviewReport(request: ReportRequest): ReportDocument {
-  const end = request.dateEnd ?? workspace.demoNow.slice(0, 10);
+  const end = request.dateEnd ?? workspace.now.slice(0, 10);
   const start = request.dateStart ?? `${end.slice(0, 4)}-01-01`;
   const template = REPORT_TITLES[request.template] ? request.template : "custom";
   const cause = request.cause ?? "";
@@ -653,7 +662,7 @@ function buildPreviewReport(request: ReportRequest): ReportDocument {
     headers = ["Date", "Program", "Role", "Required", "Filled", "Gap", "Shift status"];
     let required = 0;
     let filled = 0;
-    for (const shift of workspace.shifts.filter((row) => row.startsAt >= workspace.demoNow)) {
+    for (const shift of workspace.shifts.filter((row) => row.startsAt >= workspace.now)) {
       const opportunity = workspace.opportunities.find((row) => row.id === shift.opportunityId);
       if (!opportunity || (cause && opportunity.cause !== cause)) continue;
       for (const role of shift.roles) {
@@ -807,7 +816,7 @@ function buildPreviewReport(request: ReportRequest): ReportDocument {
     title: REPORT_TITLES[template],
     organization: state.settings.organizationName || workspace.organization.name,
     period: `${start} – ${end}`,
-    generatedAt: workspace.demoNow,
+    generatedAt: workspace.now,
     headers,
     rows,
     summary,
@@ -1087,10 +1096,97 @@ function previewVolunteers(text: string): VolunteerImportPreview {
 
 export const previewRepository: WorkspaceRepository = {
   source: "preview",
-  async selectOrganization(next) {
-    const id = next?.id ?? NO_ORGANIZATION_ID;
-    if (id === selectedScope) return;
-    applyScope(next);
+  async listOrganizations() {
+    return previewOrganizations.list(requirePreviewAccount());
+  },
+  async listPublicOrganizations() {
+    return previewOrganizations.listPublic();
+  },
+  async selectOrganization(organizationId) {
+    if (!organizationId) {
+      applyScope(null);
+      return;
+    }
+    const access = previewOrganizations.select(requirePreviewAccount(), organizationId);
+    applyScope({
+      id: access.organization.id,
+      name: access.organization.name,
+      coordinatorName:
+        access.membership.role === "owner" || access.membership.role === "coordinator"
+          ? access.organization.name
+          : undefined,
+      image: access.organization.image ?? undefined,
+      imageAlt: access.organization.imageAlt ?? undefined,
+    });
+  },
+  async createOrganization(input) {
+    const access = previewOrganizations.create(requirePreviewAccount(), input);
+    applyScope({
+      id: access.organization.id,
+      name: access.organization.name,
+      coordinatorName: access.organization.name,
+      image: access.organization.image ?? undefined,
+      imageAlt: access.organization.imageAlt ?? undefined,
+    });
+    return access;
+  },
+  async updateOrganization(organizationId, patch) {
+    return previewOrganizations.update(requirePreviewAccount(), organizationId, patch);
+  },
+  async listOrganizationMembers(organizationId) {
+    return previewOrganizations.members(requirePreviewAccount(), organizationId);
+  },
+  async listOrganizationInvites(organizationId) {
+    return previewOrganizations.invites(requirePreviewAccount(), organizationId);
+  },
+  async createOrganizationInvite(organizationId, role, email) {
+    return previewOrganizations.createInvite(requirePreviewAccount(), organizationId, role, email);
+  },
+  async revokeOrganizationInvite(organizationId, inviteId) {
+    previewOrganizations.revokeInvite(requirePreviewAccount(), organizationId, inviteId);
+  },
+  async redeemOrganizationInvite(code) {
+    const access = previewOrganizations.redeem(requirePreviewAccount(), code);
+    applyScope({
+      id: access.organization.id,
+      name: access.organization.name,
+      coordinatorName: access.organization.name,
+      image: access.organization.image ?? undefined,
+      imageAlt: access.organization.imageAlt ?? undefined,
+    });
+    return access;
+  },
+  async joinPublicOrganization(organizationId) {
+    const access = previewOrganizations.join(requirePreviewAccount(), organizationId);
+    applyScope({
+      id: access.organization.id,
+      name: access.organization.name,
+      coordinatorName: access.organization.name,
+      image: access.organization.image ?? undefined,
+      imageAlt: access.organization.imageAlt ?? undefined,
+    });
+    return access;
+  },
+  async setOrganizationMemberRole(organizationId, userId, role) {
+    return previewOrganizations.setRole(requirePreviewAccount(), organizationId, userId, role);
+  },
+  async setOrganizationMemberStatus(organizationId, userId, status) {
+    return previewOrganizations.setStatus(requirePreviewAccount(), organizationId, userId, status);
+  },
+  async transferOrganizationOwnership(organizationId, userId) {
+    return previewOrganizations.transferOwnership(requirePreviewAccount(), organizationId, userId);
+  },
+  async openDemoWorkspace(): Promise<AuthSession> {
+    const demo = previewAccounts.find(
+      (row) => row.email.toLowerCase() === "praket@feedmorewny.org",
+    );
+    if (!demo) throw new Error("The browser preview has no demo workspace to open.");
+    activePreviewAccount = demo;
+    return {
+      token: previewToken(demo),
+      user: demo,
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    };
   },
   async signIn(email, password, _remember): Promise<AuthSession> {
     const clean = email.trim().toLowerCase();
@@ -1100,13 +1196,14 @@ export const previewRepository: WorkspaceRepository = {
     if (!account || password !== expected) {
       throw new Error("That email and password do not match an account on this device.");
     }
+    activePreviewAccount = account;
     return {
       token: previewToken(account),
       user: account,
       expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     };
   },
-  async createAccount(name, email, password, role): Promise<AuthSession> {
+  async createAccount(name, email, password): Promise<AuthSession> {
     const clean = email.trim().toLowerCase();
     const display = name.trim().replace(/\s+/g, " ");
     if (display.length < 2) throw new Error("Enter the name to show on this account.");
@@ -1122,8 +1219,9 @@ export const previewRepository: WorkspaceRepository = {
       id: `user-preview-${suffix}`,
       name: display,
       email: clean,
-      role,
-      volunteerId: role === "volunteer" ? `vol-preview-${suffix}` : null,
+      // A fresh identity has no workspace role. Membership supplies one.
+      role: "none",
+      volunteerId: null,
     };
     try {
       localStorage.setItem(
@@ -1138,16 +1236,18 @@ export const previewRepository: WorkspaceRepository = {
       throw new Error("The browser preview could not save the new account.");
     }
     previewAccounts.push(account);
+    activePreviewAccount = account;
     return {
       token: previewToken(account),
       user: account,
       expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     };
   },
-  async signInWithHosted({ name, email, role }): Promise<AuthSession> {
+  async signInWithHosted({ name, email }): Promise<AuthSession> {
     const clean = email.trim().toLowerCase();
     const existing = previewAccounts.find((row) => row.email.toLowerCase() === clean);
     if (existing) {
+      activePreviewAccount = existing;
       return {
         token: previewToken(existing),
         user: existing,
@@ -1159,8 +1259,8 @@ export const previewRepository: WorkspaceRepository = {
       id: `user-hosted-${suffix}`,
       name: name.trim().replace(/\s+/g, " ") || clean,
       email: clean,
-      role,
-      volunteerId: role === "volunteer" ? `vol-hosted-${suffix}` : null,
+      role: "none",
+      volunteerId: null,
     };
     try {
       localStorage.setItem(
@@ -1171,6 +1271,7 @@ export const previewRepository: WorkspaceRepository = {
       throw new Error("The browser preview could not save the hosted account.");
     }
     previewAccounts.push(account);
+    activePreviewAccount = account;
     return {
       token: previewToken(account),
       user: account,
@@ -1181,7 +1282,9 @@ export const previewRepository: WorkspaceRepository = {
     void token;
   },
   async currentUser(token) {
-    return previewAccountFromToken(token);
+    const account = previewAccountFromToken(token);
+    if (account) activePreviewAccount = account;
+    return account;
   },
   async listAccounts(token) {
     const account = previewAccountFromToken(token);
@@ -1263,7 +1366,7 @@ export const previewRepository: WorkspaceRepository = {
       shiftId,
       role: existing?.role ?? volunteerRole(volunteerId),
       status: "checked_in",
-      checkedInAt: workspace.demoNow,
+      checkedInAt: workspace.now,
       checkedOutAt: null,
     });
     return persist({
@@ -1283,8 +1386,8 @@ export const previewRepository: WorkspaceRepository = {
       shiftId,
       role: existing?.role ?? volunteerRole(volunteerId),
       status: "completed",
-      checkedInAt: existing?.checkedInAt ?? workspace.demoNow,
-      checkedOutAt: workspace.demoNow,
+      checkedInAt: existing?.checkedInAt ?? workspace.now,
+      checkedOutAt: workspace.now,
     });
     return persist({
       ...next,
@@ -1364,7 +1467,7 @@ export const previewRepository: WorkspaceRepository = {
       id: `wait-${Date.now()}`,
       shiftId,
       volunteerId,
-      createdAt: workspace.demoNow,
+      createdAt: workspace.now,
       status: "waiting",
       position:
         state.waitlist.filter((row) => row.shiftId === shiftId && row.status === "waiting").length +
@@ -1386,9 +1489,9 @@ export const previewRepository: WorkspaceRepository = {
     });
   },
   async getCheckinCode(shiftId): Promise<CheckinCode> {
-    const issuedAt = workspace.demoNow;
+    const issuedAt = workspace.now;
     const expiresAt = new Date(
-      new Date(workspace.demoNow).getTime() + 4 * 60 * 60 * 1000,
+      new Date(workspace.now).getTime() + 4 * 60 * 60 * 1000,
     ).toISOString();
     const code = previewCheckinCode(shiftId);
     const token = `demo-${shiftId}-${code}`;
@@ -1647,7 +1750,7 @@ export const previewRepository: WorkspaceRepository = {
   async retimeShiftSeries(seriesId, startsLocalTime, durationMinutes, scope) {
     const series = (state.createdSeries ?? []).find((row) => row.id === seriesId);
     if (!series) throw new Error("That series is not on file.");
-    const today = workspace.demoNow.slice(0, 10);
+    const today = workspace.now.slice(0, 10);
     let moved = 0;
     const shifts = (state.createdShifts ?? []).map((row) => {
       const mine = row.id.startsWith(`sh-series-${seriesId}-`);
@@ -1950,7 +2053,7 @@ export const previewRepository: WorkspaceRepository = {
       email: row.email,
       phone: row.phone,
       status: row.status,
-      joinedAt: workspace.demoNow,
+      joinedAt: workspace.now,
       skills: row.skills,
       availability: row.availability,
       causes: row.causes,
@@ -2050,7 +2153,7 @@ export const previewRepository: WorkspaceRepository = {
     const next = persist({ ...restored, audit: [event, ...restored.audit] });
     return { snapshot: next, backups: listBackupMeta() };
   },
-  async getMissionControl(role: AccountRole = "coordinator") {
+  async getMissionControl(role: "coordinator" | "volunteer" = "coordinator") {
     return buildMissionControl(workspace, readIds(), role);
   },
   async getNotifications(role: AccountRole) {
@@ -2087,7 +2190,7 @@ export const previewRepository: WorkspaceRepository = {
       scope,
       name: trimmed,
       filtersJson,
-      createdAt: existing?.createdAt ?? workspace.demoNow,
+      createdAt: existing?.createdAt ?? workspace.now,
     };
     return persist({
       ...state,
@@ -2408,7 +2511,7 @@ function previewLiveRegistrations(snapshot: SessionSnapshot, shiftId: string) {
 }
 
 function previewDisruptions(): DisruptionReport {
-  const now = workspace.demoNow;
+  const now = workspace.now;
   const shifts: DisruptedShift[] = [];
   const atRisk: DisruptionReport["atRisk"] = [];
 
@@ -2523,12 +2626,12 @@ function previewRecoveryPlan(shiftIds: string[], options: RosterOptions): Recove
 /** The demeed date a preview shift stands for, so a signal can count days. */
 function previewDaysSince(stamp: string): number {
   const then = new Date(stamp).getTime();
-  const now = new Date(workspace.demoNow).getTime();
+  const now = new Date(workspace.now).getTime();
   return Math.max(0, Math.round((now - then) / 86_400_000));
 }
 
 function previewCompletedShifts(volunteerId: string): string[] {
-  const now = workspace.demoNow;
+  const now = workspace.now;
   return workspace.shifts
     .filter(
       (shift) =>
@@ -2661,16 +2764,14 @@ function previewInsight(volunteerId: string): VolunteerInsight {
 }
 
 function previewEngagement(): EngagementMetrics {
-  const yearStart = workspace.demoNow.slice(0, 4);
+  const yearStart = workspace.now.slice(0, 4);
   const newVolunteers = workspace.volunteers.filter((volunteer) =>
     volunteer.joinedAt.startsWith(yearStart),
   ).length;
   const inactiveVolunteers = previewSignals().filter(
     (signal) => signal.signal === "inactive",
   ).length;
-  const completedShifts = workspace.shifts.filter(
-    (shift) => shift.endsAt < workspace.demoNow,
-  ).length;
+  const completedShifts = workspace.shifts.filter((shift) => shift.endsAt < workspace.now).length;
   const attendanceRows = Object.values(state.attendance ?? {}).flat();
   const arrivals = attendanceRows.filter((row) => row.status === "checked_in").length;
   const noShows = attendanceRows.filter((row) => row.status === "no_show").length;
@@ -2694,14 +2795,14 @@ function previewEngagement(): EngagementMetrics {
 }
 
 function previewReadiness(): CredentialReadiness {
-  const today = workspace.demoNow.slice(0, 10);
+  const today = workspace.now.slice(0, 10);
   const current = state.credentials.filter((row) => row.status === "current").length;
   const expiringSoon = state.credentials.filter((row) => row.status === "expiring").length;
   const expired = state.credentials.filter((row) => row.status === "expired").length;
   const atRisk = state.registrations.filter((registration) => {
     if (registration.status !== "registered") return false;
     const shift = workspace.shifts.find((row) => row.id === registration.shiftId);
-    if (!shift || shift.startsAt <= workspace.demoNow) return false;
+    if (!shift || shift.startsAt <= workspace.now) return false;
     return state.credentials.some(
       (credential) =>
         credential.volunteerId === registration.volunteerId &&
@@ -2782,16 +2883,14 @@ function previewReminders(): string[] {
     }
     if (rule.triggerType === "shift_reminder" || rule.triggerType === "checkin_soon") {
       const horizon = new Date(
-        new Date(workspace.demoNow).getTime() + rule.offsetMinutes * 60_000 + 30 * 60_000,
+        new Date(workspace.now).getTime() + rule.offsetMinutes * 60_000 + 30 * 60_000,
       ).toISOString();
       due.push(
         ...state.registrations
           .filter((row) => {
             if (row.status !== "registered") return false;
             const shift = workspace.shifts.find((entry) => entry.id === row.shiftId);
-            return Boolean(
-              shift && shift.startsAt > workspace.demoNow && shift.startsAt <= horizon,
-            );
+            return Boolean(shift && shift.startsAt > workspace.now && shift.startsAt <= horizon);
           })
           .map((row) => `${rule.id}:${row.shiftId}:${row.volunteerId}`),
       );

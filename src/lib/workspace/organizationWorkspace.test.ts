@@ -17,10 +17,10 @@ function organization(overrides: Partial<OrganizationProfile> = {}): Organizatio
     image: "data:image/jpeg;base64,cover",
     imageAlt: "East Side Aid cover photo",
     visibility: "public",
-    coordinatorCode: "1234567890",
-    volunteerCode: "123456",
     createdAt: "2026-10-20T12:00:00.000Z",
     createdBy: "casey@eastsideaid.example.org",
+    isDemo: false,
+    syncMode: "local",
     ...overrides,
   };
 }

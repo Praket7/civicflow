@@ -165,7 +165,7 @@ export function AuthCallbackPage() {
         // first stop is setup. An account that already belongs somewhere, or
         // that has finished setup, is left alone.
         if (organizationsFor(identity.email).length === 0) {
-          markSetupPending(identity.email, identity.role);
+          markSetupPending(identity.email);
         }
         const session = await adoptHostedIdentity(identity, true);
         stripAnswerFromAddress();

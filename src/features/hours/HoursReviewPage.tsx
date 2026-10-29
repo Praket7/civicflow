@@ -51,7 +51,7 @@ export function HoursReviewPage() {
 
   const decisions = Object.values(session.hoursDecisions);
   const approvedToday = decisions.filter(
-    (decision) => decision.status === "verified" && decision.reviewedAt === workspace.demoNow,
+    (decision) => decision.status === "verified" && decision.reviewedAt === workspace.now,
   ).length;
   const approvedMinutes = decisions
     .filter((decision) => decision.status === "verified")
@@ -73,7 +73,7 @@ export function HoursReviewPage() {
         status: "verified",
         approvedMinutes: active.requestedMinutes,
         reason: reason.trim() || t("Approved as submitted"),
-        reviewedAt: workspace.demoNow,
+        reviewedAt: workspace.now,
       });
       setMessage(
         t("Approved {duration} for {name}.", {
@@ -95,7 +95,7 @@ export function HoursReviewPage() {
         status: "verified",
         approvedMinutes: Math.round(minutes),
         reason: reason.trim(),
-        reviewedAt: workspace.demoNow,
+        reviewedAt: workspace.now,
       });
       setMessage(
         t("Adjusted to {duration} for {name}. The reason was saved to the audit log.", {
@@ -112,7 +112,7 @@ export function HoursReviewPage() {
         status: "rejected",
         approvedMinutes: null,
         reason: reason.trim(),
-        reviewedAt: workspace.demoNow,
+        reviewedAt: workspace.now,
       });
       setMessage(
         t("Rejected {name}'s submission with a recorded reason.", {

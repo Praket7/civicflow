@@ -41,7 +41,8 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const listId = useId();
   const { user } = useAuth();
-  const role = user?.role ?? "volunteer";
+  const role: "coordinator" | "volunteer" =
+    user?.role === "coordinator" ? "coordinator" : "volunteer";
 
   const results = useMemo(() => {
     // The palette is part of a signed-in shell. It should offer the screens this

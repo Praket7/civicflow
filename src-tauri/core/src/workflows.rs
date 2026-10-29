@@ -45,8 +45,10 @@ fn required_setting(conn: &Connection, key: &str) -> Result<String> {
     setting(conn, key)?.ok_or_else(|| CoreError::Validation(format!("Missing setting: {key}")))
 }
 
-pub(crate) fn demo_now(conn: &Connection) -> Result<String> {
-    required_setting(conn, "demo_now")
+/// The workspace clock as an RFC 3339 string, which is how every stored
+/// timestamp is compared.
+pub(crate) fn now(conn: &Connection) -> Result<String> {
+    Ok(crate::clock::now(conn)?.to_rfc3339())
 }
 
 fn current_volunteer_id(conn: &Connection) -> Result<String> {
@@ -98,7 +100,7 @@ pub(crate) fn append_actor_audit(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             uuid::Uuid::new_v4().to_string(),
-            demo_now(conn)?,
+            now(conn)?,
             actor_type,
             actor_id,
             action,
@@ -305,7 +307,7 @@ fn load_registrations(conn: &Connection) -> Result<Vec<Registration>> {
 }
 
 fn load_credentials(conn: &Connection) -> Result<Vec<CredentialRecord>> {
-    let today: String = demo_now(conn)?;
+    let today: String = now(conn)?;
     let today = today.get(..10).unwrap_or(&today).to_string();
     let expiring_cutoff = chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d")
         .map(|date| {
@@ -418,8 +420,8 @@ fn load_saved_views(conn: &Connection) -> Result<Vec<SavedView>> {
 }
 
 fn load_retention(conn: &Connection) -> Result<Vec<RetentionCohort>> {
-    let demo_now: String = demo_now(conn)?;
-    let Ok(now) = chrono::DateTime::parse_from_rfc3339(&demo_now) else {
+    let now: String = now(conn)?;
+    let Ok(now) = chrono::DateTime::parse_from_rfc3339(&now) else {
         return Ok(Vec::new());
     };
     let today = now.date_naive();
@@ -798,7 +800,7 @@ fn append_notification(
             title,
             body,
             priority,
-            demo_now(conn)?,
+            now(conn)?,
             href,
             target.audience,
             target.volunteer_id,
@@ -859,8 +861,8 @@ fn shift_rules(conn: &Connection, shift_id: &str) -> Result<ShiftRules> {
     })
 }
 
-fn demo_now_datetime(conn: &Connection) -> Result<chrono::DateTime<chrono::FixedOffset>> {
-    Ok(chrono::DateTime::parse_from_rfc3339(&demo_now(conn)?)?)
+fn now_datetime(conn: &Connection) -> Result<chrono::DateTime<chrono::FixedOffset>> {
+    Ok(chrono::DateTime::parse_from_rfc3339(&now(conn)?)?)
 }
 
 fn shift_availability_key(conn: &Connection, shift_id: &str) -> Result<String> {
@@ -1044,7 +1046,7 @@ pub(crate) fn validate_registration(
             None,
         ));
     }
-    if shift.starts_at <= demo_now_datetime(conn)? {
+    if shift.starts_at <= now_datetime(conn)? {
         return Err(CoreError::rule(
             "REGISTRATION_CLOSED",
             "Registration closed when the shift began.",
@@ -1176,7 +1178,7 @@ pub fn save_report_view(
             scope,
             name,
             filters_json,
-            demo_now(conn)?,
+            now(conn)?,
         ],
     )?;
     append_audit(
@@ -1208,7 +1210,7 @@ pub fn set_saved_opportunity(
         conn.execute(
             "INSERT OR IGNORE INTO saved_opportunities
              (volunteer_id, opportunity_id, saved_at) VALUES (?1, ?2, ?3)",
-            params![volunteer_id, opportunity_id, demo_now(conn)?],
+            params![volunteer_id, opportunity_id, now(conn)?],
         )? > 0
     } else {
         conn.execute(
@@ -1271,7 +1273,7 @@ pub fn set_application_stage(
             application_id,
             &current,
             stage,
-            demo_now(conn)?,
+            now(conn)?,
             coordinator_name(conn)?,
         ],
     )?;
@@ -1295,7 +1297,7 @@ pub fn set_application_stage(
 
 pub fn get_checkin_code(conn: &Connection, shift_id: &str) -> Result<CheckinCode> {
     ensure_shift(conn, shift_id)?;
-    let now = demo_now_datetime(conn)?;
+    let now = now_datetime(conn)?;
     if let Some(row) = conn
         .query_row(
             "SELECT code, token, issued_at, expires_at FROM checkin_codes
@@ -1392,11 +1394,11 @@ fn code_matches(conn: &Connection, shift_id: &str, code: &str) -> Result<bool> {
         return Ok(false);
     }
     let expires = chrono::DateTime::parse_from_rfc3339(&expires_at)?;
-    Ok(expires >= demo_now_datetime(conn)?)
+    Ok(expires >= now_datetime(conn)?)
 }
 
 fn validate_checkin_window(conn: &Connection, shift: &ShiftRules) -> Result<()> {
-    let now = demo_now_datetime(conn)?;
+    let now = now_datetime(conn)?;
     if now < shift.starts_at - chrono::Duration::minutes(30) {
         return Err(CoreError::rule(
             "CHECKIN_TOO_EARLY",
@@ -1467,7 +1469,7 @@ pub fn check_in(
         ));
     };
 
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "INSERT INTO attendance_events
@@ -1540,7 +1542,7 @@ fn issue_verification(
             organization_id,
             date,
             minutes,
-            demo_now(conn)?,
+            now(conn)?,
             coordinator_name(conn)?,
         ],
     )?;
@@ -1585,7 +1587,7 @@ pub fn check_out(
             None,
         ));
     }
-    let now_dt = demo_now_datetime(conn)?;
+    let now_dt = now_datetime(conn)?;
     let now = now_dt.to_rfc3339();
     let checked_in = checked_in_at
         .as_deref()
@@ -1730,7 +1732,7 @@ pub fn mark_no_show(
            checked_in_at = NULL,
            checked_out_at = NULL,
            recorded_at = excluded.recorded_at",
-        params![shift_id, volunteer_id, role, demo_now(conn)?],
+        params![shift_id, volunteer_id, role, now(conn)?],
     )?;
     append_audit(
         conn,
@@ -1777,7 +1779,7 @@ pub fn promote_waitlist(
          VALUES (?1, ?2, ?3, ?4, 'registered', ?4)
          ON CONFLICT(shift_id, volunteer_id) DO UPDATE SET
            role = excluded.role, status = 'registered', updated_at = excluded.updated_at",
-        params![shift_id, volunteer_id, role, demo_now(conn)?],
+        params![shift_id, volunteer_id, role, now(conn)?],
     )?;
     transaction.execute(
         "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
@@ -1863,14 +1865,7 @@ pub fn review_hours(
          SET status = ?1, approved_minutes = ?2, reviewed_at = ?3, reviewer = ?4,
              review_reason = ?5
          WHERE id = ?6",
-        params![
-            status,
-            approved,
-            demo_now(conn)?,
-            reviewer,
-            reason,
-            entry_id
-        ],
+        params![status, approved, now(conn)?, reviewer, reason, entry_id],
     )?;
     let volunteer = volunteer_name(conn, &volunteer_id)?;
     if status == "verified" {
@@ -2193,7 +2188,7 @@ pub fn create_opportunity(
             serde_json::to_string(&record.training)?,
             serde_json::to_string(&record.requirements)?,
             record.impact_metric,
-            demo_now(conn)?,
+            now(conn)?,
         ],
     )?;
     append_audit(
@@ -2241,7 +2236,7 @@ pub fn register_for_shift(
          VALUES (?1, ?2, ?3, ?4, 'registered', ?4)
          ON CONFLICT(shift_id, volunteer_id) DO UPDATE SET
            role = excluded.role, status = 'registered', updated_at = excluded.updated_at",
-        params![shift_id, volunteer_id, role, demo_now(conn)?],
+        params![shift_id, volunteer_id, role, now(conn)?],
     )?;
     transaction.execute(
         "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
@@ -2277,7 +2272,7 @@ pub fn join_waitlist(
         role.trim().to_string()
     };
     let shift = shift_rules(conn, shift_id)?;
-    if shift.starts_at <= demo_now_datetime(conn)? {
+    if shift.starts_at <= now_datetime(conn)? {
         return Err(CoreError::rule(
             "REGISTRATION_CLOSED",
             "This shift has already started.",
@@ -2334,7 +2329,7 @@ pub fn join_waitlist(
             uuid::Uuid::new_v4().to_string(),
             shift_id,
             volunteer_id,
-            demo_now(conn)?,
+            now(conn)?,
             position,
             role
         ],
@@ -2392,7 +2387,7 @@ pub fn cancel_registration(
     transaction.execute(
         "UPDATE registrations SET status = 'canceled', updated_at = ?1
          WHERE shift_id = ?2 AND volunteer_id = ?3",
-        params![demo_now(conn)?, shift_id, volunteer_id],
+        params![now(conn)?, shift_id, volunteer_id],
     )?;
     transaction.execute(
         "UPDATE shifts SET confirmed = MAX(confirmed - 1, 0) WHERE id = ?1",

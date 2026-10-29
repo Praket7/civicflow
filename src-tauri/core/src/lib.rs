@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod authorization;
 pub mod backups;
+pub mod clock;
 pub mod db;
 pub mod domain;
 pub mod error;

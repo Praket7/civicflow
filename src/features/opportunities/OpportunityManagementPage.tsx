@@ -116,7 +116,7 @@ export function OpportunityManagementPage() {
   }
 
   const allRows = getShiftRowsForOpportunity(opportunity.id, workspace);
-  const upcomingRows = allRows.filter((row) => row.shift.startsAt > workspace.demoNow);
+  const upcomingRows = allRows.filter((row) => row.shift.startsAt > workspace.now);
   const activeRows = upcomingRows.length > 0 ? upcomingRows : allRows;
   const roles = roleSummaryFor(activeRows);
   const seatsRequired = activeRows.reduce((total, row) => total + row.shift.capacity, 0);

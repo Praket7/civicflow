@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { Account, AccountRole, AuthSession } from "../../types/domain";
+import type { Account, AuthSession } from "../../types/domain";
 import { isSetupPending, markSetupPending, setupRoute } from "../onboarding/store";
-import { organizationsFor } from "../organizations/store";
+import { organizationsFor, organizationsLoaded } from "../organizations/store";
 import { isTauri } from "../platform";
 import { getWorkspaceRepository, setRepositoryToken } from "../workspace/repository";
 import {
@@ -33,13 +33,9 @@ interface AuthValue {
   token: string | null;
   loading: boolean;
   signIn(email: string, password: string, remember: boolean): Promise<AuthSession>;
-  signUp(
-    name: string,
-    email: string,
-    password: string,
-    role: AccountRole,
-    remember: boolean,
-  ): Promise<AuthSession>;
+  /** Opens the bundled demo workspace. The only action that creates fixtures. */
+  openDemo(remember: boolean): Promise<AuthSession>;
+  signUp(name: string, email: string, password: string, remember: boolean): Promise<AuthSession>;
   signOut(): Promise<void>;
   refresh(): Promise<void>;
   /** True when this device held a session that is no longer valid. */
@@ -170,6 +166,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return session;
   }, []);
 
+  const openDemo = useCallback(async (remember: boolean) => {
+    const session = await repository.openDemoWorkspace();
+    setExpired(false);
+    setRepositoryToken(session.token);
+    if (remember) rememberToken(session.token);
+    else rememberToken(null);
+    setToken(session.token);
+    setUser(session.user);
+    return session;
+  }, []);
+
   const signIn = useCallback(
     async (email: string, password: string, remember: boolean) => {
       if (hostedAuthConfigured) {
@@ -239,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!identity) throw new Error("That account has no email address.");
           // A provider account with no organization yet is new: setup comes first.
           if (organizationsFor(identity.email).length === 0) {
-            markSetupPending(identity.email, identity.role);
+            markSetupPending(identity.email);
           }
           const session = await adoptHostedIdentity(identity, true);
           await finishHostedHandoff();
@@ -279,8 +286,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [adoptHostedIdentity]);
 
   const signUp = useCallback(
-    async (name: string, email: string, password: string, role: AccountRole, remember: boolean) => {
-      const session = await repository.createAccount(name, email, password, role);
+    async (name: string, email: string, password: string, remember: boolean) => {
+      const session = await repository.createAccount(name, email, password);
       setExpired(false);
       setRepositoryToken(session.token);
       if (remember) rememberToken(session.token);
@@ -317,6 +324,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       loading,
       signIn,
+      openDemo,
       signUp,
       signOut,
       refresh,
@@ -324,7 +332,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hosted: hostedAuthConfigured,
       adoptHostedIdentity,
     }),
-    [user, token, loading, expired, signIn, signUp, signOut, refresh, adoptHostedIdentity],
+    [
+      user,
+      token,
+      loading,
+      expired,
+      signIn,
+      openDemo,
+      signUp,
+      signOut,
+      refresh,
+      adoptHostedIdentity,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -342,13 +361,24 @@ export function useOptionalAuth(): AuthValue | null {
 }
 
 export function accountHome(account: Account): string {
+  const signedInHome =
+    account.role === "volunteer" ? "/volunteer/home" : "/coordinator/mission-control";
+  // Setup is keyed by identity in device storage, so it is authoritative even
+  // before the organization cache has loaded.
+  if (isSetupPending(account)) {
+    return setupRoute(account, organizationsLoaded() && organizationsFor(account.email).length > 0);
+  }
+  // A caller that has not hydrated the organization cache (the sign-in screen
+  // finishing a session, for example) must not read "no cache" as "no
+  // organization". The role already came from a membership, so its home is safe.
+  if (!organizationsLoaded()) {
+    return account.role === "none" ? "/coordinator/start" : signedInHome;
+  }
   const organizations = organizationsFor(account.email);
-  // A new account finishes its one-time setup before it reaches a workspace.
-  if (isSetupPending(account)) return setupRoute(account, organizations.length > 0);
   // A fresh account has no organization yet, so send it to the join-or-create
   // step instead of dropping it into the demo workspace uninvited.
   if (organizations.length === 0) {
     return account.role === "volunteer" ? "/volunteer/start" : "/coordinator/start";
   }
-  return account.role === "volunteer" ? "/volunteer/home" : "/coordinator/mission-control";
+  return signedInHome;
 }

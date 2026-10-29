@@ -1,28 +1,15 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Copy,
-  Globe2,
-  ImagePlus,
-  Lock,
-  MapPin,
-  Users,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Globe2, ImagePlus, Lock, MapPin, Users } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Button, SelectField, TextField, TextareaField } from "../../components/ui";
 import { useAuth } from "../../lib/auth/session";
+import { completeSetup } from "../../lib/onboarding/store";
 import { coverPhoto } from "../../lib/images";
-import {
-  ORGANIZATION_COVERS,
-  createOrganization,
-  organizationShareText,
-  organizationsFor,
-  setCurrentOrganization,
-} from "../../lib/organizations/store";
-import type { OrganizationProfile, OrganizationVisibility } from "../../lib/organizations/store";
+import { createOrganization, organizationsFor } from "../../lib/organizations/store";
+import type { OrganizationProfile } from "../../lib/organizations/store";
+import { ORGANIZATION_COVERS } from "../../lib/organizations/types";
+import type { OrganizationVisibility } from "../../lib/organizations/types";
 import { US_STATES, stateCode } from "../../lib/us-states";
 import styles from "./onboarding.module.css";
 
@@ -56,11 +43,10 @@ export function OrganizationCreatePage() {
     contactEmail: user?.email ?? "",
     secondEmail: "",
   });
-  const [cover, setCover] = useState(ORGANIZATION_COVERS[0]);
+  const [cover, setCover] = useState<{ src: string; alt: string }>(ORGANIZATION_COVERS[0]);
   const [visibility, setVisibility] = useState<OrganizationVisibility>("public");
   const [errors, setErrors] = useState<Errors>({});
   const [created, setCreated] = useState<OrganizationProfile | null>(null);
-  const [copied, setCopied] = useState("");
   const coverInput = useRef<HTMLInputElement>(null);
 
   async function uploadCover(file: File | undefined) {
@@ -84,7 +70,7 @@ export function OrganizationCreatePage() {
       </main>
     );
   }
-  if (user.role !== "coordinator") return <Navigate to="/volunteer/start" replace />;
+  if (user.role === "volunteer") return <Navigate to="/volunteer/start" replace />;
   // Before the first organization exists this page is the setup gate, so
   // "back to onboarding" would bounce straight back here. Offer the only real
   // way out of the wizard instead: signing out.
@@ -111,14 +97,14 @@ export function OrganizationCreatePage() {
     return next;
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
     const next = validate();
     setErrors(next);
     if (Object.keys(next).length > 0) return;
     try {
-      const organization = createOrganization(user, {
+      const organization = await createOrganization(user, {
         name: form.name,
         description: form.description,
         website: form.website,
@@ -130,20 +116,10 @@ export function OrganizationCreatePage() {
         imageAlt: cover.alt,
         visibility,
       });
-      setCurrentOrganization(user.email, organization.id);
+      completeSetup(user.email);
       setCreated(organization);
     } catch (caught) {
       setErrors({ form: caught instanceof Error ? caught.message : String(caught) });
-    }
-  }
-
-  async function copy(value: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(label);
-      window.setTimeout(() => setCopied(""), 2200);
-    } catch {
-      setCopied("");
     }
   }
 
@@ -172,62 +148,30 @@ export function OrganizationCreatePage() {
               {`${created.name} is ready.`}
             </h1>
             <p className={styles.lede}>
-              Two codes keep the workspace tidy. Coordinators use the long one to join your team.
-              Volunteers use the short one at events and on flyers.
+              Invite coordinators and volunteers from Organization &amp; access. Every invitation is
+              one-time, expires after 14 days, and names the role it grants.
             </p>
           </header>
           <div className={styles.body}>
-            <div className={styles.codes}>
-              <div className={styles.codeCard}>
-                <p className={styles.codeLabel}>Coordinator code · 10 digits</p>
-                <span className={styles.codeValue}>{created.coordinatorCode}</span>
-                <div className={styles.copyRow}>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    icon={<Copy size={13} />}
-                    onClick={() => void copy(created.coordinatorCode, "coordinator")}
-                  >
-                    Copy
-                  </Button>
-                  <span className={styles.footerNote} role="status">
-                    {copied === "coordinator" ? "Copied" : "Share only with coordinators"}
-                  </span>
-                </div>
-              </div>
-              <div className={styles.codeCard}>
-                <p className={styles.codeLabel}>Volunteer code · 6 digits</p>
-                <span className={styles.codeValue}>{created.volunteerCode}</span>
-                <div className={styles.copyRow}>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    icon={<Copy size={13} />}
-                    onClick={() => void copy(created.volunteerCode, "volunteer")}
-                  >
-                    Copy
-                  </Button>
-                  <span className={styles.footerNote} role="status">
-                    {copied === "volunteer" ? "Copied" : "Print this on event materials"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
             <div className={styles.panel}>
-              <h2 className={styles.sectionTitle}>Who can find you</h2>
+              <h2 className={styles.sectionTitle}>Bring the team in</h2>
               <p className={styles.sectionHint}>
                 {created.visibility === "public"
-                  ? "Public: volunteers browsing organizations near them can request to join without a code."
-                  : "Private: only volunteers with the 6-digit code can join."}
+                  ? "Public: volunteers can find this organization and join on their own."
+                  : "Private: volunteers join only with an invitation from a coordinator."}
+              </p>
+              <p className={styles.sectionHint}>
+                Open Organization &amp; access to invite a coordinator or volunteer by email.
+                CivicFlow issues one invitation per person; there is no reusable code to leak or
+                rotate.
               </p>
               <div className={styles.actions}>
                 <Button
                   size="small"
                   variant="secondary"
-                  onClick={() => void copy(organizationShareText(created), "invite")}
+                  onClick={() => navigate("/coordinator/settings", { replace: true })}
                 >
-                  {copied === "invite" ? "Invite copied" : "Copy invite"}
+                  Invite the team
                 </Button>
               </div>
             </div>

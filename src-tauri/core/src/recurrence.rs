@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::Account;
 use crate::error::{CoreError, Result};
 use crate::models::WorkspaceSnapshot;
-use crate::services::demo_now;
+use crate::services::now;
 use crate::workflows::{append_actor_audit, snapshot};
 
 /// A series longer than this is a data-entry mistake, not a schedule. The cap
@@ -285,7 +285,7 @@ pub fn create_series(
     rule: &RecurrenceRule,
     roles: &[SeriesRole],
 ) -> Result<SeriesResult> {
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let (organization_id, title, capacity): (String, String, i64) = conn
         .query_row(
             "SELECT organization_id, title, capacity FROM opportunities WHERE id = ?1",
@@ -430,7 +430,7 @@ pub fn generate_instances(
         load_series(conn, series_id)?.ok_or_else(|| CoreError::NotFound("that series".into()))?;
     let rule = rule_of(&record);
     let dates = occurrences(&rule)?;
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let offset = *now.offset();
     let existing: HashSet<String> = {
         let mut statement = conn.prepare(
@@ -530,7 +530,7 @@ pub fn retime(
             "A shift has to last between 15 minutes and 24 hours".into(),
         ));
     }
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let offset = *now.offset();
 
     let transaction = conn.unchecked_transaction()?;

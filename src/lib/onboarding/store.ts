@@ -1,28 +1,32 @@
-import type { Account, AccountRole } from "../../types/domain";
+import type { Account } from "../../types/domain";
 
 /**
- * Setup is a one-time gate per account. The flags live beside the rest of the
+ * Setup is a one-time gate per identity. The flag lives beside the rest of the
  * account state on this device: an account created before setup existed has no
  * record and is treated as finished, so the demo accounts never see the gate.
+ *
+ * The gate is keyed by email, not by a role. An identity has no workspace role
+ * until it belongs to an organization, so a role-keyed gate would both miss the
+ * first meaningful step and recreate the global role this app removed.
  */
 const PENDING_KEY = "civicflow.setup.pending";
 const DONE_KEY = "civicflow.setup.done";
 
-type RoleMap = Record<string, AccountRole[]>;
+type EmailSet = string[];
 
-function read(key: string): RoleMap {
+function read(key: string): EmailSet {
   try {
     const raw = window.localStorage.getItem(key);
-    if (!raw) return {};
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed as RoleMap;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is string => typeof value === "string");
   } catch {
-    return {};
+    return [];
   }
 }
 
-function write(key: string, value: RoleMap): void {
+function write(key: string, value: EmailSet): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -34,49 +38,38 @@ function clean(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function has(map: RoleMap, email: string, role: AccountRole): boolean {
-  return (map[clean(email)] ?? []).includes(role);
-}
-
-function add(map: RoleMap, email: string, role: AccountRole): RoleMap {
+/** Called when an identity is created, so its first visit is the setup flow. */
+export function markSetupPending(email: string): void {
   const key = clean(email);
-  if (!key) return map;
-  const roles = new Set(map[key] ?? []);
-  roles.add(role);
-  return { ...map, [key]: [...roles] };
-}
-
-/** Called when an account is created, so its first visit is the setup flow. */
-export function markSetupPending(email: string, role: AccountRole): void {
-  if (has(read(DONE_KEY), email, role)) return;
-  write(PENDING_KEY, add(read(PENDING_KEY), email, role));
+  if (!key) return;
+  const done = read(DONE_KEY);
+  if (done.includes(key)) return;
+  const pending = read(PENDING_KEY);
+  if (!pending.includes(key)) write(PENDING_KEY, [...pending, key]);
 }
 
 export function isSetupPending(account: Account | null): boolean {
   if (!account) return false;
-  return has(read(PENDING_KEY), account.email, account.role);
+  return read(PENDING_KEY).includes(clean(account.email));
 }
 
-export function completeSetup(email: string, role: AccountRole): void {
-  write(DONE_KEY, add(read(DONE_KEY), email, role));
-  const pending = read(PENDING_KEY);
+export function completeSetup(email: string): void {
   const key = clean(email);
-  const roles = (pending[key] ?? []).filter((entry) => entry !== role);
-  if (roles.length === 0) {
-    const next = { ...pending };
-    delete next[key];
-    write(PENDING_KEY, next);
-    return;
-  }
-  write(PENDING_KEY, { ...pending, [key]: roles });
+  write(DONE_KEY, [...new Set([...read(DONE_KEY), key])]);
+  write(
+    PENDING_KEY,
+    read(PENDING_KEY).filter((entry) => entry !== key),
+  );
 }
 
 /**
- * Where a new account finishes setup, before it reaches a workspace. A
- * coordinator's organization details live in Workspace settings now, so the
- * first step is creating the organization and the next is the workspace.
+ * Where a new identity finishes setup, before it reaches a workspace. Someone
+ * who belongs to no organization chooses whether to create one or redeem an
+ * invitation; the role comes from that membership, never from this screen.
  */
 export function setupRoute(account: Account, hasOrganization: boolean): string {
+  if (!hasOrganization) return "/coordinator/start";
   if (account.role === "volunteer") return "/volunteer/onboarding";
-  return hasOrganization ? "/coordinator/mission-control" : "/coordinator/organization/new";
+  if (account.role === "coordinator") return "/coordinator/mission-control";
+  return "/coordinator/start";
 }

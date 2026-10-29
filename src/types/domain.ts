@@ -1,6 +1,11 @@
 export type Cause = "food" | "education" | "environment" | "health" | "community" | "animals";
 
-export type AccountRole = "coordinator" | "volunteer";
+/// A role is a property of an organization membership, not of the person. An
+/// identity that has not joined an organization yet has no workspace role.
+export type AccountRole = "coordinator" | "volunteer" | "none";
+
+export type MembershipRole = "owner" | "coordinator" | "volunteer";
+export type MembershipStatus = "active" | "invited" | "disabled";
 
 export interface Account {
   id: string;
@@ -873,7 +878,7 @@ export interface CredentialReadiness {
 
 export interface DemoWorkspace {
   schemaVersion: number;
-  demoNow: string;
+  now: string;
   organization: Organization;
   coordinator: Coordinator;
   currentVolunteerId: string;
@@ -906,7 +911,7 @@ export interface MissionControlSummary {
   coordinatorName: string;
   firstName: string;
   organizationName: string;
-  demoNow: string;
+  now: string;
   activeVolunteers: number;
   coveragePercent: number;
   hoursThisMonth: number;

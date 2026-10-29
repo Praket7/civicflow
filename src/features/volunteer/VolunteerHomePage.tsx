@@ -56,7 +56,7 @@ export function VolunteerHomePage() {
     })
     .slice(0, 3);
 
-  const weekStart = startOfWeek(parseISO(workspace.demoNow), { weekStartsOn: 1 });
+  const weekStart = startOfWeek(parseISO(workspace.now), { weekStartsOn: 1 });
   const week = Array.from({ length: 7 }, (_, offset) => {
     const date = addDays(weekStart, offset);
     const isoDate = format(date, "yyyy-MM-dd");
@@ -75,7 +75,7 @@ export function VolunteerHomePage() {
     <Page>
       <header className={styles.intro}>
         <div>
-          <p className={styles.eyebrow}>{formatLongDate(parseISO(workspace.demoNow))}</p>
+          <p className={styles.eyebrow}>{formatLongDate(parseISO(workspace.now))}</p>
           <h1 className={styles.greeting}>
             Good morning, <span className={styles.greetingName}>{volunteer.firstName}.</span>
           </h1>

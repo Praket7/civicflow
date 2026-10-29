@@ -228,10 +228,9 @@ export function AutoRosterPage() {
     [workspace],
   );
 
-  const [shiftId, setShiftId] = useState(() => {
-    const preferred = shiftOptions.find((row) => row.shift.id === "sh-sat-food");
-    return preferred?.shift.id ?? shiftOptions[0]?.shift.id ?? "";
-  });
+  // The first shift with an open required seat is the one a coordinator most
+  // likely came to fix. Nothing here names a fixture.
+  const [shiftId, setShiftId] = useState(() => shiftOptions[0]?.shift.id ?? "");
   const [query, setQuery] = useState("");
   const [skillFilter, setSkillFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
@@ -296,7 +295,7 @@ export function AutoRosterPage() {
     const period = periodFor(shift);
     const shiftStart = parseISO(shift.startsAt).getTime();
     const shiftEnd = parseISO(shift.endsAt).getTime();
-    const now = parseISO(workspace.demoNow).getTime();
+    const now = parseISO(workspace.now).getTime();
 
     const candidates = pool
       .map((volunteer): Candidate | null => {

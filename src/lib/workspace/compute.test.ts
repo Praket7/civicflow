@@ -17,11 +17,11 @@ describe("mission control read model", () => {
   });
 
   it("computes role coverage from upcoming role slots", () => {
-    expect(roleCoveragePercent(demoWorkspace.shifts, demoWorkspace.demoNow)).toBe(91);
+    expect(roleCoveragePercent(demoWorkspace.shifts, demoWorkspace.now)).toBe(91);
   });
 
   it("reports weekly seat fill for the Monday-start week", () => {
-    const days = weeklyCoverage(demoWorkspace.shifts, demoWorkspace.demoNow);
+    const days = weeklyCoverage(demoWorkspace.shifts, demoWorkspace.now);
     expect(days.map((day) => day.percent)).toEqual([100, 92, 100, 83, 76, 62, 90]);
     expect(days.map((day) => day.label)).toEqual([
       "Mon 12",

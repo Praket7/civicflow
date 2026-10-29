@@ -203,7 +203,7 @@ export function NotificationsPage() {
             coverage.row.shift.startsAt,
           )}`,
           priority: coverage.status === "critical" ? "high" : "normal",
-          createdAt: workspace.demoNow,
+          createdAt: workspace.now,
           href: `/coordinator/shifts/${coverage.row.shift.id}`,
           actionLabel: t("Open roster"),
           entity: coverage.row.opportunity.title,
@@ -223,7 +223,7 @@ export function NotificationsPage() {
             date: formatDate(queue[queue.length - 1].date),
           }),
           priority: "normal",
-          createdAt: workspace.demoNow,
+          createdAt: workspace.now,
           href: "/coordinator/hours",
           actionLabel: t("Review hours"),
           entity: t("Hours & verification"),
@@ -265,7 +265,7 @@ export function NotificationsPage() {
             nextShift.shift.startsAt,
           )}`,
           priority: "normal",
-          createdAt: workspace.demoNow,
+          createdAt: workspace.now,
           href: `/volunteer/shifts/${nextShift.shift.id}`,
           actionLabel: t("View shift"),
           entity: nextShift.opportunity.title,
@@ -290,7 +290,7 @@ export function NotificationsPage() {
             credential.status === "expired" ? "expired" : "expires",
           )} ${credential.expiresAt ? formatDate(credential.expiresAt) : t("soon")}`,
           priority: credential.status === "expired" ? "high" : "normal",
-          createdAt: workspace.demoNow,
+          createdAt: workspace.now,
           href: "/volunteer/profile",
           actionLabel: t("Review profile"),
           entity: t("Credentials & skills"),
@@ -310,7 +310,7 @@ export function NotificationsPage() {
             score: match.score,
           }),
           priority: "normal",
-          createdAt: workspace.demoNow,
+          createdAt: workspace.now,
           href: `/volunteer/opportunities/${match.opportunity.slug}`,
           actionLabel: t("Explore"),
           entity: match.opportunity.title,
@@ -329,7 +329,7 @@ export function NotificationsPage() {
             duration: formatMinutes(hours.pendingMinutes),
           }),
           priority: "normal",
-          createdAt: workspace.demoNow,
+          createdAt: workspace.now,
           href: "/volunteer/hours",
           actionLabel: t("View hours"),
           entity: t("My hours"),
@@ -357,7 +357,7 @@ export function NotificationsPage() {
     if (tab === "unread") return item.unread;
     return true;
   });
-  const todayKey = workspace.demoNow.slice(0, 10);
+  const todayKey = workspace.now.slice(0, 10);
   const groups = [
     {
       label: "Today",

@@ -11,7 +11,7 @@ use crate::matching::{
     day_key, plan, Candidate, Credential, RosterOptions, RosterPlan, Slot, TimeBlock,
 };
 use crate::models::WorkspaceSnapshot;
-use crate::services::demo_now;
+use crate::services::now;
 use crate::workflows::{append_audit, snapshot, validate_registration};
 
 fn parse_date(raw: &str) -> Option<NaiveDate> {
@@ -443,7 +443,7 @@ pub fn apply_roster_plan(
         names.insert(assignment.candidate_id.clone(), name);
     }
 
-    let now = demo_now(conn)?.to_rfc3339();
+    let now = now(conn)?.to_rfc3339();
     let transaction = conn.unchecked_transaction()?;
     for assignment in assignments {
         let name = &names[&assignment.candidate_id];
@@ -500,7 +500,7 @@ pub fn plan_roster(
             "Choose at least one shift for AutoRoster".into(),
         ));
     }
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let policy = policy_for_workspace(conn)?;
     let slots = load_open_slots(conn, shift_ids, now)?;
     let candidates = load_candidates(conn, now, options)?;
@@ -537,7 +537,7 @@ pub fn explain_candidate(
     candidate_id: &str,
     slot_id: &str,
 ) -> Result<crate::explain::CandidateAnswer> {
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let policy = policy_for_workspace(conn)?;
     let slots = load_open_slots(conn, shift_ids, now)?;
     let candidates = load_candidates(conn, now, options)?;

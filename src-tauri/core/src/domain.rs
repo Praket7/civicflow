@@ -24,15 +24,15 @@ pub struct ShiftView {
 /// Coverage health = filled required role slots / required role slots across
 /// shifts that have not started yet. Seat fill is charted separately so the two
 /// measures are never conflated. See docs/COVERAGE_HEALTH.md.
-pub fn role_coverage_percent(shifts: &[ShiftView], demo_now: DateTime<FixedOffset>) -> u8 {
-    let (filled, required) = shifts
-        .iter()
-        .filter(|shift| shift.starts_at > demo_now)
-        .fold((0_i64, 0_i64), |(filled, required), shift| {
+pub fn role_coverage_percent(shifts: &[ShiftView], now: DateTime<FixedOffset>) -> u8 {
+    let (filled, required) = shifts.iter().filter(|shift| shift.starts_at > now).fold(
+        (0_i64, 0_i64),
+        |(filled, required), shift| {
             let required_slots: i64 = shift.roles.iter().map(|role| role.required).sum();
             let filled_slots: i64 = shift.roles.iter().map(|role| role.filled).sum();
             (filled + filled_slots, required + required_slots)
-        });
+        },
+    );
 
     if required == 0 {
         return 100;
@@ -46,14 +46,14 @@ fn day_label(starts_at: DateTime<FixedOffset>) -> String {
 
 pub fn derive_attention(
     shifts: &[ShiftView],
-    demo_now: DateTime<FixedOffset>,
+    now: DateTime<FixedOffset>,
     limit: usize,
 ) -> Vec<AttentionItem> {
-    let today = demo_now.date_naive();
+    let today = now.date_naive();
     let mut items: Vec<AttentionItem> = Vec::new();
 
     for shift in shifts {
-        if shift.starts_at <= demo_now {
+        if shift.starts_at <= now {
             continue;
         }
         let days_out = (shift.starts_at.date_naive() - today).num_days();
@@ -122,10 +122,10 @@ fn weekday_key(date: NaiveDate) -> String {
 
 pub fn coverage_days(
     shifts: &[ShiftView],
-    demo_now: DateTime<FixedOffset>,
+    now: DateTime<FixedOffset>,
     days: i64,
 ) -> Vec<CoverageDay> {
-    let today = demo_now.date_naive();
+    let today = now.date_naive();
     let start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     (0..days)
         .map(|offset| {

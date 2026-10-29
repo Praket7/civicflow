@@ -38,9 +38,9 @@ describe("shared read model consistency", () => {
     expect(counts.checkedIn).toBe(2);
     expect(counts.expected).toBe(1);
     for (const row of event.roster.filter((person) => person.status === "checked_in")) {
-      expect(
-        row.checkedInAt && Date.parse(row.checkedInAt) < Date.parse(demoWorkspace.demoNow),
-      ).toBe(true);
+      expect(row.checkedInAt && Date.parse(row.checkedInAt) < Date.parse(demoWorkspace.now)).toBe(
+        true,
+      );
     }
 
     const library = getRoster("sh-tue-library", base, demoWorkspace);
@@ -66,7 +66,7 @@ describe("shared read model consistency", () => {
             shiftId: DEMO_EVENT_SHIFT_ID,
             role: expected.role,
             status: "checked_in" as const,
-            checkedInAt: demoWorkspace.demoNow,
+            checkedInAt: demoWorkspace.now,
             checkedOutAt: null,
           },
         ],

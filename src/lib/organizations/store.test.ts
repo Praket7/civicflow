@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Account } from "../../types/domain";
+import type { OrganizationAccess, OrganizationProfile } from "./types";
 import {
-  createOrganization,
+  bindOrganizationCommands,
   currentOrganizationFor,
-  joinOrganization,
+  hydrateOrganizations,
+  markUpdatesRead,
   membershipsFor,
-  organizationForCode,
   organizationsFor,
   recordOrganizationUpdate,
   resetOrganizationsForTests,
-  setCurrentOrganization,
+  selectOrganization,
   unreadUpdatesFor,
-  markUpdatesRead,
 } from "./store";
 
 const coordinator: Account = {
@@ -22,164 +22,121 @@ const coordinator: Account = {
   volunteerId: null,
 };
 
-const volunteer: Account = {
-  id: "user-volunteer",
-  name: "Luis Ortega",
-  email: "luis@example.org",
-  role: "volunteer",
-  volunteerId: "vol-luis",
-};
-
-function newOrganization(visibility: "public" | "private" = "public") {
-  return createOrganization(coordinator, {
-    name: "East Side Tutoring",
-    description: "After-school tutoring for third to fifth graders at the East Side library.",
-    website: "eastside.example.org",
-    address: "1 Library Way",
+function record(id: string, name: string): OrganizationProfile {
+  return {
+    id,
+    name,
+    initials: name.slice(0, 2).toUpperCase(),
+    mission: "Neighbours helping neighbours.",
+    description: "Neighbours helping neighbours.",
     city: "Buffalo",
     state: "NY",
-    contactEmails: ["dana@example.org"],
-    image: "/media/hero-community.jpg",
-    imageAlt: "Neighbours at a community event",
-    visibility,
-  });
+    address: "1 Main Street",
+    website: "example.org",
+    email: "dana@example.org",
+    timezone: "America/New_York",
+    visibility: "public",
+    image: null,
+    imageAlt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    createdByUserId: coordinator.id,
+    isDemo: false,
+    syncMode: "local",
+  };
 }
+
+function access(
+  id: string,
+  name: string,
+  role: OrganizationAccess["membership"]["role"] = "owner",
+): OrganizationAccess {
+  return {
+    organization: record(id, name),
+    membership: {
+      organizationId: id,
+      userId: coordinator.id,
+      role,
+      status: "active",
+      joinedAt: "2026-01-01T00:00:00Z",
+      membershipEpoch: 1,
+    },
+    members: 1,
+  };
+}
+
+const first = access("org-first", "First Pantry");
+const second = access("org-second", "Second Garden", "coordinator");
 
 beforeEach(() => {
   resetOrganizationsForTests();
+  hydrateOrganizations([first, second]);
 });
 
-describe("organization codes", () => {
-  it("gives a new workspace a 10-digit coordinator code and a 6-digit volunteer code", () => {
-    const organization = newOrganization();
-
-    expect(organization.coordinatorCode).toMatch(/^\d{10}$/);
-    expect(organization.volunteerCode).toMatch(/^\d{6}$/);
-    expect(organizationForCode(organization.coordinatorCode, "coordinator")?.id).toBe(
-      organization.id,
-    );
-    expect(organizationForCode(organization.volunteerCode, "volunteer")?.id).toBe(organization.id);
-  });
-
-  it("makes the creator a coordinator and selects the new workspace", () => {
-    const organization = newOrganization();
-
-    expect(membershipsFor(coordinator.email)).toEqual([
-      expect.objectContaining({ organizationId: organization.id, role: "coordinator" }),
+describe("the organization cache", () => {
+  it("shows only the memberships the repository returned", () => {
+    expect(organizationsFor(coordinator.email).map((row) => row.organization.id)).toEqual([
+      "org-first",
+      "org-second",
     ]);
-    expect(currentOrganizationFor(coordinator.email)?.id).toBe(organization.id);
+    expect(membershipsFor(coordinator.email)).toHaveLength(2);
   });
 
-  it("keeps codes unique across workspaces", () => {
-    const first = newOrganization();
-    const second = createOrganization(coordinator, {
-      name: "Northside Pantry",
-      description: "A weekly pantry for families on the north side of the city.",
-      website: "northside.example.org",
-      address: "12 Main Street",
-      city: "Buffalo",
-      state: "NY",
-      contactEmails: ["dana@example.org"],
-      image: "/media/hero-community.jpg",
-      imageAlt: "Neighbours at a community event",
-      visibility: "public",
+  it("starts on the first membership and can be pointed at another", () => {
+    expect(currentOrganizationFor(coordinator.email)?.id).toBe("org-first");
+    hydrateOrganizations([first, second], "org-second");
+    expect(currentOrganizationFor(coordinator.email)?.id).toBe("org-second");
+  });
+
+  it("falls back to the first membership when the active one disappears", () => {
+    hydrateOrganizations([first, second], "org-second");
+    expect(currentOrganizationFor(coordinator.email)?.id).toBe("org-second");
+
+    // The authority removed org-second from this identity's memberships.
+    hydrateOrganizations([first]);
+    expect(currentOrganizationFor(coordinator.email)?.id).toBe("org-first");
+  });
+
+  it("asks the repository before switching and re-reads its answer", async () => {
+    const calls: string[] = [];
+    bindOrganizationCommands({
+      select: async (organizationId) => {
+        calls.push(organizationId);
+      },
+      create: async () => first,
+      update: async () => first.organization,
+      list: async () => [first, second],
+      redeem: async () => first,
+      join: async () => first,
     });
 
-    expect(second.coordinatorCode).not.toBe(first.coordinatorCode);
-    expect(second.volunteerCode).not.toBe(first.volunteerCode);
+    await selectOrganization(coordinator, "org-second");
+
+    expect(calls).toEqual(["org-second"]);
+    expect(currentOrganizationFor(coordinator.email)?.id).toBe("org-second");
+  });
+
+  it("refuses a switch before the repository is available", async () => {
+    await expect(selectOrganization(coordinator, "org-second")).rejects.toThrow(/opening/i);
   });
 });
 
-describe("joining", () => {
-  it("lets a volunteer join a public organization without a code", () => {
-    const organization = newOrganization("public");
-
-    joinOrganization(volunteer, organization.id);
-
-    expect(organizationsFor(volunteer.email).map((entry) => entry.organization.id)).toEqual([
-      organization.id,
-    ]);
-    expect(currentOrganizationFor(volunteer.email)?.id).toBe(organization.id);
-  });
-
-  it("keeps a private organization closed until the six-digit code is supplied", () => {
-    const organization = newOrganization("private");
-
-    expect(() => joinOrganization(volunteer, organization.id)).toThrow(/private/i);
-    expect(() => joinOrganization(volunteer, organization.id, "000000")).toThrow(/private/i);
-
-    joinOrganization(volunteer, organization.id, organization.volunteerCode);
-    expect(membershipsFor(volunteer.email)).toHaveLength(1);
-  });
-
-  it("only accepts the coordinator code for another coordinator", () => {
-    const organization = newOrganization("public");
-    const secondCoordinator: Account = {
-      ...coordinator,
-      id: "user-coordinator-2",
-      name: "Amara Okafor",
-      email: "amara@example.org",
-    };
-
-    expect(() =>
-      joinOrganization(secondCoordinator, organization.id, organization.volunteerCode),
-    ).toThrow(/coordinator code/i);
-
-    joinOrganization(secondCoordinator, organization.id, organization.coordinatorCode);
-    expect(membershipsFor(secondCoordinator.email)).toHaveLength(1);
-  });
-
-  it("ignores a switch to a workspace the account has not joined", () => {
-    const organization = newOrganization();
-    setCurrentOrganization(volunteer.email, organization.id);
-
-    expect(currentOrganizationFor(volunteer.email)).toBeNull();
-    expect(membershipsFor(volunteer.email)).toEqual([]);
-  });
-
-  it("keeps several workspaces and switches between them", () => {
-    const first = newOrganization();
-    const second = createOrganization(coordinator, {
-      name: "Southside Garden",
-      description: "Neighbours grow vegetables together and share the harvest each Saturday.",
-      website: "southside.example.org",
-      address: "9 Garden Street",
-      city: "Buffalo",
-      state: "NY",
-      contactEmails: ["dana@example.org"],
-      image: "/media/hero-community.jpg",
-      imageAlt: "Neighbours at a community event",
-      visibility: "public",
-    });
-    joinOrganization(volunteer, first.id);
-    joinOrganization(volunteer, second.id);
-
-    setCurrentOrganization(volunteer.email, first.id);
-    expect(currentOrganizationFor(volunteer.email)?.id).toBe(first.id);
-    setCurrentOrganization(volunteer.email, second.id);
-    expect(currentOrganizationFor(volunteer.email)?.id).toBe(second.id);
-  });
-});
-
-describe("workspace updates", () => {
-  it("only shows an event to members of that workspace, and marks it read", () => {
-    const organization = newOrganization();
+describe("workspace activity", () => {
+  it("only shows an update to members of that workspace, and marks it read", () => {
     recordOrganizationUpdate({
-      organizationId: organization.id,
+      organizationId: "org-first",
       kind: "event",
-      title: "New event: Saturday tutoring",
-      body: "East Side Tutoring published Saturday tutoring.",
+      title: "New event: Saturday pantry",
+      body: "First Pantry published Saturday pantry.",
       href: "/volunteer/discover",
       author: "Dana Whitfield",
     });
 
     expect(unreadUpdatesFor(coordinator.email)).toHaveLength(1);
-    expect(unreadUpdatesFor(volunteer.email)).toHaveLength(0);
 
-    joinOrganization(volunteer, organization.id);
-    expect(unreadUpdatesFor(volunteer.email)).toHaveLength(1);
+    markUpdatesRead(coordinator.email);
+    expect(unreadUpdatesFor(coordinator.email)).toHaveLength(0);
 
-    markUpdatesRead(volunteer.email);
-    expect(unreadUpdatesFor(volunteer.email)).toHaveLength(0);
+    hydrateOrganizations([second]);
+    expect(unreadUpdatesFor(coordinator.email)).toHaveLength(0);
   });
 });

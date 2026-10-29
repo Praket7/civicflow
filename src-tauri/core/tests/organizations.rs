@@ -17,8 +17,8 @@ fn rule_code(error: CoreError) -> String {
     }
 }
 
-fn account(conn: &rusqlite::Connection, email: &str, role: &str) -> Account {
-    create_account(conn, "Alex Rivera", email, "kitchen-table-2026", role)
+fn account(conn: &rusqlite::Connection, email: &str) -> Account {
+    create_account(conn, "Alex Rivera", email, "kitchen-table-2026")
         .expect("account is created")
         .user
 }
@@ -72,10 +72,10 @@ fn the_organization_tables_exist_after_migration() {
 }
 
 #[test]
-fn the_creator_of_an_organization_is_its_first_coordinator() {
+fn the_creator_of_an_organization_is_its_first_owner() {
     let database = seeded();
     let conn = database.connection();
-    let creator = account(conn, "creator@example.org", "coordinator");
+    let creator = account(conn, "creator@example.org");
 
     let organization =
         organizations::create_organization(conn, &creator, &new_organization("Riverside Pantry"))
@@ -92,15 +92,16 @@ fn the_creator_of_an_organization_is_its_first_coordinator() {
 
     let membership = require_coordinator(conn, &organization.id, &creator.id)
         .expect("the creator coordinates what they created");
-    assert_eq!(membership.role, "coordinator");
+    assert_eq!(membership.role, "owner");
     assert_eq!(membership.status, "active");
+    assert_eq!(membership.membership_epoch, 1);
 }
 
 #[test]
 fn an_organization_created_twice_takes_a_distinct_identifier() {
     let database = seeded();
     let conn = database.connection();
-    let creator = account(conn, "creator@example.org", "coordinator");
+    let creator = account(conn, "creator@example.org");
 
     let first =
         organizations::create_organization(conn, &creator, &new_organization("Riverside Pantry"))
@@ -117,8 +118,8 @@ fn an_organization_created_twice_takes_a_distinct_identifier() {
 fn an_account_without_a_membership_cannot_reach_an_organization() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let outsider = account(conn, "outsider@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let outsider = account(conn, "outsider@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
@@ -133,7 +134,7 @@ fn an_account_without_a_membership_cannot_reach_an_organization() {
 fn a_unknown_organization_is_not_confused_with_forbidden_access() {
     let database = seeded();
     let conn = database.connection();
-    let account = account(conn, "someone@example.org", "volunteer");
+    let account = account(conn, "someone@example.org");
 
     let denied = require_membership(conn, "org-does-not-exist", &account.id).unwrap_err();
     assert_eq!(rule_code(denied), "ORGANIZATION_NOT_FOUND");
@@ -143,8 +144,8 @@ fn a_unknown_organization_is_not_confused_with_forbidden_access() {
 fn a_volunteer_membership_is_not_coordinator_access() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
@@ -160,8 +161,8 @@ fn a_volunteer_membership_is_not_coordinator_access() {
 fn a_volunteer_in_another_organization_cannot_read_its_members() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
@@ -180,8 +181,8 @@ fn a_volunteer_in_another_organization_cannot_read_its_members() {
 fn a_disabled_membership_loses_access() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
@@ -202,20 +203,33 @@ fn a_disabled_membership_loses_access() {
 fn a_volunteer_cannot_issue_an_invitation() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
     organizations::join_as_volunteer(conn, &volunteer.id, &organization.id).unwrap();
 
-    let denied = organizations::create_invite(conn, &volunteer, &organization.id, "coordinator")
-        .unwrap_err();
+    let denied = organizations::create_invite(
+        conn,
+        &volunteer,
+        &organization.id,
+        "coordinator",
+        "someone@example.org",
+    )
+    .unwrap_err();
     assert_eq!(rule_code(denied), "FORBIDDEN");
 
-    let invite =
-        organizations::create_invite(conn, &owner, &organization.id, "coordinator").unwrap();
+    let invite = organizations::create_invite(
+        conn,
+        &owner,
+        &organization.id,
+        "coordinator",
+        "invited@example.org",
+    )
+    .unwrap();
     assert_eq!(invite.role, "coordinator");
+    assert_eq!(invite.email, "invited@example.org");
     assert_eq!(invite.token.len(), 64);
     let stored: String = conn
         .query_row(
@@ -231,13 +245,19 @@ fn a_volunteer_cannot_issue_an_invitation() {
 fn a_coordinator_invitation_cannot_be_redeemed_twice() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let invited = account(conn, "invited@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let invited = account(conn, "invited@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
-    let invite =
-        organizations::create_invite(conn, &owner, &organization.id, "coordinator").unwrap();
+    let invite = organizations::create_invite(
+        conn,
+        &owner,
+        &organization.id,
+        "coordinator",
+        "invited@example.org",
+    )
+    .unwrap();
 
     let redeemed = organizations::redeem_invite(conn, &invited.id, &invite.token).unwrap();
     assert_eq!(redeemed.role, "coordinator");
@@ -251,12 +271,19 @@ fn a_coordinator_invitation_cannot_be_redeemed_twice() {
 fn an_expired_invitation_is_refused() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let invited = account(conn, "invited@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let invited = account(conn, "invited@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
-    let invite = organizations::create_invite(conn, &owner, &organization.id, "volunteer").unwrap();
+    let invite = organizations::create_invite(
+        conn,
+        &owner,
+        &organization.id,
+        "volunteer",
+        "invited@example.org",
+    )
+    .unwrap();
 
     conn.execute(
         "UPDATE organization_invites SET expires_at = '2020-01-01T00:00:00+00:00' WHERE id = ?1",
@@ -275,7 +302,7 @@ fn an_expired_invitation_is_refused() {
 fn an_unknown_invitation_code_is_refused() {
     let database = seeded();
     let conn = database.connection();
-    let invited = account(conn, "invited@example.org", "volunteer");
+    let invited = account(conn, "invited@example.org");
 
     let denied = organizations::redeem_invite(conn, &invited.id, "not-a-real-code").unwrap_err();
     assert_eq!(rule_code(denied), "INVITE_INVALID");
@@ -285,14 +312,20 @@ fn an_unknown_invitation_code_is_refused() {
 fn a_disabled_membership_is_not_revived_by_an_invitation() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
     organizations::join_as_volunteer(conn, &volunteer.id, &organization.id).unwrap();
-    let invite =
-        organizations::create_invite(conn, &owner, &organization.id, "coordinator").unwrap();
+    let invite = organizations::create_invite(
+        conn,
+        &owner,
+        &organization.id,
+        "coordinator",
+        "volunteer@example.org",
+    )
+    .unwrap();
 
     conn.execute(
         "UPDATE organization_memberships SET status = 'disabled'
@@ -309,8 +342,8 @@ fn a_disabled_membership_is_not_revived_by_an_invitation() {
 fn a_private_organization_requires_an_invitation_to_join() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let mut input = new_organization("Riverside Pantry");
     input.visibility = "private".into();
     let organization = organizations::create_organization(conn, &owner, &input).unwrap();
@@ -319,7 +352,14 @@ fn a_private_organization_requires_an_invitation_to_join() {
         organizations::join_as_volunteer(conn, &volunteer.id, &organization.id).unwrap_err();
     assert_eq!(rule_code(denied), "INVITE_REQUIRED");
 
-    let invite = organizations::create_invite(conn, &owner, &organization.id, "volunteer").unwrap();
+    let invite = organizations::create_invite(
+        conn,
+        &owner,
+        &organization.id,
+        "volunteer",
+        "volunteer@example.org",
+    )
+    .unwrap();
     organizations::redeem_invite(conn, &volunteer.id, &invite.token).unwrap();
     assert!(membership(conn, &organization.id, &volunteer.id)
         .unwrap()
@@ -327,11 +367,11 @@ fn a_private_organization_requires_an_invitation_to_join() {
 }
 
 #[test]
-fn a_coordinator_cannot_downgrade_themselves_out_of_the_organization() {
+fn only_an_owner_can_change_member_roles() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let organization =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();
@@ -350,7 +390,7 @@ fn a_coordinator_cannot_downgrade_themselves_out_of_the_organization() {
     let denied =
         organizations::set_membership_role(conn, &owner, &organization.id, &owner.id, "volunteer")
             .unwrap_err();
-    assert_eq!(rule_code(denied), "LAST_COORDINATOR");
+    assert_eq!(rule_code(denied), "CANNOT_CHANGE_OWN_ROLE");
 
     let promoted = organizations::set_membership_role(
         conn,
@@ -388,15 +428,15 @@ fn the_bundled_accounts_belong_to_the_workspace_organization() {
         .unwrap();
     assert_eq!(members, accounts);
 
-    let coordinators: i64 = conn
+    let owners: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM organization_memberships
-             WHERE organization_id = ?1 AND role = 'coordinator' AND status = 'active'",
+             WHERE organization_id = ?1 AND role = 'owner' AND status = 'active'",
             rusqlite::params![workspace.id],
             |row| row.get(0),
         )
         .unwrap();
-    assert!(coordinators >= 1);
+    assert_eq!(owners, 1, "exactly one owner is promoted on migration");
 
     // Seeding twice must not duplicate memberships.
     let inserted = organizations::backfill_memberships(conn).unwrap();
@@ -407,8 +447,8 @@ fn the_bundled_accounts_belong_to_the_workspace_organization() {
 fn a_member_sees_only_the_organizations_they_joined() {
     let database = seeded();
     let conn = database.connection();
-    let owner = account(conn, "owner@example.org", "coordinator");
-    let volunteer = account(conn, "volunteer@example.org", "volunteer");
+    let owner = account(conn, "owner@example.org");
+    let volunteer = account(conn, "volunteer@example.org");
     let first =
         organizations::create_organization(conn, &owner, &new_organization("Riverside Pantry"))
             .unwrap();

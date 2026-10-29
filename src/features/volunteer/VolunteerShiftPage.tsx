@@ -169,10 +169,9 @@ export function VolunteerShiftPage() {
   const checkedCount = CHECKLIST.filter((item) => checks[item.id]).length;
   const startsAt = parseISO(shift.startsAt);
   const checkInOpens = new Date(startsAt.getTime() - 30 * 60_000);
-  const demoNow = new Date(workspace.demoNow);
+  const now = new Date(workspace.now);
   const checkInOpen =
-    demoNow.getTime() >= checkInOpens.getTime() &&
-    demoNow.getTime() <= parseISO(shift.endsAt).getTime();
+    now.getTime() >= checkInOpens.getTime() && now.getTime() <= parseISO(shift.endsAt).getTime();
   const tasks = TASKS[opportunity.cause];
   const organization = user ? currentOrganizationFor(user.email) : null;
   const orgName = organization?.name ?? workspace.organization.name;

@@ -40,7 +40,7 @@ export function ImpactAnalyticsPage() {
   const ownWorkspace = !isDemoOrganization(organization.id);
   const place = [organization.city, organization.state].filter(Boolean).join(", ");
   const outcomes = getImpactOutcomes(session);
-  const demoDate = format(parseISO(workspace.demoNow), "MMM d, yyyy");
+  const demoDate = format(parseISO(workspace.now), "MMM d, yyyy");
   const chartData = range === "6" ? trend.slice(-6) : trend;
 
   const programs = useMemo(() => {
@@ -184,7 +184,7 @@ export function ImpactAnalyticsPage() {
             {ownWorkspace
               ? [organization.name, place].filter(Boolean).join(" · ")
               : "Buffalo, New York"}
-            {" · "}January to {format(parseISO(workspace.demoNow), "MMMM yyyy")}
+            {" · "}January to {format(parseISO(workspace.now), "MMMM yyyy")}
           </p>
           <h2 className={styles.heroStatement} id="impact-title">
             <span className={styles.heroNumber}>{impact.hoursYtd.toLocaleString()}</span>

@@ -98,7 +98,7 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
 
   if (!opportunity) return <NoEventPanel />;
 
-  const now = parseISO(workspace.demoNow);
+  const now = parseISO(workspace.now);
   const startsAt = parseISO(shift.startsAt);
   const opensAt = new Date(startsAt.getTime() - CHECK_IN_OPENS_MINUTES * 60_000);
   const closesAt = new Date(startsAt.getTime() + CHECK_IN_CLOSES_MINUTES * 60_000);

@@ -10,7 +10,6 @@ import {
   parseHostedLink,
   readHostedProblem,
   rememberHostedAnswer,
-  rememberPendingRole,
   rememberPendingSignup,
   rememberedHostedAnswer,
 } from "./hosted";
@@ -123,8 +122,6 @@ describe("callback answers that outlive the address", () => {
     const answer = rememberHostedAnswer("", "#access_token=one&refresh_token=two");
 
     expect(answer).toEqual({ code: null, accessToken: "one", refreshToken: "two" });
-    // The address is rewritten right after this read, so the next page load can
-    // only find the answer here.
     expect(rememberedHostedAnswer()).toEqual(answer);
   });
 
@@ -172,20 +169,7 @@ describe("desktop hand-off guard", () => {
       JSON.stringify({ kind: "callback", at: Date.now() }),
     );
 
-    // A duplicate delivery and a retry both need the mark to survive until a
-    // session has actually been adopted.
     expect(await hostedHandoffPending("callback")).toBe(true);
-    expect(await hostedHandoffPending("callback")).toBe(true);
-    await finishHostedHandoff();
-    expect(await hostedHandoffPending("callback")).toBe(false);
-  });
-
-  it("accepts a return link this device asked for, once", async () => {
-    localStorage.setItem(
-      "civicflow.hosted.pending-link",
-      JSON.stringify({ kind: "callback", at: Date.now() }),
-    );
-
     expect(await hostedHandoffPending("callback")).toBe(true);
     await finishHostedHandoff();
     expect(await hostedHandoffPending("callback")).toBe(false);
@@ -215,35 +199,41 @@ describe("desktop hand-off guard", () => {
 });
 
 describe("hosted identity", () => {
-  const user = {
-    email: "jordan@example.org",
-    user_metadata: { name: "Jordan Reyes", role: "coordinator" },
-  } as unknown as User;
+  it("uses only the name and email from the provider", () => {
+    const user = {
+      email: "jordan@example.org",
+      user_metadata: { name: "Jordan Reyes", role: "coordinator" },
+    } as unknown as User;
 
-  it("uses the name and role stored at sign-up", () => {
     expect(identityFromUser(user)).toEqual({
       name: "Jordan Reyes",
       email: "jordan@example.org",
-      role: "coordinator",
     });
   });
 
-  it("recovers the role from a pending sign-up when metadata is missing", () => {
+  it("never reads a role from user metadata", () => {
+    const user = {
+      email: "jordan@example.org",
+      user_metadata: { full_name: "Jordan Reyes", role: "coordinator" },
+    } as unknown as User;
+
+    expect(identityFromUser(user)).not.toHaveProperty("role");
+  });
+
+  it("recovers the name from a pending sign-up when metadata is missing", () => {
     rememberPendingSignup({
       name: "Alicia Moreno",
       email: "alicia@example.org",
-      role: "volunteer",
     });
 
-    const inferred = identityFromUser(
-      { email: "alicia@example.org", user_metadata: {} } as unknown as User,
-      "coordinator",
-    );
+    const inferred = identityFromUser({
+      email: "alicia@example.org",
+      user_metadata: {},
+    } as unknown as User);
 
     expect(inferred).toEqual({
       name: "Alicia Moreno",
       email: "alicia@example.org",
-      role: "volunteer",
     });
   });
 
@@ -257,33 +247,16 @@ describe("hosted identity", () => {
   });
 
   it("uses the name Google puts on the profile", () => {
-    const identity = identityFromUser(
-      {
-        email: "jordan@example.org",
-        user_metadata: { full_name: "Jordan Reyes", avatar_url: "https://example.org/a.png" },
-      } as unknown as User,
-      "volunteer",
-    );
+    const identity = identityFromUser({
+      email: "jordan@example.org",
+      user_metadata: { full_name: "Jordan Reyes", avatar_url: "https://example.org/a.png" },
+    } as unknown as User);
 
     expect(identity?.name).toBe("Jordan Reyes");
   });
 
-  it("keeps the role chosen before the Google hand-off", () => {
-    rememberPendingRole("coordinator");
-
-    const identity = identityFromUser(
-      {
-        email: "jordan@example.org",
-        user_metadata: { full_name: "Jordan Reyes" },
-      } as unknown as User,
-      "volunteer",
-    );
-
-    expect(identity?.role).toBe("coordinator");
-  });
-
-  it("forgets the hand-off role once the account is adopted", () => {
-    rememberPendingRole("coordinator");
+  it("forgets a role left by an older build", () => {
+    localStorage.setItem("civicflow.hosted.pending-role", "coordinator");
     clearPendingHostedIdentity();
 
     const identity = identityFromUser({
@@ -291,6 +264,6 @@ describe("hosted identity", () => {
       user_metadata: { full_name: "Sam Ortiz" },
     } as unknown as User);
 
-    expect(identity?.role).toBe("volunteer");
+    expect(identity).not.toHaveProperty("role");
   });
 });

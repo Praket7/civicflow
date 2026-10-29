@@ -168,9 +168,6 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   // an empty workspace instead.
   const organization = account ? organizationWorkspace.current : null;
   const organizationId = organization?.id ?? "";
-  const organizationName = organization?.name ?? "";
-  const organizationImage = organization?.image ?? "";
-  const organizationImageAlt = organization?.imageAlt ?? "";
   const accountId = account?.id ?? "";
   // The store hands back a fresh object on every change; scope on identity, so
   // an edited name or a new cover picture reaches the screens immediately.
@@ -232,20 +229,11 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   );
   useEffect(() => {
     let active = true;
-    const scope = account
-      ? repository.selectOrganization(
-          organizationId
-            ? {
-                id: organizationId,
-                name: organizationName,
-                coordinatorName: account.role === "coordinator" ? account.name : undefined,
-                coordinatorEmail: account.role === "coordinator" ? account.email : undefined,
-                image: organizationImage || undefined,
-                imageAlt: organizationImageAlt || undefined,
-              }
-            : null,
-        )
-      : repository.selectOrganization(DEMO_ORGANIZATION);
+    // The organization cache decides which workspace this is; the repository
+    // opens it. A signed-out preview still reads the bundled demo organization.
+    const scope = repository.selectOrganization(
+      account ? organizationId || null : DEMO_ORGANIZATION.id,
+    );
     scope
       .then(() => repository.getSnapshot())
       .then((snapshot) => {
@@ -263,14 +251,7 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     return () => {
       active = false;
     };
-  }, [
-    repository,
-    organizationId,
-    organizationName,
-    organizationImage,
-    organizationImageAlt,
-    account,
-  ]);
+  }, [repository, organizationId, account]);
 
   useEffect(() => {
     if (!session) return;

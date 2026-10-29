@@ -1,5 +1,4 @@
 import { createClient, type AuthError, type Session, type User } from "@supabase/supabase-js";
-import type { AccountRole } from "../../types/domain";
 import { isTauri } from "../platform";
 
 const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? "";
@@ -30,10 +29,13 @@ const client = hostedAuthConfigured
 
 type HostedReturnKind = "callback" | "reset";
 
+/**
+ * A hosted provider proves who someone is. It never says what they may do:
+ * organization role comes from a membership row, not from signup metadata.
+ */
 export interface HostedIdentity {
   name: string;
   email: string;
-  role: AccountRole;
 }
 
 interface PendingSignup extends HostedIdentity {
@@ -41,6 +43,8 @@ interface PendingSignup extends HostedIdentity {
 }
 
 const PENDING_KEY = "civicflow.hosted.pending";
+// Former builds stored a chosen role here. It is only read when clearing, so an
+// upgrade drops the old value instead of trusting it.
 const PENDING_ROLE_KEY = "civicflow.hosted.pending-role";
 const PENDING_TTL_MS = 86_400_000;
 const PENDING_LINK_KEY = "civicflow.hosted.pending-link";
@@ -297,7 +301,7 @@ export async function hostedSignUp(
     email: identity.email.trim(),
     password,
     options: {
-      data: { name: identity.name, role: identity.role },
+      data: { name: identity.name },
       emailRedirectTo: hostedRedirect("callback"),
     },
   });
@@ -355,7 +359,7 @@ export function rememberPendingSignup(identity: HostedIdentity): void {
     const pending: PendingSignup = { ...identity, at: new Date().toISOString() };
     localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   } catch {
-    // The email metadata still carries the name and role.
+    // The email metadata still carries the name.
   }
 }
 
@@ -364,11 +368,7 @@ function pendingHostedIdentity(email?: string | null): HostedIdentity | null {
     const raw = localStorage.getItem(PENDING_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingSignup>;
-    if (
-      typeof parsed.name !== "string" ||
-      typeof parsed.email !== "string" ||
-      (parsed.role !== "coordinator" && parsed.role !== "volunteer")
-    ) {
+    if (typeof parsed.name !== "string" || typeof parsed.email !== "string") {
       return null;
     }
     if (email && parsed.email.toLowerCase() !== email.trim().toLowerCase()) return null;
@@ -377,25 +377,7 @@ function pendingHostedIdentity(email?: string | null): HostedIdentity | null {
       localStorage.removeItem(PENDING_KEY);
       return null;
     }
-    return { name: parsed.name, email: parsed.email, role: parsed.role };
-  } catch {
-    return null;
-  }
-}
-
-/** The role picked on the form, so a provider account keeps the same access. */
-export function rememberPendingRole(role: AccountRole): void {
-  try {
-    localStorage.setItem(PENDING_ROLE_KEY, role);
-  } catch {
-    // Falls back to the volunteer default below.
-  }
-}
-
-function pendingRole(): AccountRole | null {
-  try {
-    const stored = localStorage.getItem(PENDING_ROLE_KEY);
-    return stored === "coordinator" || stored === "volunteer" ? stored : null;
+    return { name: parsed.name, email: parsed.email };
   } catch {
     return null;
   }
@@ -410,10 +392,7 @@ export function clearPendingHostedIdentity(): void {
   }
 }
 
-export function identityFromUser(
-  user: User,
-  fallbackRole: AccountRole = "volunteer",
-): HostedIdentity | null {
+export function identityFromUser(user: User): HostedIdentity | null {
   const email = user.email?.trim().toLowerCase();
   if (!email) return null;
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
@@ -423,12 +402,7 @@ export function identityFromUser(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
   const name = metaName?.trim() || pending?.name || email.split("@")[0] || "CivicFlow member";
-  const metaRole = meta.role === "coordinator" || meta.role === "volunteer" ? meta.role : null;
-  return {
-    name,
-    email,
-    role: metaRole ?? pending?.role ?? pendingRole() ?? fallbackRole,
-  };
+  return { name, email };
 }
 
 interface HostedLink {

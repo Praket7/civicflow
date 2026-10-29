@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { ArrowRight, Database, ShieldCheck, WifiOff } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { accountHome, useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
 import styles from "./WelcomePage.module.css";
@@ -11,7 +12,20 @@ const trustChips: { label: string; icon: typeof WifiOff; tone: "green" | "violet
 ];
 
 export function WelcomePage() {
-  const { user } = useAuth();
+  const { user, openDemo } = useAuth();
+  const navigate = useNavigate();
+  const [demoError, setDemoError] = useState<string | null>(null);
+
+  async function exploreDemo() {
+    setDemoError(null);
+    try {
+      const session = await openDemo(true);
+      navigate(accountHome(session.user));
+    } catch (caught) {
+      setDemoError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
   return (
     <main className={styles.page}>
       <section className={styles.photoPanel} aria-labelledby="welcome-statement">
@@ -79,16 +93,30 @@ export function WelcomePage() {
               </Link>
             )}
             {user ? null : (
-              <Link className={styles.secondaryAction} to="/create-account">
-                Create an account
-              </Link>
+              <>
+                <Link className={styles.secondaryAction} to="/create-account">
+                  Create an account
+                </Link>
+                <button
+                  type="button"
+                  className={styles.secondaryAction}
+                  onClick={() => void exploreDemo()}
+                >
+                  Explore the demo
+                </button>
+              </>
             )}
           </div>
           <p className={styles.actionNote}>
             {user
               ? "This device still has your session. Continue where you left off."
-              : "You pick coordinator or volunteer when you create the account."}
+              : "Creating an account only proves who you are. You choose an organization next."}
           </p>
+          {demoError ? (
+            <p className={styles.actionNote} role="alert">
+              {demoError}
+            </p>
+          ) : null}
 
           <dl className={styles.roleList}>
             <div>

@@ -141,7 +141,7 @@ function stamp(iso: string): string {
 
 /** Shifts still ahead of the demo clock, soonest first. */
 function upcoming(workspace: DemoWorkspace) {
-  return getShiftRows(workspace).filter((row) => row.shift.startsAt > workspace.demoNow);
+  return getShiftRows(workspace).filter((row) => row.shift.startsAt > workspace.now);
 }
 
 function openRoles(roles: { name: string; required: number; filled: number }[]) {
@@ -210,7 +210,7 @@ const intents: Intent[] = [
     ],
     answer(context) {
       const rows = upcoming(context.workspace)
-        .filter((row) => daysOut(row.shift.startsAt, context.workspace.demoNow) <= 7)
+        .filter((row) => daysOut(row.shift.startsAt, context.workspace.now) <= 7)
         .map((row) => ({
           row,
           gaps: openRoles(row.shift.roles),
@@ -443,7 +443,7 @@ const intents: Intent[] = [
       const flagged = getCredentials(context.session, context.workspace)
         .map((credential) => ({
           credential,
-          status: credentialState(credential.expiresAt, context.workspace.demoNow),
+          status: credentialState(credential.expiresAt, context.workspace.now),
         }))
         .filter((entry) => entry.status !== "current");
 
@@ -559,8 +559,7 @@ const intents: Intent[] = [
         (row) => row.status === "pending",
       );
       const expiring = getCredentials(context.session, context.workspace).filter(
-        (credential) =>
-          credentialState(credential.expiresAt, context.workspace.demoNow) !== "current",
+        (credential) => credentialState(credential.expiresAt, context.workspace.now) !== "current",
       );
 
       const citations: AskCitation[] = [
@@ -582,7 +581,7 @@ const intents: Intent[] = [
           id: credential.id,
           label: `${credential.volunteer.name} · ${credential.name}`,
           detail: `${
-            credentialState(credential.expiresAt, context.workspace.demoNow) === "expired"
+            credentialState(credential.expiresAt, context.workspace.now) === "expired"
               ? t("Expired")
               : t("Expiring")
           } · ${credential.expiresAt ? formatMonthDay(credential.expiresAt) : t("No date")}`,
@@ -641,7 +640,7 @@ const intents: Intent[] = [
     ],
     answer(context) {
       const rows = getHourRows(context.session, context.workspace);
-      const month = context.workspace.demoNow.slice(0, 7);
+      const month = context.workspace.now.slice(0, 7);
       const thisMonth = rows.filter((row) => row.date.startsWith(month));
       const approved = thisMonth.filter((row) => row.status === "verified");
       const pending = thisMonth.filter((row) => row.status === "pending");
@@ -977,7 +976,7 @@ export function ask(request: AskRequest): AskAnswer {
  * can check the claim, and a coordinator learns how narrow the answer is.
  */
 function evidenceFor(context: AskContext): string {
-  const now = context.workspace.demoNow;
+  const now = context.workspace.now;
   const upcoming = context.workspace.shifts.filter(
     (shift) => shift.startsAt > now && shift.status === "scheduled",
   ).length;

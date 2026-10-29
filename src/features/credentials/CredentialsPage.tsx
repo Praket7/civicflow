@@ -103,10 +103,7 @@ export function CredentialsPage() {
 
   function statusFor(credential: CredentialRow) {
     if (!credential.expiresAt) return { days: null, label: t("No expiry") };
-    const days = differenceInCalendarDays(
-      parseISO(credential.expiresAt),
-      parseISO(workspace.demoNow),
-    );
+    const days = differenceInCalendarDays(parseISO(credential.expiresAt), parseISO(workspace.now));
     if (days < 0) return { days, label: t("{count} days ago", { count: Math.abs(days) }) };
     if (days === 0) return { days, label: t("Today") };
     return { days, label: t("{count} days left", { count: days }) };

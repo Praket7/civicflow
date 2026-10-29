@@ -71,10 +71,10 @@ export function CoveragePage() {
   const [expanded, setExpanded] = useState(false);
 
   const timedRows = useMemo(() => {
-    const cutoff = addDays(parseISO(workspace.demoNow), days);
+    const cutoff = addDays(parseISO(workspace.now), days);
     return getCoverageRows(workspace).filter(({ row }) => {
       const start = parseISO(row.shift.startsAt);
-      return start > parseISO(workspace.demoNow) && start <= cutoff;
+      return start > parseISO(workspace.now) && start <= cutoff;
     });
   }, [days, workspace]);
 

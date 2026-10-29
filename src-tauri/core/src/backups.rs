@@ -134,17 +134,12 @@ pub fn validate(path: &Path) -> Result<()> {
         ));
     }
 
-    let demo_now: Option<String> = conn
-        .query_row(
-            "SELECT value FROM app_settings WHERE key = 'demo_now'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if demo_now.is_none() {
-        return Err(validation(
-            "This CivicFlow backup is missing its workspace clock.",
-        ));
+    // The application id is written by every CivicFlow database and survives a
+    // copy, so it identifies the file without depending on a pinned clock: a
+    // real workspace legitimately follows the system clock.
+    let application_id: i64 = conn.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+    if application_id != crate::db::APPLICATION_ID {
+        return Err(validation("This file is not a CivicFlow workspace backup."));
     }
 
     Ok(())
@@ -182,11 +177,15 @@ fn read_meta(path: &Path) -> Result<BackupSnapshot> {
             |row| row.get(0),
         )
         .optional()?
-        .unwrap_or(conn.query_row(
-            "SELECT value FROM app_settings WHERE key = 'demo_now'",
-            [],
-            |row| row.get(0),
-        )?);
+        .unwrap_or_else(|| {
+            // A workspace on the system clock has no pinned timestamp. The file
+            // mtime is the honest answer for when the snapshot was written.
+            let stamp = fs::metadata(path)
+                .and_then(|meta| meta.modified())
+                .map(chrono::DateTime::<chrono::Utc>::from)
+                .unwrap_or_else(|_| chrono::Utc::now());
+            stamp.to_rfc3339()
+        });
     let counts = BackupCounts {
         volunteers: count(&conn, "volunteers")?,
         programs: count(&conn, "opportunities")?,

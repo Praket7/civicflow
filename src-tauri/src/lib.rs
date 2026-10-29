@@ -18,6 +18,10 @@ use civicflow_core::notifications::{self, NotificationRule, RulePatch};
 use civicflow_core::policy::{self, PriorityLevel, RosterPolicy};
 use civicflow_core::recovery::{self, DisruptionReport, RecoveryChangeRequest, RecoveryPlan};
 use civicflow_core::recurrence::{self, RecurrenceRule, SeriesResult, ShiftSeriesRecord};
+use civicflow_core::organizations::{
+    self, IssuedInvite, NewOrganization, OrganizationAccess, OrganizationDetailsPatch,
+    OrganizationMember, OrganizationRecord, PendingInvite,
+};
 use civicflow_core::reports::{self, ExportFormat, ReportDocument, ReportRequest};
 use civicflow_core::Database;
 use civicflow_core::{auth, backups, roster, services, workflows};
@@ -166,10 +170,9 @@ fn sign_in_with_hosted(
     state: State<'_, AppState>,
     name: String,
     email: String,
-    role: String,
 ) -> Result<AuthSession, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
-    auth::sign_in_with_hosted(database.connection(), &name, &email, &role).map_err(AppError::from)
+    auth::sign_in_with_hosted(database.connection(), &name, &email).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -178,10 +181,228 @@ fn create_account(
     name: String,
     email: String,
     password: String,
-    role: String,
 ) -> Result<AuthSession, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
-    auth::create_account(database.connection(), &name, &email, &password, &role)
+    auth::create_account(database.connection(), &name, &email, &password)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn list_my_organizations(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<OrganizationAccess>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::organizations_for_account(database.connection(), &account.id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn list_public_organizations(
+    state: State<'_, AppState>,
+) -> Result<Vec<OrganizationRecord>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    organizations::list_organizations(database.connection()).map_err(AppError::from)
+}
+
+#[tauri::command]
+fn create_organization(
+    state: State<'_, AppState>,
+    token: String,
+    input: NewOrganization,
+) -> Result<OrganizationAccess, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    let organization = organizations::create_organization(database.connection(), &account, &input)
+        .map_err(AppError::from)?;
+    organizations::organization_access(database.connection(), &organization.id, &account.id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn update_organization(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+    patch: OrganizationDetailsPatch,
+) -> Result<OrganizationRecord, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::update_organization(database.connection(), &account, &organization_id, &patch)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn select_organization(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+) -> Result<OrganizationAccess, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    let access = organizations::organization_access(database.connection(), &organization_id, &account.id)
+        .map_err(AppError::from)?;
+    let key = format!("active_organization:{}", account.id);
+    database
+        .connection()
+        .execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+            [&key, &organization_id],
+        )
+        .map_err(|error| AppError::from(CoreError::from(error)))?;
+    Ok(access)
+}
+
+#[tauri::command]
+fn list_organization_members(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+) -> Result<Vec<OrganizationMember>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::list_members(database.connection(), &account, &organization_id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn list_organization_invites(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+) -> Result<Vec<PendingInvite>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::list_invites(database.connection(), &account, &organization_id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn create_organization_invite(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+    role: String,
+    email: String,
+) -> Result<IssuedInvite, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::create_invite(
+        database.connection(),
+        &account,
+        &organization_id,
+        &role,
+        &email,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn revoke_organization_invite(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+    invite_id: String,
+) -> Result<(), AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::revoke_invite(database.connection(), &account, &organization_id, &invite_id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn redeem_organization_invite(
+    state: State<'_, AppState>,
+    token: String,
+    code: String,
+) -> Result<OrganizationAccess, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    let membership = organizations::redeem_invite(database.connection(), &account.id, &code)
+        .map_err(AppError::from)?;
+    organizations::organization_access(
+        database.connection(),
+        &membership.organization_id,
+        &account.id,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn join_public_organization(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+) -> Result<OrganizationAccess, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    let membership = organizations::join_as_volunteer(database.connection(), &account.id, &organization_id)
+        .map_err(AppError::from)?;
+    organizations::organization_access(
+        database.connection(),
+        &membership.organization_id,
+        &account.id,
+    )
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn set_organization_member_role(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+    user_id: String,
+    role: String,
+) -> Result<Vec<OrganizationMember>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::set_membership_role(
+        database.connection(),
+        &account,
+        &organization_id,
+        &user_id,
+        &role,
+    )
+    .map_err(AppError::from)?;
+    organizations::list_members(database.connection(), &account, &organization_id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn set_organization_member_status(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+    user_id: String,
+    status: String,
+) -> Result<Vec<OrganizationMember>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::set_membership_status(
+        database.connection(),
+        &account,
+        &organization_id,
+        &user_id,
+        &status,
+    )
+    .map_err(AppError::from)?;
+    organizations::list_members(database.connection(), &account, &organization_id)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+fn transfer_organization_ownership(
+    state: State<'_, AppState>,
+    token: String,
+    organization_id: String,
+    user_id: String,
+) -> Result<Vec<OrganizationMember>, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = auth::require_user(database.connection(), &token)?;
+    organizations::transfer_ownership(database.connection(), &account, &organization_id, &user_id)
+        .map_err(AppError::from)?;
+    organizations::list_members(database.connection(), &account, &organization_id)
         .map_err(AppError::from)
 }
 
@@ -885,6 +1106,21 @@ fn save_volunteer_profile(
     snapshot_for(&database, &account)
 }
 
+/// Opens the bundled demo workspace and signs in as its coordinator. This is
+/// the only path that produces fixture records, so a real installation can
+/// never be mistaken for a demo.
+#[tauri::command]
+fn open_demo_workspace(state: State<'_, AppState>) -> Result<AuthSession, AppError> {
+    let mut database = state.database.lock().map_err(|_| lock_error())?;
+    database.seed_demo().map_err(AppError::from)?;
+    auth::sign_in(
+        database.connection(),
+        auth::DEMO_EMAIL,
+        auth::DEMO_PASSWORD,
+    )
+    .map_err(AppError::from)
+}
+
 #[tauri::command]
 fn reset_demo(state: State<'_, AppState>, token: String) -> Result<WorkspaceSnapshot, AppError> {
     let mut database = state.database.lock().map_err(|_| lock_error())?;
@@ -1082,8 +1318,9 @@ pub fn run() {
                 None => app.path().app_data_dir()?,
             };
             std::fs::create_dir_all(&data_dir)?;
-            let mut database = Database::open(data_dir.join("civicflow.db"))?;
-            database.seed_demo_if_empty()?;
+            // Startup never invents records. A new installation is empty until
+            // the person creates an organization or explicitly opens the demo.
+            let database = Database::open(data_dir.join("civicflow.db"))?;
             let backup_dir = data_dir.join("backups");
             if backups::list(&backup_dir)?.is_empty() {
                 backups::create(
@@ -1104,6 +1341,7 @@ pub fn run() {
             open_external_url,
             sign_in,
             sign_in_with_hosted,
+            open_demo_workspace,
             create_account,
             remember_hosted_handoff,
             hosted_handoff_pending,
@@ -1113,6 +1351,20 @@ pub fn run() {
             current_user,
             list_accounts,
             reset_password,
+            list_my_organizations,
+            list_public_organizations,
+            create_organization,
+            update_organization,
+            select_organization,
+            list_organization_members,
+            list_organization_invites,
+            create_organization_invite,
+            revoke_organization_invite,
+            redeem_organization_invite,
+            join_public_organization,
+            set_organization_member_role,
+            set_organization_member_status,
+            transfer_organization_ownership,
             get_mission_control,
             list_notifications,
             mark_notification_read,

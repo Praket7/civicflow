@@ -5,6 +5,7 @@ pnpm typecheck
 pnpm lint
 pnpm format
 pnpm check:copy
+pnpm check:hardcodes
 pnpm check:generated
 pnpm test
 pnpm build:web

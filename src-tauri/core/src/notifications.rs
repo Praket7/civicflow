@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::Account;
 use crate::error::{CoreError, Result};
 use crate::models::{NotificationItem, WorkspaceSnapshot};
-use crate::services::demo_now;
+use crate::services::now;
 use crate::workflows::{append_actor_audit, snapshot};
 
 /// The triggers the product actually sends. Each one answers a question a
@@ -88,7 +88,7 @@ pub fn ensure_defaults(conn: &Connection) -> Result<()> {
                 trigger,
                 offset,
                 audience,
-                demo_now(conn)?.to_rfc3339()
+                now(conn)?.to_rfc3339()
             ],
         )?;
     }
@@ -181,7 +181,7 @@ pub struct RulePatch {
 /// row creates nothing the second time.
 pub fn generate_due(conn: &Connection, actor: Option<&Account>) -> Result<ReminderRun> {
     let rules = list_rules(conn)?;
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let mut created: Vec<NotificationItem> = Vec::new();
     let mut skipped = 0i64;
 
@@ -403,7 +403,7 @@ fn insert_once(
     } else {
         "coordinator"
     };
-    let created_at = demo_now(conn)?.to_rfc3339();
+    let created_at = now(conn)?.to_rfc3339();
     conn.execute(
         "INSERT INTO notifications
          (id, kind, title, body, priority, created_at, read_at, href, audience, volunteer_id, rule_id)

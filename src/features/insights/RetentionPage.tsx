@@ -24,6 +24,7 @@ import {
   getRetentionRows,
   getUpcomingShiftRows,
 } from "../../lib/workspace/selectors";
+import { currentWeek } from "../../lib/workspace/dates";
 import { RetentionSignalsCard } from "./RetentionSignalsCard";
 
 export function RetentionPage() {
@@ -37,8 +38,9 @@ export function RetentionPage() {
     retention.length === 0
       ? 0
       : Math.round(retention.reduce((sum, row) => sum + row.rate, 0) / retention.length);
+  const week = currentWeek(workspace.now);
   const bookedThisWeek = getUpcomingShiftRows(workspace).filter(
-    (row) => row.shift.startsAt.slice(0, 10) <= "2026-10-19",
+    (row) => row.shift.startsAt.slice(0, 10) <= week.end,
   ).length;
 
   return (

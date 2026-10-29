@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "demoNow": "2026-10-13T07:45:00-04:00",
+  "now": "2026-10-13T07:45:00-04:00",
   "organization": {
     "id": "org-feedmore-wny",
     "name": "FeedMore WNY",

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Building2, KeyRound } from "lucide-react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui";
 import { accountHome, useAuth } from "../../lib/auth/session";
+import { completeSetup } from "../../lib/onboarding/store";
 import {
-  joinOrganization,
-  organizationForCode,
-  setCurrentOrganization,
+  redeemOrganizationInvite,
+  selectOrganization,
+  currentAccessFor,
 } from "../../lib/organizations/store";
 import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
 import styles from "./onboarding.module.css";
@@ -16,7 +17,7 @@ export function CoordinatorStartPage() {
   const { user, signOut } = useAuth();
   const { organizations } = useOrganizationWorkspace(user);
   const [mode, setMode] = useState<"join" | "create">(organizations.length ? "create" : "join");
-  const [code, setCode] = useState("");
+  const [invite, setInvite] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -27,28 +28,40 @@ export function CoordinatorStartPage() {
       </main>
     );
   }
-  if (user.role !== "coordinator") return <Navigate to="/volunteer/start" replace />;
 
-  function submitCode() {
+  async function submitInvite() {
     if (!user) return;
     setError("");
-    const clean = code.replace(/\D/g, "");
-    if (clean.length !== 10) {
-      setError("A coordinator code is 10 digits. Check the invitation and try again.");
-      return;
-    }
-    const organization = organizationForCode(clean, "coordinator");
-    if (!organization) {
-      setError(
-        "No organization on this device uses that code. Ask the workspace owner to resend it.",
-      );
+    const token = invite.trim();
+    if (token.length < 16) {
+      setError("Paste the full invitation from the workspace owner.");
       return;
     }
     setBusy(true);
     try {
-      joinOrganization(user, organization.id, clean);
-      setCurrentOrganization(user.email, organization.id);
-      navigate("/coordinator/mission-control", { replace: true });
+      await redeemOrganizationInvite(user, token);
+      completeSetup(user.email);
+      const access = currentAccessFor(user);
+      navigate(
+        access?.membership.role === "volunteer"
+          ? "/volunteer/home"
+          : "/coordinator/mission-control",
+        { replace: true },
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function open(organizationId: string) {
+    if (!user) return;
+    setBusy(true);
+    try {
+      await selectOrganization(user, organizationId);
+      completeSetup(user.email);
+      navigate("/coordinator/mission-control");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -76,14 +89,14 @@ export function CoordinatorStartPage() {
         <header className={styles.head}>
           <p className={styles.eyebrow}>
             <Building2 size={13} aria-hidden="true" />
-            Coordinator account · {user.name}
+            {user.name}
           </p>
           <h1 className={styles.title} id="coordinator-start-title">
             Put your organization on the map.
           </h1>
           <p className={styles.lede}>
-            Join a team that already uses CivicFlow, or start a new workspace and invite the rest of
-            the team with a code.
+            Join a team that already uses CivicFlow with a one-time invitation, or start a new
+            workspace and invite the rest of the team by email.
           </p>
         </header>
 
@@ -115,10 +128,8 @@ export function CoordinatorStartPage() {
                     <div className={styles.orgAction}>
                       <Button
                         size="small"
-                        onClick={() => {
-                          setCurrentOrganization(user.email, organization.id);
-                          navigate("/coordinator/mission-control");
-                        }}
+                        disabled={busy}
+                        onClick={() => void open(organization.id)}
                       >
                         Open
                       </Button>
@@ -145,7 +156,7 @@ export function CoordinatorStartPage() {
               </span>
               <span className={styles.choiceTitle}>Join an existing team</span>
               <span className={styles.choiceBody}>
-                Enter the 10-digit coordinator code the workspace owner shared with you.
+                Redeem the one-time invitation the workspace owner sent you.
               </span>
             </button>
 
@@ -164,48 +175,47 @@ export function CoordinatorStartPage() {
               </span>
               <span className={styles.choiceTitle}>Start a new organization</span>
               <span className={styles.choiceBody}>
-                Add your profile, address, contact email, and photo. CivicFlow generates the join
-                codes.
+                Add your profile, address, contact email, and photo. You become its owner.
               </span>
             </button>
           </div>
 
           {mode === "join" ? (
             <div className={styles.panel}>
-              <h2 className={styles.sectionTitle}>Coordinator code</h2>
+              <h2 className={styles.sectionTitle}>Invitation</h2>
+              <label className={styles.codeLabel} htmlFor="coordinator-invite">
+                Paste the invitation link or code
+              </label>
               <div className={styles.codeRow}>
-                <div className={styles.codeField}>
-                  <label className={styles.codeLabel} htmlFor="coordinator-code">
-                    10 digits
-                  </label>
-                  <input
-                    id="coordinator-code"
-                    className={styles.codeInput}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={10}
-                    placeholder="0000000000"
-                    value={code}
-                    aria-invalid={error ? true : undefined}
-                    aria-describedby={error ? "coordinator-code-error" : undefined}
-                    onChange={(event) => {
-                      setCode(event.target.value.replace(/\D/g, "").slice(0, 10));
-                      setError("");
-                    }}
-                  />
-                </div>
-                <Button onClick={submitCode} disabled={busy} icon={<ArrowRight size={14} />}>
+                <input
+                  id="coordinator-invite"
+                  className={styles.codeInput}
+                  autoComplete="one-time-code"
+                  placeholder="civicflow1_…"
+                  value={invite}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "coordinator-invite-error" : undefined}
+                  onChange={(event) => {
+                    setInvite(event.target.value);
+                    setError("");
+                  }}
+                />
+                <Button
+                  onClick={() => void submitInvite()}
+                  disabled={busy}
+                  icon={<ArrowRight size={14} />}
+                >
                   {busy ? "Joining…" : "Join workspace"}
                 </Button>
               </div>
               {error ? (
-                <p className={styles.error} id="coordinator-code-error" role="alert">
+                <p className={styles.error} id="coordinator-invite-error" role="alert">
                   {error}
                 </p>
               ) : null}
               <p className={styles.footerNote}>
-                Codes only find organizations saved on this device. A hosted CivicFlow account looks
-                up organizations on your server instead.
+                Invitations are one-time, expire after 14 days, and grant only the role they name.
+                There is no reusable coordinator code.
               </p>
             </div>
           ) : (
@@ -214,7 +224,7 @@ export function CoordinatorStartPage() {
               <ol className={styles.sectionHint} style={{ margin: 0, paddingLeft: 18 }}>
                 <li>Add the organization details volunteers will see.</li>
                 <li>Choose whether it is public or invitation-only.</li>
-                <li>Share the 10-digit coordinator code and the 6-digit volunteer code.</li>
+                <li>Invite coordinators and volunteers from Organization &amp; access.</li>
               </ol>
               <div className={styles.actions}>
                 <Button

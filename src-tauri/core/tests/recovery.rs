@@ -24,10 +24,10 @@ fn actor() -> Account {
     }
 }
 
-fn demo_now(conn: &Connection) -> DateTime<FixedOffset> {
+fn now(conn: &Connection) -> DateTime<FixedOffset> {
     let raw: String = conn
         .query_row(
-            "SELECT value FROM app_settings WHERE key = 'demo_now'",
+            "SELECT value FROM app_settings WHERE key = 'workspace_clock'",
             [],
             |row| row.get(0),
         )
@@ -46,7 +46,7 @@ struct Seat {
 
 fn a_filled_required_seat(database: &Database) -> Seat {
     let conn = database.connection();
-    let now = demo_now(conn);
+    let now = now(conn);
     let mut statement = conn
         .prepare(
             "SELECT r.shift_id, r.role, r.volunteer_id, v.name, s.starts_at
@@ -126,14 +126,14 @@ fn detection_names_the_open_required_seat_and_why() {
         .iter()
         .any(|reason| reason.contains("canceled")));
     assert!(report.open_required >= 1);
-    assert_eq!(report.now, demo_now(database.connection()).to_rfc3339());
+    assert_eq!(report.now, now(database.connection()).to_rfc3339());
 }
 
 #[test]
 fn a_credential_that_will_have_expired_is_reported_before_the_shift() {
     let database = seeded();
     let conn = database.connection();
-    let now = demo_now(conn);
+    let now = now(conn);
     let mut statement = conn
         .prepare(
             "SELECT r.shift_id, r.volunteer_id, ct.name, s.starts_at

@@ -14,7 +14,7 @@ interface TopBarProps {
 
 export function TopBar({ onOpenPalette, onOpenSidebar }: TopBarProps) {
   const { workspace } = useWorkspace();
-  const today = parseISO(workspace.demoNow);
+  const today = parseISO(workspace.now);
   const { resolvedTheme, toggleTheme } = useDisplayPreferences();
 
   useEffect(() => {

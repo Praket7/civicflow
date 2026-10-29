@@ -24,7 +24,8 @@
     "build:native:test": "node scripts/build-native-test.mjs",
     "verify": "bash scripts/verify.sh",
     "check:i18n": "node scripts/i18n-extract.mjs && git diff --exit-code -- src/lib/i18n/strings.json",
-    "check:generated": "node scripts/generate-demo-data.mjs && node scripts/i18n-extract.mjs && git diff --exit-code -- shared/demo-workspace.json src/lib/i18n/strings.json"
+    "check:generated": "node scripts/generate-demo-data.mjs && node scripts/i18n-extract.mjs && git diff --exit-code -- shared/demo-workspace.json src/lib/i18n/strings.json",
+    "check:hardcodes": "node scripts/check-runtime-hardcodes.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

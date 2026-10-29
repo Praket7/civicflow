@@ -88,7 +88,7 @@ function bandLabel(from: number): string {
 
 export function SchedulePage() {
   const { workspace } = useWorkspace();
-  const [weekAnchor, setWeekAnchor] = useState(() => parseISO(workspace.demoNow));
+  const [weekAnchor, setWeekAnchor] = useState(() => parseISO(workspace.now));
   const [view, setView] = useState("week");
   const [causeFilter, setCauseFilter] = useState<string[]>([...CAUSE_LIST]);
   const [gapsOnly, setGapsOnly] = useState(false);
@@ -111,7 +111,7 @@ export function SchedulePage() {
   // last shift from the previous week.
   const selected =
     weekRows.find((row) => row.shift.id === selectedId) ??
-    weekRows.find((row) => row.shift.startsAt >= workspace.demoNow) ??
+    weekRows.find((row) => row.shift.startsAt >= workspace.now) ??
     weekRows[0];
   const weekSeats = weekRows.reduce(
     (total, row) => ({
@@ -129,7 +129,7 @@ export function SchedulePage() {
   const shiftDays = new Set(rows.map((row) => row.shift.startsAt.slice(0, 10)));
 
   const attention = filtered
-    .filter((row) => row.shift.startsAt > workspace.demoNow)
+    .filter((row) => row.shift.startsAt > workspace.now)
     .filter((row) => openRoleCount(row) > 0)
     .slice(0, 3);
 
@@ -222,7 +222,7 @@ export function SchedulePage() {
           <Button
             size="small"
             variant="secondary"
-            onClick={() => setWeekAnchor(parseISO(workspace.demoNow))}
+            onClick={() => setWeekAnchor(parseISO(workspace.now))}
           >
             {t("Today")}
           </Button>
@@ -369,7 +369,7 @@ export function SchedulePage() {
                   const iso = format(day, "yyyy-MM-dd");
                   const dayRows = filtered.filter((row) => row.shift.startsAt.slice(0, 10) === iso);
                   const dayGaps = dayRows.reduce((sum, row) => sum + openRoleCount(row), 0);
-                  const isToday = isSameDay(day, parseISO(workspace.demoNow));
+                  const isToday = isSameDay(day, parseISO(workspace.now));
                   return (
                     <div
                       className={`${styles.dayColumn} ${isToday ? styles.dayToday : ""}`}
@@ -597,7 +597,7 @@ export function SchedulePage() {
                       className={styles.miniDay}
                       data-muted={!isSameMonth(day, weekAnchor)}
                       data-week={isSameWeek(day, weekAnchor, { weekStartsOn: 1 })}
-                      data-today={isSameDay(day, parseISO(workspace.demoNow))}
+                      data-today={isSameDay(day, parseISO(workspace.now))}
                       data-shift={hasShift}
                       onClick={() => {
                         setWeekAnchor(day);
@@ -607,9 +607,7 @@ export function SchedulePage() {
                         setSelectedId(firstShift?.shift.id ?? null);
                       }}
                       aria-label={`${formatMonthDay(day, true)}${hasShift ? `, ${t("has shifts")}` : ""}`}
-                      aria-current={
-                        isSameDay(day, parseISO(workspace.demoNow)) ? "date" : undefined
-                      }
+                      aria-current={isSameDay(day, parseISO(workspace.now)) ? "date" : undefined}
                     >
                       {formatDayNumber(day)}
                     </button>

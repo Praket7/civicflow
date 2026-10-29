@@ -1,9 +1,35 @@
-import { demoWorkspace } from "../workspace/dataset";
-import { stateCode } from "../us-states";
-import type { Account, AccountRole } from "../../types/domain";
+import type { Account } from "../../types/domain";
+import type {
+  IssuedInvite,
+  NewOrganizationInput,
+  OrganizationAccess,
+  OrganizationDetailsPatch,
+  OrganizationMember,
+  OrganizationProfile as RecordProfile,
+  OrganizationUpdate,
+  PendingInvite,
+} from "./types";
+import { ORGANIZATION_COVERS, isCoordinatorRole } from "./types";
+
+/**
+ * A cache of the organization membership rows the workspace repository owns.
+ *
+ * This module used to be the authority: memberships, invitations, and reusable
+ * join codes lived in localStorage. They no longer do. The provider hydrates
+ * this cache from `WorkspaceRepository.listOrganizations()`, every mutation
+ * goes back through that repository, and a failed or stale cache can only hide
+ * a screen — it can never grant access.
+ *
+ * The activity feed entries below are presentation data, not authorization
+ * state. They stay local to the device that wrote them.
+ */
+
+export type { OrganizationUpdate } from "./types";
 
 export type OrganizationVisibility = "public" | "private";
+export type OrganizationMembership = OrganizationAccess["membership"];
 
+/** The organization details a screen renders, derived from the record. */
 export interface OrganizationProfile {
   id: string;
   name: string;
@@ -16,127 +42,33 @@ export interface OrganizationProfile {
   image: string;
   imageAlt: string;
   visibility: OrganizationVisibility;
-  /** Shared with other coordinators so they can join this workspace. */
-  coordinatorCode: string;
-  /** Shared with volunteers at events, on flyers, or in a welcome email. */
-  volunteerCode: string;
   createdAt: string;
   createdBy: string;
-}
-
-export interface OrganizationMembership {
-  email: string;
-  organizationId: string;
-  role: AccountRole;
-  joinedAt: string;
-}
-
-type OrganizationUpdateKind = "event" | "announcement";
-
-export interface OrganizationUpdate {
-  id: string;
-  organizationId: string;
-  kind: OrganizationUpdateKind;
-  title: string;
-  body: string;
-  href: string;
-  createdAt: string;
-  author: string;
-}
-
-interface StoredState {
-  organizations: OrganizationProfile[];
-  memberships: OrganizationMembership[];
-  current: Record<string, string>;
-  updates: OrganizationUpdate[];
-  readAt: Record<string, string>;
-}
-
-interface NewOrganizationInput {
-  name: string;
-  description: string;
-  website: string;
-  address: string;
-  city: string;
-  state: string;
-  contactEmails: string[];
-  image: string;
-  imageAlt: string;
-  visibility: OrganizationVisibility;
+  isDemo: boolean;
+  syncMode: "local" | "synced";
 }
 
 export interface OrganizationSummary {
   organization: OrganizationProfile;
-  membership: OrganizationMembership;
+  membership: OrganizationAccess["membership"];
   members: number;
 }
 
-const ORGANIZATIONS_KEY = "civicflow.organizations";
-const MEMBERSHIPS_KEY = "civicflow.organization-memberships";
-const CURRENT_KEY = "civicflow.current-organization";
+const CURRENT_KEY = "civicflow.organizations.current";
 const UPDATES_KEY = "civicflow.organization-updates";
 const READ_KEY = "civicflow.organization-updates-read";
 
-const DEMO_ORGANIZATION_ID = "org-feedmore-wny";
-
-const COVER_IMAGES = [
-  { src: "/media/opp-food-distribution.jpg", alt: "Volunteers packing food boxes" },
-  { src: "/media/opp-senior-meals.jpg", alt: "A volunteer helping an older neighbor into a car" },
-  { src: "/media/opp-community-garden.jpg", alt: "Volunteers in a community garden" },
-];
-
-export const ORGANIZATION_COVERS = COVER_IMAGES;
-
-const demoOrganization: OrganizationProfile = {
-  id: DEMO_ORGANIZATION_ID,
-  name: demoWorkspace.organization.name,
-  description: demoWorkspace.organization.mission,
-  website: demoWorkspace.organization.website,
-  address: demoWorkspace.organization.address,
-  city: demoWorkspace.organization.city,
-  state: demoWorkspace.organization.state,
-  contactEmails: [demoWorkspace.organization.email],
-  image: COVER_IMAGES[0].src,
-  imageAlt: COVER_IMAGES[0].alt,
-  visibility: "public",
-  coordinatorCode: "4820193756",
-  volunteerCode: "194826",
-  createdAt: demoWorkspace.demoNow,
-  createdBy: demoWorkspace.coordinator.email,
-};
-
-// A second public organization makes the discovery screen honest on a fresh
-// install: there is something to browse before anyone types a code.
-const gardenOrganization: OrganizationProfile = {
-  id: "org-riverside-garden",
-  name: "Riverside Community Garden",
-  description:
-    "Neighbours grow vegetables together on a shared plot and send the surplus to the food pantry two blocks away.",
-  website: "riversidegarden.example.org",
-  address: "218 Riverside Avenue",
-  city: "Buffalo",
-  state: "NY",
-  contactEmails: ["hello@riversidegarden.example.org"],
-  image: COVER_IMAGES[2].src,
-  imageAlt: COVER_IMAGES[2].alt,
-  visibility: "public",
-  coordinatorCode: "7301948265",
-  volunteerCode: "603118",
-  createdAt: demoWorkspace.demoNow,
-  createdBy: "rosa.delgado@riversidegarden.example.org",
-};
-
-let cached: StoredState | null = null;
+let organizations: OrganizationSummary[] = [];
+let updates: OrganizationUpdate[] = [];
+let readAt: Record<string, string> = {};
+let current: Record<string, string> = {};
+let activeOverride: string | null = null;
+let loaded = false;
 const listeners = new Set<() => void>();
+const errorListeners = new Set<(message: string) => void>();
 
-function emptyState(): StoredState {
-  return {
-    organizations: [demoOrganization, gardenOrganization],
-    memberships: [],
-    current: {},
-    updates: [],
-    readAt: {},
-  };
+function emit(): void {
+  listeners.forEach((listener) => listener());
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -152,56 +84,61 @@ function writeJson(key: string, value: unknown): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // A full or blocked storage area should not break the screen; the
-    // in-memory copy still works until the app closes.
+    // The in-memory copy still serves this session.
   }
 }
 
-function persist(state: StoredState): void {
-  writeJson(ORGANIZATIONS_KEY, state.organizations);
-  writeJson(MEMBERSHIPS_KEY, state.memberships);
-  writeJson(CURRENT_KEY, state.current);
-  writeJson(UPDATES_KEY, state.updates);
-  writeJson(READ_KEY, state.readAt);
+function report(caught: unknown): void {
+  const message = caught instanceof Error ? caught.message : String(caught);
+  errorListeners.forEach((listener) => listener(message));
 }
 
-function emit(): void {
-  listeners.forEach((listener) => listener());
-}
-
-function state(): StoredState {
-  if (cached) return cached;
-  const base = emptyState();
-  const organizations = readJson<OrganizationProfile[]>(ORGANIZATIONS_KEY, []);
-  const missing = base.organizations.filter(
-    (seed) => !organizations.some((row) => row.id === seed.id),
-  );
-  cached = {
-    organizations: [...organizations, ...missing],
-    memberships: readJson<OrganizationMembership[]>(MEMBERSHIPS_KEY, []),
-    current: readJson<Record<string, string>>(CURRENT_KEY, {}),
-    updates: readJson<OrganizationUpdate[]>(UPDATES_KEY, []),
-    readAt: readJson<Record<string, string>>(READ_KEY, {}),
+function profileOf(record: RecordProfile): OrganizationProfile {
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.description,
+    website: record.website,
+    address: record.address,
+    city: record.city,
+    state: record.state,
+    contactEmails: [record.email].filter(Boolean),
+    image: record.image ?? ORGANIZATION_COVERS[0].src,
+    imageAlt: record.imageAlt ?? ORGANIZATION_COVERS[0].alt,
+    visibility: record.visibility,
+    createdAt: record.createdAt,
+    createdBy: record.createdByUserId ?? record.email,
+    isDemo: record.isDemo,
+    syncMode: record.syncMode,
   };
-  return cached;
 }
 
-function commit(next: StoredState): void {
-  cached = next;
-  persist(next);
+/**
+ * Replaces the cache with what the authority just said. The active choice is a
+ * display preference: it can select among memberships, never add one.
+ */
+export function hydrateOrganizations(
+  access: OrganizationAccess[],
+  activeOrganizationId?: string | null,
+): void {
+  organizations = access.map((row) => ({
+    organization: profileOf(row.organization),
+    membership: row.membership,
+    members: row.members,
+  }));
+  loaded = true;
+  if (activeOrganizationId && access.some((row) => row.organization.id === activeOrganizationId)) {
+    activeOverride = activeOrganizationId;
+  }
   emit();
 }
 
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", (event) => {
-    if (
-      event.key &&
-      [ORGANIZATIONS_KEY, MEMBERSHIPS_KEY, CURRENT_KEY, UPDATES_KEY, READ_KEY].includes(event.key)
-    ) {
-      cached = null;
-      emit();
-    }
-  });
+export function markOrganizationsUnloaded(): void {
+  loaded = false;
+}
+
+export function organizationsLoaded(): boolean {
+  return loaded;
 }
 
 export function subscribeToOrganizations(listener: () => void): () => void {
@@ -209,244 +146,195 @@ export function subscribeToOrganizations(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+export function subscribeToOrganizationErrors(listener: (message: string) => void): () => void {
+  errorListeners.add(listener);
+  return () => errorListeners.delete(listener);
+}
+
 export function listOrganizations(): OrganizationProfile[] {
-  return state().organizations;
+  return organizations.map((row) => row.organization);
 }
 
 export function organizationById(id: string | null | undefined): OrganizationProfile | null {
   if (!id) return null;
-  return state().organizations.find((organization) => organization.id === id) ?? null;
+  return organizations.find((row) => row.organization.id === id)?.organization ?? null;
 }
 
-export function membershipsFor(email: string): OrganizationMembership[] {
-  const clean = email.trim().toLowerCase();
-  const stored = state().memberships.filter((membership) => membership.email === clean);
-  const seeded: OrganizationMembership[] = [];
-  if (clean === demoWorkspace.coordinator.email.toLowerCase()) {
-    seeded.push({
-      email: clean,
-      organizationId: DEMO_ORGANIZATION_ID,
-      role: "coordinator",
-      joinedAt: demoWorkspace.demoNow,
-    });
+/** The memberships shown for this identity. The cache is already scoped to it. */
+export function membershipsFor(_email: string): OrganizationMembership[] {
+  void _email;
+  return organizations.map((row) => row.membership);
+}
+
+export function organizationsFor(_email: string): OrganizationSummary[] {
+  void _email;
+  return organizations;
+}
+
+export function currentOrganizationFor(_email: string): OrganizationProfile | null {
+  void _email;
+  return organizationById(activeOrganizationId(_email));
+}
+
+function activeOrganizationId(email: string): string | null {
+  const stored = current[email.trim().toLowerCase()];
+  if (stored && organizations.some((row) => row.organization.id === stored)) return stored;
+  if (activeOverride && organizations.some((row) => row.organization.id === activeOverride)) {
+    return activeOverride;
   }
-  if (clean === demoWorkspace.volunteers[0]?.email.toLowerCase()) {
-    seeded.push({
-      email: clean,
-      organizationId: DEMO_ORGANIZATION_ID,
-      role: "volunteer",
-      joinedAt: demoWorkspace.volunteers[0].joinedAt,
-    });
-  }
-  return [
-    ...stored,
-    ...seeded.filter((row) => !stored.some((s) => s.organizationId === row.organizationId)),
-  ];
+  return organizations[0]?.organization.id ?? null;
 }
 
-export function organizationsFor(email: string): OrganizationSummary[] {
-  return membershipsFor(email)
-    .map((membership) => {
-      const organization = organizationById(membership.organizationId);
-      if (!organization) return null;
-      return {
-        organization,
-        membership,
-        members:
-          state().memberships.filter((row) => row.organizationId === organization.id).length +
-          (organization.id === DEMO_ORGANIZATION_ID ? 2 : 0),
-      };
-    })
-    .filter((entry): entry is OrganizationSummary => entry !== null);
+export function currentAccessFor(account: Account | null): OrganizationAccess | null {
+  if (!account) return null;
+  const id = activeOrganizationId(account.email);
+  const summary = organizations.find((row) => row.organization.id === id);
+  if (!summary) return null;
+  return {
+    organization: toRecord(summary.organization),
+    membership: summary.membership,
+    members: summary.members,
+  };
 }
 
-export function currentOrganizationFor(email: string): OrganizationProfile | null {
-  const memberships = organizationsFor(email);
-  if (memberships.length === 0) return null;
-  const selected = state().current[email.trim().toLowerCase()];
-  return (
-    memberships.find((entry) => entry.organization.id === selected)?.organization ??
-    memberships[0].organization
-  );
+function toRecord(profile: OrganizationProfile): RecordProfile {
+  return {
+    id: profile.id,
+    name: profile.name,
+    initials: profile.name
+      .split(/\s+/)
+      .map((word) => word.charAt(0))
+      .join("")
+      .slice(0, 2)
+      .toUpperCase(),
+    mission: profile.description,
+    description: profile.description,
+    city: profile.city,
+    state: profile.state,
+    address: profile.address,
+    website: profile.website,
+    email: profile.contactEmails[0] ?? "",
+    timezone: "America/New_York",
+    visibility: profile.visibility,
+    image: profile.image,
+    imageAlt: profile.imageAlt,
+    createdAt: profile.createdAt,
+    createdByUserId: null,
+    isDemo: profile.isDemo,
+    syncMode: profile.syncMode,
+  };
 }
 
-export function setCurrentOrganization(email: string, organizationId: string): void {
-  const clean = email.trim().toLowerCase();
-  if (!membershipsFor(clean).some((row) => row.organizationId === organizationId)) return;
-  commit({ ...state(), current: { ...state().current, [clean]: organizationId } });
+export function canCoordinate(role: OrganizationAccess["membership"]["role"]): boolean {
+  return isCoordinatorRole(role);
 }
 
-function randomDigits(length: number): string {
-  const bytes = new Uint8Array(length);
-  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let index = 0; index < length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256);
-    }
-  }
-  return Array.from(bytes, (byte) => String(byte % 10)).join("");
+/* ------------------------------------------------------------------------- */
+/* Writes. Every one of these goes through the repository and then re-reads.  */
+/* ------------------------------------------------------------------------- */
+
+type OrganizationCommand = {
+  select(organizationId: string): Promise<void>;
+  create(input: NewOrganizationInput): Promise<OrganizationAccess>;
+  update(organizationId: string, patch: OrganizationDetailsPatch): Promise<RecordProfile>;
+  list(): Promise<OrganizationAccess[]>;
+  redeem(code: string): Promise<OrganizationAccess>;
+  join(organizationId: string): Promise<OrganizationAccess>;
+};
+
+let commands: OrganizationCommand | null = null;
+
+export function bindOrganizationCommands(next: OrganizationCommand): void {
+  commands = next;
 }
 
-function uniqueDigits(length: number, field: "coordinatorCode" | "volunteerCode"): string {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const code = randomDigits(length);
-    if (!state().organizations.some((organization) => organization[field] === code)) {
-      return code;
-    }
-  }
-  return randomDigits(length);
+async function refresh(): Promise<void> {
+  if (!commands) return;
+  hydrateOrganizations(await commands.list());
 }
 
-function slugify(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
-  return slug || "organization";
+export async function selectOrganization(account: Account, organizationId: string): Promise<void> {
+  if (!commands) throw new Error("The workspace is still opening.");
+  await commands.select(organizationId);
+  current = { ...current, [account.email.trim().toLowerCase()]: organizationId };
+  activeOverride = organizationId;
+  writeJson(CURRENT_KEY, current);
+  await refresh();
 }
 
-export function createOrganization(
+export async function createOrganization(
   account: Account,
   input: NewOrganizationInput,
-): OrganizationProfile {
-  const email = account.email.trim().toLowerCase();
-  const base = slugify(input.name);
-  let id = `org-${base}`;
-  let suffix = 2;
-  while (state().organizations.some((organization) => organization.id === id)) {
-    id = `org-${base}-${suffix}`;
-    suffix += 1;
-  }
-  const organization: OrganizationProfile = {
-    id,
-    name: input.name.trim(),
-    description: input.description.trim(),
-    website: input.website.trim(),
-    address: input.address.trim(),
-    city: input.city.trim(),
-    state: input.state.trim().toUpperCase(),
-    contactEmails: input.contactEmails.map((value) => value.trim().toLowerCase()).filter(Boolean),
-    image: input.image || COVER_IMAGES[0].src,
-    imageAlt: input.imageAlt || COVER_IMAGES[0].alt,
-    visibility: input.visibility,
-    coordinatorCode: uniqueDigits(10, "coordinatorCode"),
-    volunteerCode: uniqueDigits(6, "volunteerCode"),
-    createdAt: new Date().toISOString(),
-    createdBy: email,
-  };
-  const membership: OrganizationMembership = {
-    email,
-    organizationId: organization.id,
-    role: "coordinator",
-    joinedAt: organization.createdAt,
-  };
-  const next = state();
-  commit({
-    ...next,
-    organizations: [organization, ...next.organizations],
-    memberships: [
-      membership,
-      ...next.memberships.filter(
-        (row) => !(row.email === email && row.organizationId === organization.id),
-      ),
-    ],
-    current: { ...next.current, [email]: organization.id },
-  });
-  return organization;
+): Promise<OrganizationProfile> {
+  if (!commands) throw new Error("The workspace is still opening.");
+  const access = await commands.create(input);
+  await refresh();
+  current = { ...current, [account.email.trim().toLowerCase()]: access.organization.id };
+  writeJson(CURRENT_KEY, current);
+  emit();
+  return profileOf(access.organization);
 }
 
-/** Replaces the cover a public profile shows, including an uploaded photo. */
-export function updateOrganizationCover(
+export async function joinOrganization(
+  account: Account,
+  organizationId: string,
+): Promise<OrganizationProfile> {
+  if (!commands) throw new Error("The workspace is still opening.");
+  const access = await commands.join(organizationId);
+  await refresh();
+  current = { ...current, [account.email.trim().toLowerCase()]: organizationId };
+  writeJson(CURRENT_KEY, current);
+  emit();
+  return profileOf(access.organization);
+}
+
+/** Redeems a one-time invitation. A code only ever grants the invited role. */
+export async function redeemOrganizationInvite(
+  account: Account,
+  code: string,
+): Promise<OrganizationProfile> {
+  if (!commands) throw new Error("The workspace is still opening.");
+  const access = await commands.redeem(code.trim());
+  await refresh();
+  current = { ...current, [account.email.trim().toLowerCase()]: access.organization.id };
+  writeJson(CURRENT_KEY, current);
+  emit();
+  return profileOf(access.organization);
+}
+
+export async function updateOrganizationDetails(
+  account: Account,
+  organizationId: string,
+  patch: OrganizationDetailsPatch,
+): Promise<void> {
+  if (!commands) throw new Error("The workspace is still opening.");
+  await commands.update(organizationId, patch);
+  await refresh();
+  void account;
+}
+
+export async function updateOrganizationCover(
+  account: Account,
   organizationId: string,
   image: string,
   imageAlt: string,
-): void {
-  const next = state();
-  if (!next.organizations.some((organization) => organization.id === organizationId)) return;
-  commit({
-    ...next,
-    organizations: next.organizations.map((organization) =>
-      organization.id === organizationId ? { ...organization, image, imageAlt } : organization,
-    ),
-  });
+): Promise<void> {
+  await updateOrganizationDetails(account, organizationId, { image, imageAlt });
 }
 
-/**
- * Saves the public details a coordinator edits on the setup screen, so the
- * address they typed is still there when they come back to the step.
- */
-export function updateOrganizationDetails(
+export function organizationMembership(
   organizationId: string,
-  patch: Partial<
-    Pick<OrganizationProfile, "name" | "description" | "address" | "city" | "state" | "website">
-  >,
-): void {
-  const next = state();
-  if (!next.organizations.some((organization) => organization.id === organizationId)) return;
-  commit({
-    ...next,
-    organizations: next.organizations.map((organization) =>
-      organization.id === organizationId
-        ? {
-            ...organization,
-            ...patch,
-            // A state is stored as its code, never as the name the label shows.
-            ...(patch.state === undefined ? {} : { state: stateCode(patch.state) }),
-          }
-        : organization,
-    ),
-  });
+): OrganizationAccess["membership"] | null {
+  return organizations.find((row) => row.organization.id === organizationId)?.membership ?? null;
 }
 
-export function organizationForCode(code: string, role: AccountRole): OrganizationProfile | null {
-  const clean = code.replace(/\s+/g, "");
-  const field = role === "coordinator" ? "coordinatorCode" : "volunteerCode";
-  return state().organizations.find((organization) => organization[field] === clean) ?? null;
-}
+/* Invitations are issued and listed through the repository; these helpers only
+ * keep the call sites honest about what an invitation is. */
+export type { IssuedInvite, PendingInvite, OrganizationMember };
 
-/** Joins openly when allowed, or with the code the coordinator shared. */
-export function joinOrganization(
-  account: Account,
-  organizationId: string,
-  code?: string,
-): OrganizationMembership {
-  const organization = organizationById(organizationId);
-  if (!organization) throw new Error("That organization is not on this device.");
-  const email = account.email.trim().toLowerCase();
-  if (membershipsFor(email).some((row) => row.organizationId === organizationId)) {
-    throw new Error(`You already belong to ${organization.name}.`);
-  }
-  if (account.role === "coordinator") {
-    const clean = (code ?? "").trim();
-    if (clean !== organization.coordinatorCode) {
-      throw new Error(
-        `That coordinator code does not match ${organization.name}. Ask the workspace owner for the 10-digit code.`,
-      );
-    }
-  } else if (organization.visibility === "private") {
-    const clean = (code ?? "").trim();
-    if (clean !== organization.volunteerCode) {
-      throw new Error(
-        `${organization.name} is private. Ask a coordinator for the 6-digit volunteer code.`,
-      );
-    }
-  }
-  const membership: OrganizationMembership = {
-    email,
-    organizationId,
-    role: account.role,
-    joinedAt: new Date().toISOString(),
-  };
-  const next = state();
-  commit({
-    ...next,
-    memberships: [membership, ...next.memberships],
-    current: { ...next.current, [email]: organizationId },
-  });
-  return membership;
-}
+/* ------------------------------------------------------------------------- */
+/* Local activity feed. Not membership state and never used for access.       */
+/* ------------------------------------------------------------------------- */
 
 export function recordOrganizationUpdate(
   update: Omit<OrganizationUpdate, "id" | "createdAt"> & { createdAt?: string },
@@ -456,42 +344,54 @@ export function recordOrganizationUpdate(
     id: `update-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     createdAt: update.createdAt ?? new Date().toISOString(),
   };
-  const next = state();
-  commit({ ...next, updates: [entry, ...next.updates].slice(0, 100) });
+  updates = [entry, ...updates].slice(0, 100);
+  writeJson(UPDATES_KEY, updates);
+  emit();
   return entry;
 }
 
-export function updatesFor(email: string): OrganizationUpdate[] {
-  const joined = new Set(membershipsFor(email).map((row) => row.organizationId));
-  return state().updates.filter((update) => joined.has(update.organizationId));
+export function updatesFor(_email: string): OrganizationUpdate[] {
+  void _email;
+  const joined = new Set(organizations.map((row) => row.organization.id));
+  return updates.filter((update) => joined.has(update.organizationId));
 }
 
 export function unreadUpdatesFor(email: string): OrganizationUpdate[] {
-  const clean = email.trim().toLowerCase();
-  const since = state().readAt[clean];
-  return updatesFor(clean).filter((update) => !since || update.createdAt > since);
+  const since = readAt[email.trim().toLowerCase()];
+  return updatesFor(email).filter((update) => !since || update.createdAt > since);
 }
 
 export function markUpdatesRead(email: string): void {
   const clean = email.trim().toLowerCase();
   const latest = updatesFor(clean)[0]?.createdAt ?? new Date().toISOString();
-  commit({ ...state(), readAt: { ...state().readAt, [clean]: latest } });
+  readAt = { ...readAt, [clean]: latest };
+  writeJson(READ_KEY, readAt);
+  emit();
 }
 
-export function organizationShareText(organization: OrganizationProfile): string {
-  return [
-    `Join ${organization.name} on CivicFlow`,
-    `Coordinators use code ${organization.coordinatorCode} (10 digits).`,
-    `Volunteers use code ${organization.volunteerCode} (6 digits).`,
-  ].join("\n");
+export function organizationErrorListener(listener: (message: string) => void): () => void {
+  return subscribeToOrganizationErrors(listener);
+}
+
+export function reportOrganizationError(caught: unknown): void {
+  report(caught);
 }
 
 export function resetOrganizationsForTests(): void {
-  cached = null;
-  if (typeof window !== "undefined") {
-    [ORGANIZATIONS_KEY, MEMBERSHIPS_KEY, CURRENT_KEY, UPDATES_KEY, READ_KEY].forEach((key) => {
-      window.localStorage.removeItem(key);
-    });
-  }
-  emit();
+  organizations = [];
+  updates = [];
+  readAt = {};
+  current = {};
+  activeOverride = null;
+  loaded = false;
+  listeners.clear();
+  errorListeners.clear();
+  commands = null;
+}
+
+/* Hydrate the local-only feed once, on first import in a browser. */
+if (typeof window !== "undefined") {
+  current = readJson<Record<string, string>>(CURRENT_KEY, {});
+  updates = readJson<OrganizationUpdate[]>(UPDATES_KEY, []);
+  readAt = readJson<Record<string, string>>(READ_KEY, {});
 }

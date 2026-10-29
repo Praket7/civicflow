@@ -40,8 +40,8 @@ describe("Create account", () => {
     expect(screen.getByRole("heading", { name: "Create your account" })).toBeInTheDocument();
   });
 
-  it("asks for the emailed code before it creates a volunteer account", async () => {
-    // A new volunteer finishes setup before it reaches a workspace.
+  it("creates an identity, then asks which organization to join", async () => {
+    // Signing up no longer chooses a role. The first workspace step does.
     const user = userEvent.setup();
     renderPage();
 
@@ -54,7 +54,7 @@ describe("Create account", () => {
     expect(await screen.findByRole("heading", { name: "Verify your email" })).toBeInTheDocument();
     await verify(user);
 
-    expect(await screen.findByText("Tell us what moves you.")).toBeInTheDocument();
+    expect(await screen.findByText("Put your organization on the map.")).toBeInTheDocument();
   });
 
   it("holds the account back when the code is wrong", async () => {
@@ -72,7 +72,7 @@ describe("Create account", () => {
     expect(
       await screen.findByText("That code does not match. Check the six digits and try again."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Tell us what moves you.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Put your organization on the map.")).not.toBeInTheDocument();
   });
 
   it("stops when the two passwords differ", async () => {

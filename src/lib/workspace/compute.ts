@@ -10,8 +10,8 @@ import type {
 } from "../../types/domain";
 
 /** Seat fill for the Monday–Sunday week that contains the demo clock. */
-export function weeklyCoverage(shifts: Shift[], demoNow: string): CoverageDay[] {
-  const start = startOfWeek(parseISO(demoNow), { weekStartsOn: 1 });
+export function weeklyCoverage(shifts: Shift[], now: string): CoverageDay[] {
+  const start = startOfWeek(parseISO(now), { weekStartsOn: 1 });
   return Array.from({ length: 7 }, (_, offset) => {
     const date = addDays(start, offset);
     const isoDate = format(date, "yyyy-MM-dd");
@@ -31,8 +31,8 @@ export function weeklyCoverage(shifts: Shift[], demoNow: string): CoverageDay[] 
   });
 }
 
-function isUpcoming(shift: Shift, demoNow: string): boolean {
-  return parseISO(shift.startsAt).getTime() > parseISO(demoNow).getTime();
+function isUpcoming(shift: Shift, now: string): boolean {
+  return parseISO(shift.startsAt).getTime() > parseISO(now).getTime();
 }
 
 /**
@@ -40,8 +40,8 @@ function isUpcoming(shift: Shift, demoNow: string): boolean {
  * upcoming window. Seat coverage is reported separately on the schedule bars, so
  * the two numbers are never conflated. See docs/METRICS.md.
  */
-export function roleCoveragePercent(shifts: Shift[], demoNow: string): number {
-  const upcoming = shifts.filter((shift) => isUpcoming(shift, demoNow));
+export function roleCoveragePercent(shifts: Shift[], now: string): number {
+  const upcoming = shifts.filter((shift) => isUpcoming(shift, now));
   const required = upcoming.reduce(
     (total, shift) => total + shift.roles.reduce((sum, role) => sum + role.required, 0),
     0,
@@ -62,7 +62,7 @@ function dayLabel(iso: string): string {
 
 export function deriveAttention(workspace: DemoWorkspace, limit = 3): AttentionItem[] {
   const items: AttentionItem[] = [];
-  const now = parseISO(workspace.demoNow);
+  const now = parseISO(workspace.now);
 
   for (const shift of workspace.shifts) {
     const start = parseISO(shift.startsAt);
@@ -117,7 +117,7 @@ export function buildMissionControl(
   readNotificationIds: string[] = [],
   role: "coordinator" | "volunteer" = "coordinator",
 ): MissionControlSummary {
-  const upcoming = workspace.shifts.filter((shift) => isUpcoming(shift, workspace.demoNow));
+  const upcoming = workspace.shifts.filter((shift) => isUpcoming(shift, workspace.now));
   const attention = deriveAttention(workspace);
   const unread = workspace.notifications.filter((notification) => {
     const audience = notification.href.startsWith("/volunteer") ? "volunteer" : "coordinator";
@@ -130,13 +130,13 @@ export function buildMissionControl(
     coordinatorName: workspace.coordinator.name,
     firstName: workspace.coordinator.firstName,
     organizationName: workspace.organization.name,
-    demoNow: workspace.demoNow,
+    now: workspace.now,
     activeVolunteers: workspace.impact.activeVolunteers,
-    coveragePercent: roleCoveragePercent(workspace.shifts, workspace.demoNow),
+    coveragePercent: roleCoveragePercent(workspace.shifts, workspace.now),
     hoursThisMonth: workspace.impact.hoursThisMonth,
     upcomingShifts: upcoming.length,
     attentionCount: attention.length,
-    coverageDays: weeklyCoverage(workspace.shifts, workspace.demoNow),
+    coverageDays: weeklyCoverage(workspace.shifts, workspace.now),
     attention,
     recentActivity: workspace.recentActivity,
     impact: workspace.impact,

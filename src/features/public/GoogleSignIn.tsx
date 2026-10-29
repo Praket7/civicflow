@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { Button } from "../../components/ui";
-import { hostedRedirect, rememberPendingRole, startHostedOAuth } from "../../lib/auth/hosted";
+import { hostedRedirect, startHostedOAuth } from "../../lib/auth/hosted";
 import { isTauri, openExternal } from "../../lib/platform";
-import type { AccountRole } from "../../types/domain";
 import styles from "./auth.module.css";
 
 interface GoogleSignInProps {
-  /** Kept with the hand-off so the returned account gets the chosen access. */
-  role: AccountRole;
   label: string;
   disabled?: boolean;
   onError(message: string): void;
@@ -41,7 +38,7 @@ function GoogleMark() {
  * because Google blocks its consent screen inside a webview; the answer comes
  * back on the civicflow:// scheme and the auth provider resumes from there.
  */
-export function GoogleSignIn({ role, label, disabled, onError }: GoogleSignInProps) {
+export function GoogleSignIn({ label, disabled, onError }: GoogleSignInProps) {
   const [busy, setBusy] = useState(false);
   const [handedOff, setHandedOff] = useState(false);
   // The provider hand-off returns on the civicflow:// scheme, which only the
@@ -53,7 +50,6 @@ export function GoogleSignIn({ role, label, disabled, onError }: GoogleSignInPro
     setBusy(true);
     setHandedOff(false);
     try {
-      rememberPendingRole(role);
       const { url } = await startHostedOAuth(hostedRedirect("callback"));
       await openExternal(url);
       if (isTauri()) setHandedOff(true);

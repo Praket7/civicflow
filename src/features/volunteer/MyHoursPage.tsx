@@ -382,7 +382,7 @@ export function MyHoursPage() {
         <SectionHeader
           title="Hours over time"
           subtitle={t("Recorded service for {month}, from approved and pending entries.", {
-            month: format(parseISO(workspace.demoNow), "MMMM yyyy"),
+            month: format(parseISO(workspace.now), "MMMM yyyy"),
           })}
           action={<Badge tone="neutral">This month</Badge>}
         />
@@ -391,7 +391,7 @@ export function MyHoursPage() {
             data={chartData}
             height={172}
             color="var(--color-cobalt)"
-            label={`Hours recorded in ${format(parseISO(workspace.demoNow), "MMMM yyyy")}`}
+            label={`Hours recorded in ${format(parseISO(workspace.now), "MMMM yyyy")}`}
             formatValue={(value) => `${value} h`}
           />
         ) : (

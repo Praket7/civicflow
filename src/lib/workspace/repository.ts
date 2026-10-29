@@ -43,6 +43,15 @@ import type {
   WorkspaceSettings,
 } from "../../types/domain";
 import type { HostedIdentity } from "../auth/hosted";
+import type {
+  IssuedInvite,
+  NewOrganizationInput,
+  OrganizationAccess,
+  OrganizationDetailsPatch,
+  OrganizationMember,
+  OrganizationProfile,
+  PendingInvite,
+} from "../organizations/types";
 import { isTauri } from "../platform";
 import { previewRepository } from "./previewRepository";
 
@@ -55,29 +64,54 @@ import { previewRepository } from "./previewRepository";
 export interface WorkspaceRepository {
   readonly source: "desktop" | "preview";
   signIn(email: string, password: string, remember: boolean): Promise<AuthSession>;
-  createAccount(
-    name: string,
-    email: string,
-    password: string,
-    role: AccountRole,
-  ): Promise<AuthSession>;
+  /** Creates the bundled demo workspace on request and signs in as its coordinator. */
+  openDemoWorkspace(): Promise<AuthSession>;
+  createAccount(name: string, email: string, password: string): Promise<AuthSession>;
   /** Resumes the local workspace behind an email the hosted provider verified. */
   signInWithHosted(identity: HostedIdentity): Promise<AuthSession>;
   signOut(token: string): Promise<void>;
   currentUser(token: string): Promise<Account | null>;
   listAccounts(token: string): Promise<Account[]>;
   resetPassword(token: string, userId: string, newPassword: string): Promise<void>;
-  /** Points the workspace at the organization the person is looking at. */
-  selectOrganization(
-    organization: {
-      id: string;
-      name: string;
-      coordinatorName?: string;
-      coordinatorEmail?: string;
-      image?: string;
-      imageAlt?: string;
-    } | null,
-  ): Promise<void>;
+
+  /**
+   * Organization access is decided by membership rows in the workspace
+   * database. These methods are the only organization boundary the screens
+   * use; the browser preview mirrors the same contract over fixture storage.
+   */
+  listOrganizations(): Promise<OrganizationAccess[]>;
+  listPublicOrganizations(): Promise<OrganizationProfile[]>;
+  /** `null` parks the workspace while an identity has no membership yet. */
+  selectOrganization(organizationId: string | null): Promise<void>;
+  createOrganization(input: NewOrganizationInput): Promise<OrganizationAccess>;
+  updateOrganization(
+    organizationId: string,
+    patch: OrganizationDetailsPatch,
+  ): Promise<OrganizationProfile>;
+  listOrganizationMembers(organizationId: string): Promise<OrganizationMember[]>;
+  listOrganizationInvites(organizationId: string): Promise<PendingInvite[]>;
+  createOrganizationInvite(
+    organizationId: string,
+    role: "coordinator" | "volunteer",
+    email: string,
+  ): Promise<IssuedInvite>;
+  revokeOrganizationInvite(organizationId: string, inviteId: string): Promise<void>;
+  redeemOrganizationInvite(code: string): Promise<OrganizationAccess>;
+  joinPublicOrganization(organizationId: string): Promise<OrganizationAccess>;
+  setOrganizationMemberRole(
+    organizationId: string,
+    userId: string,
+    role: "coordinator" | "volunteer",
+  ): Promise<OrganizationMember[]>;
+  setOrganizationMemberStatus(
+    organizationId: string,
+    userId: string,
+    status: "active" | "disabled",
+  ): Promise<OrganizationMember[]>;
+  transferOrganizationOwnership(
+    organizationId: string,
+    userId: string,
+  ): Promise<OrganizationMember[]>;
   getSnapshot(): Promise<SessionSnapshot>;
   setSaved(opportunityId: string, saved: boolean): Promise<SessionSnapshot>;
   setApplicationStage(applicationId: string, stage: string): Promise<SessionSnapshot>;
@@ -207,13 +241,13 @@ const desktopRepository: WorkspaceRepository = {
   source: "desktop",
   signIn: (email, password, remember) =>
     invoke<AuthSession>("sign_in", { email, password, remember }),
-  createAccount: (name, email, password, role) =>
-    invoke<AuthSession>("create_account", { name, email, password, role }),
+  openDemoWorkspace: () => invoke<AuthSession>("open_demo_workspace"),
+  createAccount: (name, email, password) =>
+    invoke<AuthSession>("create_account", { name, email, password }),
   signInWithHosted: (identity) =>
     invoke<AuthSession>("sign_in_with_hosted", {
       name: identity.name,
       email: identity.email,
-      role: identity.role,
     }),
   signOut: async (token) => {
     await invoke<boolean>("sign_out", { token });
@@ -226,7 +260,44 @@ const desktopRepository: WorkspaceRepository = {
   // The desktop core keeps one local workspace behind SQLite; the session picks
   // the seeded preview store for organizations created in the app, so this call
   // has nothing to swap.
-  selectOrganization: async () => undefined,
+  listOrganizations: () => invoke<OrganizationAccess[]>("list_my_organizations", withToken()),
+  listPublicOrganizations: () => invoke<OrganizationProfile[]>("list_public_organizations"),
+  selectOrganization: async (organizationId) => {
+    if (!organizationId) return;
+    await invoke<OrganizationAccess>("select_organization", withToken({ organizationId }));
+  },
+  createOrganization: (input) =>
+    invoke<OrganizationAccess>("create_organization", withToken({ input })),
+  updateOrganization: (organizationId, patch) =>
+    invoke<OrganizationProfile>("update_organization", withToken({ organizationId, patch })),
+  listOrganizationMembers: (organizationId) =>
+    invoke<OrganizationMember[]>("list_organization_members", withToken({ organizationId })),
+  listOrganizationInvites: (organizationId) =>
+    invoke<PendingInvite[]>("list_organization_invites", withToken({ organizationId })),
+  createOrganizationInvite: (organizationId, role, email) =>
+    invoke<IssuedInvite>("create_organization_invite", withToken({ organizationId, role, email })),
+  revokeOrganizationInvite: async (organizationId, inviteId) => {
+    await invoke<null>("revoke_organization_invite", withToken({ organizationId, inviteId }));
+  },
+  redeemOrganizationInvite: (code) =>
+    invoke<OrganizationAccess>("redeem_organization_invite", withToken({ code })),
+  joinPublicOrganization: (organizationId) =>
+    invoke<OrganizationAccess>("join_public_organization", withToken({ organizationId })),
+  setOrganizationMemberRole: (organizationId, userId, role) =>
+    invoke<OrganizationMember[]>(
+      "set_organization_member_role",
+      withToken({ organizationId, userId, role }),
+    ),
+  setOrganizationMemberStatus: (organizationId, userId, status) =>
+    invoke<OrganizationMember[]>(
+      "set_organization_member_status",
+      withToken({ organizationId, userId, status }),
+    ),
+  transferOrganizationOwnership: (organizationId, userId) =>
+    invoke<OrganizationMember[]>(
+      "transfer_organization_ownership",
+      withToken({ organizationId, userId }),
+    ),
   getSnapshot: () => invoke<SessionSnapshot>("get_workspace_snapshot", withToken()),
   setSaved: (opportunityId, saved) =>
     invoke<SessionSnapshot>("set_saved_opportunity", withToken({ opportunityId, saved })),

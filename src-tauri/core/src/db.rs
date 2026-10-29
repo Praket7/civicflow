@@ -14,7 +14,7 @@ pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
 /// start from the same state.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
 /// Bumped with every migration so backups can check they match this build.
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 13;
 /// "CIFV" — marks a database as a CivicFlow workspace so restore can refuse
 /// an arbitrary SQLite file.
 pub const APPLICATION_ID: i64 = 0x4349_4656;
@@ -31,6 +31,9 @@ const ROSTER_POLICY_SCHEMA: &str = include_str!("../migrations/0008_roster_polic
 const ASSIGNMENT_LOCK_SCHEMA: &str = include_str!("../migrations/0009_assignment_locks.sql");
 const SHIFT_SERIES_SCHEMA: &str = include_str!("../migrations/0010_shift_series.sql");
 const NOTIFICATION_RULE_SCHEMA: &str = include_str!("../migrations/0011_notification_rules.sql");
+const OWNERSHIP_SYNC_SCHEMA: &str =
+    include_str!("../migrations/0012_ownership_sync_and_revisions.sql");
+const WORKSPACE_CLOCK_SCHEMA: &str = include_str!("../migrations/0013_workspace_clock.sql");
 const WORKFLOW_SEED_MARKER: &str = "workflow_seed_version";
 
 const CREDENTIAL_TYPES: [(&str, i64); 6] = [
@@ -98,7 +101,7 @@ fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>)
 /// Every schema step, in order. Kept as a free function as well as a method
 /// because restoring an older snapshot replaces the live database in place and
 /// the restored copy then has to catch up to this build.
-const MIGRATIONS: [(i64, &str); 11] = [
+const MIGRATIONS: [(i64, &str); 13] = [
     (1, INITIAL_SCHEMA),
     (2, WORKFLOW_SCHEMA),
     (3, LIFECYCLE_SCHEMA),
@@ -110,6 +113,8 @@ const MIGRATIONS: [(i64, &str); 11] = [
     (9, ASSIGNMENT_LOCK_SCHEMA),
     (10, SHIFT_SERIES_SCHEMA),
     (11, NOTIFICATION_RULE_SCHEMA),
+    (12, OWNERSHIP_SYNC_SCHEMA),
+    (13, WORKSPACE_CLOCK_SCHEMA),
 ];
 
 pub fn apply_migrations(conn: &Connection) -> Result<()> {
@@ -178,6 +183,34 @@ impl Database {
         apply_migrations(&self.conn)
     }
 
+    /// Whether this workspace is the bundled demo rather than a real
+    /// organization. Only a demo workspace may be reset to its fixtures.
+    pub fn is_demo(&self) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM organizations WHERE is_demo = 1)",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Creates the demo workspace on request. A workspace that already holds an
+    /// organization is never overwritten, so "explore the demo" cannot destroy
+    /// real records.
+    pub fn seed_demo(&mut self) -> Result<bool> {
+        let organizations: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM organizations", [], |row| row.get(0))?;
+        if organizations > 0 {
+            return Err(CoreError::rule(
+                "WORKSPACE_NOT_EMPTY",
+                "This workspace already has an organization. Open the demo from a separate installation.",
+                None,
+                Some("RETURN_TO_SIGN_IN".into()),
+            ));
+        }
+        self.seed_demo_if_empty()
+    }
+
     /// Loads the deterministic demo workspace once. Re-running is a no-op so the
     /// app can start repeatedly without duplicating records.
     pub fn seed_demo_if_empty(&mut self) -> Result<bool> {
@@ -189,7 +222,7 @@ impl Database {
         if seeded {
             self.insert_seed(&seed)?;
         }
-        crate::auth::seed_demo_accounts(&self.conn, &seed.demo_now)?;
+        crate::auth::seed_demo_accounts(&self.conn, &seed.now)?;
         // The bundled accounts belong to the workspace organization, exactly as
         // an upgraded database does after the membership migration.
         crate::organizations::backfill_memberships(&self.conn)?;
@@ -213,6 +246,8 @@ impl Database {
         }
 
         let seed = SeedWorkflow::parse(WORKFLOW_SEED)?;
+        // The fixture names its own volunteer, so a different seed cannot
+        // silently inherit an identifier from this one.
         let volunteer_id: String = self
             .conn
             .query_row(
@@ -221,23 +256,20 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()?
-            .unwrap_or_else(|| "vol-maya".to_string());
-        let demo_now: String = self
-            .conn
-            .query_row(
-                "SELECT value FROM app_settings WHERE key = 'demo_now'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?
-            .unwrap_or_else(|| "2026-10-13T07:45:00-04:00".to_string());
+            .or_else(|| {
+                SeedWorkspace::parse(DEMO_SEED)
+                    .ok()
+                    .map(|workspace| workspace.current_volunteer_id)
+            })
+            .unwrap_or_default();
+        let now = crate::clock::now(&self.conn)?.to_rfc3339();
 
         let transaction = self.conn.transaction()?;
         for opportunity_id in &seed.saved_opportunity_ids {
             transaction.execute(
                 "INSERT OR IGNORE INTO saved_opportunities
                  (volunteer_id, opportunity_id, saved_at) VALUES (?1, ?2, ?3)",
-                params![volunteer_id, opportunity_id, demo_now],
+                params![volunteer_id, opportunity_id, now],
             )?;
         }
         for application in &seed.applications {
@@ -342,8 +374,20 @@ impl Database {
     /// Restores the deterministic demo state. Callers must hold the database
     /// mutex; the screens then read the returned snapshot instead of reloading.
     pub fn reset_demo(&mut self) -> Result<()> {
+        if !self.is_demo()? {
+            return Err(CoreError::rule(
+                "NOT_A_DEMO_WORKSPACE",
+                "Only the demo workspace can be reset. This organization holds real records.",
+                None,
+                None,
+            ));
+        }
+        // The ownership guard would refuse to delete the last owner, so it is
+        // dropped for the wholesale reset and reinstalled before the seed.
         self.conn.execute_batch(
-            "DELETE FROM checkin_codes;
+            "DROP TRIGGER IF EXISTS organization_memberships_keep_owner_on_update;
+             DROP TRIGGER IF EXISTS organization_memberships_keep_owner_on_delete;
+             DELETE FROM checkin_codes;
              DELETE FROM attendance_ledger;
              DELETE FROM service_verifications;
              DELETE FROM impact_results;
@@ -377,8 +421,9 @@ impl Database {
              DELETE FROM app_settings;",
         )?;
         let seed = SeedWorkspace::parse(DEMO_SEED)?;
+        crate::organizations::install_ownership_guards(&self.conn)?;
         self.insert_seed(&seed)?;
-        crate::auth::seed_demo_accounts(&self.conn, &seed.demo_now)?;
+        crate::auth::seed_demo_accounts(&self.conn, &seed.now)?;
         // The bundled accounts belong to the workspace organization, exactly as
         // an upgraded database does after the membership migration.
         crate::organizations::backfill_memberships(&self.conn)?;
@@ -391,8 +436,9 @@ impl Database {
 
         transaction.execute(
             "INSERT INTO organizations
-             (id, name, initials, mission, city, state, address, website, email, timezone, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             (id, name, initials, mission, city, state, address, website, email, timezone, created_at,
+              is_demo)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)",
             params![
                 seed.organization.id,
                 seed.organization.name,
@@ -404,7 +450,7 @@ impl Database {
                 seed.organization.website,
                 seed.organization.email,
                 seed.organization.timezone,
-                seed.demo_now,
+                seed.now,
             ],
         )?;
 
@@ -567,7 +613,7 @@ impl Database {
                     registration.shift_id,
                     registration.volunteer_id,
                     registration.role,
-                    seed.demo_now,
+                    seed.now,
                     registration.status,
                 ])?;
             }
@@ -577,8 +623,8 @@ impl Database {
         // arrivals are real attendance rows and ledger evidence, not a UI guess,
         // so the kiosk, roster, and attendance screens read the same state.
         {
-            let demo_now = chrono::DateTime::parse_from_rfc3339(&seed.demo_now)?;
-            let arrived_at = (demo_now - Duration::minutes(18)).to_rfc3339();
+            let now = chrono::DateTime::parse_from_rfc3339(&seed.now)?;
+            let arrived_at = (now - Duration::minutes(18)).to_rfc3339();
             let mut select = transaction.prepare(
                 "SELECT volunteer_id, role FROM registrations
                  WHERE shift_id = 'sh-tue-pantry' AND volunteer_id <> ?1
@@ -665,7 +711,7 @@ impl Database {
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
-                    seed.demo_now,
+                    seed.now,
                     seed.coordinator.name,
                 ])?;
             }
@@ -744,7 +790,7 @@ impl Database {
                     seed.current_volunteer_id,
                     view.name,
                     serde_json::to_string(&view.filters)?,
-                    seed.demo_now,
+                    seed.now,
                 ])?;
             }
         }
@@ -861,15 +907,6 @@ impl Database {
             let sql = format!("SELECT COUNT(*) FROM {table}");
             Ok(self.conn.query_row(&sql, [], |row| row.get(0))?)
         };
-        let setting = |key: &str| -> Result<String> {
-            self.conn
-                .query_row(
-                    "SELECT value FROM app_settings WHERE key = ?1",
-                    params![key],
-                    |row| row.get(0),
-                )
-                .map_err(CoreError::from)
-        };
         let timezone: String =
             self.conn
                 .query_row("SELECT timezone FROM organizations LIMIT 1", [], |row| {
@@ -881,7 +918,7 @@ impl Database {
             volunteer_count: count("volunteers")?,
             opportunity_count: count("opportunities")?,
             shift_count: count("shifts")?,
-            demo_now: setting("demo_now")?,
+            now: crate::clock::now(&self.conn)?.to_rfc3339(),
             timezone,
         })
     }

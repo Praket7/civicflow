@@ -98,7 +98,7 @@ export function OpportunityDetailPage() {
     () =>
       opportunity
         ? getShiftRowsForOpportunity(opportunity.id, workspace).filter(
-            (row) => row.shift.status === "scheduled" && row.shift.startsAt > workspace.demoNow,
+            (row) => row.shift.status === "scheduled" && row.shift.startsAt > workspace.now,
           )
         : [],
     [opportunity, workspace],
@@ -451,7 +451,7 @@ export function OpportunityDetailPage() {
                           <li className={styles.shiftRow} key={shift.id}>
                             <div className={styles.shiftDate}>
                               <span>{formatDate(shift.startsAt)}</span>
-                              <span>{relativeDayLabel(shift.startsAt, workspace.demoNow)}</span>
+                              <span>{relativeDayLabel(shift.startsAt, workspace.now)}</span>
                             </div>
                             <div className={styles.shiftTimes}>
                               <strong>{timeRange(shift.startsAt, shift.endsAt)}</strong>

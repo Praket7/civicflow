@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use rusqlite::{params, Connection};
 
 use crate::domain::{coverage_days, derive_attention, role_coverage_percent, ShiftView};
@@ -22,10 +22,9 @@ fn setting(conn: &Connection, key: &str) -> Result<String> {
     .map_err(CoreError::from)
 }
 
-pub fn demo_now(conn: &Connection) -> Result<DateTime<FixedOffset>> {
-    let raw = setting(conn, "demo_now")?;
-    Ok(DateTime::parse_from_rfc3339(&raw)?)
-}
+/// The workspace clock. Kept as a re-export so existing read models do not
+/// need to know whether the time is pinned for a demo or read from the system.
+pub use crate::clock::now;
 
 pub fn load_shifts(conn: &Connection) -> Result<Vec<ShiftView>> {
     let mut statement = conn.prepare(
@@ -89,7 +88,7 @@ fn activity(conn: &Connection) -> Result<Vec<ActivityItem>> {
 }
 
 pub fn get_mission_control(conn: &Connection, audience: &str) -> Result<MissionControlSummary> {
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let shifts = load_shifts(conn)?;
     let attention: Vec<AttentionItem> = derive_attention(&shifts, now, 3);
     let upcoming = shifts.iter().filter(|shift| shift.starts_at > now).count() as i64;
@@ -162,7 +161,7 @@ pub fn get_mission_control(conn: &Connection, audience: &str) -> Result<MissionC
         coordinator_name: setting(conn, "coordinator_name")?,
         first_name: setting(conn, "coordinator_first_name")?,
         organization_name,
-        demo_now: now.to_rfc3339(),
+        now: now.to_rfc3339(),
         active_volunteers,
         coverage_percent: role_coverage_percent(&shifts, now),
         hours_this_month: minutes_this_month / 60,

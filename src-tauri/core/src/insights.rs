@@ -14,7 +14,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::services::demo_now;
+use crate::services::now;
 
 /// Verified hours and completed shifts a volunteer can see on their own impact
 /// page. Deliberately small and reachable: a leaderboard is not the point.
@@ -120,7 +120,7 @@ fn completed_shift_count(conn: &Connection, volunteer_id: &str) -> Result<i64> {
              WHERE a.shift_id = r.shift_id AND a.volunteer_id = r.volunteer_id
                AND a.event_type IN ('check_in', 'check_out', 'manual_check_in', 'manual_check_out')
            )",
-        params![volunteer_id, demo_now(conn)?.to_rfc3339()],
+        params![volunteer_id, now(conn)?.to_rfc3339()],
         |row| row.get(0),
     )?)
 }
@@ -160,7 +160,7 @@ fn completed_programs(conn: &Connection, volunteer_id: &str) -> Result<Vec<(Stri
 /// same sentence explains the signal to a coordinator and to the volunteer it
 /// is about.
 pub fn retention_signals(conn: &Connection) -> Result<Vec<RetentionSignal>> {
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let today = now.date_naive();
     let mut statement = conn.prepare(
         "SELECT id, name, initials FROM volunteers WHERE status = 'active' ORDER BY name",
@@ -349,12 +349,8 @@ pub fn volunteer_insight(conn: &Connection, volunteer_id: &str) -> Result<Volunt
     let completed = completed_shift_count(conn, volunteer_id)?;
     let joined = chrono::DateTime::parse_from_rfc3339(&joined_at)
         .map(|value| value.date_naive())
-        .unwrap_or_else(|_| {
-            demo_now(conn)
-                .map(|now| now.date_naive())
-                .unwrap_or_default()
-        });
-    let years_of_service = (demo_now(conn)?.date_naive() - joined).num_days() / SERVICE_YEAR_DAYS;
+        .unwrap_or_else(|_| now(conn).map(|now| now.date_naive()).unwrap_or_default());
+    let years_of_service = (now(conn)?.date_naive() - joined).num_days() / SERVICE_YEAR_DAYS;
 
     let mut milestones: Vec<Milestone> = Vec::new();
     for hours in HOUR_MILESTONES {
@@ -379,7 +375,7 @@ pub fn volunteer_insight(conn: &Connection, volunteer_id: &str) -> Result<Volunt
         earned: years_of_service >= 1,
         remaining: format!(
             "{} day(s) to go",
-            (SERVICE_YEAR_DAYS - (demo_now(conn)?.date_naive() - joined).num_days()).max(0)
+            (SERVICE_YEAR_DAYS - (now(conn)?.date_naive() - joined).num_days()).max(0)
         ),
     });
 
@@ -400,7 +396,7 @@ pub fn volunteer_insight(conn: &Connection, volunteer_id: &str) -> Result<Volunt
 
 /// The numbers behind the engagement report, computed from rows.
 pub fn engagement_metrics(conn: &Connection) -> Result<EngagementMetrics> {
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let year_start = format!("{}-01-01", now.format("%Y"));
     let new_volunteers: i64 = conn.query_row(
         "SELECT COUNT(*) FROM volunteers WHERE substr(joined_at, 1, 10) >= ?1",
@@ -507,7 +503,7 @@ pub fn engagement_metrics(conn: &Connection) -> Result<EngagementMetrics> {
 /// Credential readiness: how many are usable, how many are about to lapse, how
 /// many have lapsed, and which future assignments depend on one that lapsed.
 pub fn credential_readiness(conn: &Connection) -> Result<CredentialReadiness> {
-    let today = demo_now(conn)?.date_naive();
+    let today = now(conn)?.date_naive();
     let horizon = (today + chrono::Duration::days(30)).to_string();
     let (current, expiring_soon, expired): (i64, i64, i64) = conn.query_row(
         "SELECT
@@ -528,7 +524,7 @@ pub fn credential_readiness(conn: &Connection) -> Result<CredentialReadiness> {
              WHERE vc.volunteer_id = r.volunteer_id AND vc.credential_type_id = ct.id
                AND vc.valid_through >= substr(s.starts_at, 1, 10)
            )",
-        params![demo_now(conn)?.to_rfc3339()],
+        params![now(conn)?.to_rfc3339()],
         |row| row.get(0),
     )?;
     Ok(CredentialReadiness {

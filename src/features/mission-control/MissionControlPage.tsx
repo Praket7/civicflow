@@ -101,7 +101,7 @@ export function MissionControlPage() {
       <p className={styles.pageFooter}>
         <span>Working offline</span>
         <span aria-hidden="true">·</span>
-        <span>Last synced locally at {formatTime(data.demoNow)}</span>
+        <span>Last synced locally at {formatTime(data.now)}</span>
         <Link className={styles.footerLink} to="/credits">
           Photo credits
         </Link>

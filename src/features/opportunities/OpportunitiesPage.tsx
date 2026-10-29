@@ -88,7 +88,7 @@ export function OpportunitiesPage() {
   const rows = useMemo<OpportunityRow[]>(() => {
     return opportunities.map((opportunity) => {
       const upcoming = getShiftRowsForOpportunity(opportunity.id, workspace).filter(
-        (row) => row.shift.startsAt > workspace.demoNow,
+        (row) => row.shift.startsAt > workspace.now,
       );
       const next = upcoming[0];
       const hasRoleGap = upcoming.some((row) =>

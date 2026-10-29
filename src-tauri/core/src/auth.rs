@@ -18,7 +18,11 @@ use std::sync::OnceLock;
 
 use crate::error::{CoreError, Result};
 
-const DEMO_PASSWORD: &str = "civicflow-demo";
+/// The demo workspace ships with one coordinator account so a judge can open it
+/// without inventing credentials. These values are only valid inside the demo
+/// seed and are never used to authorize a real organization.
+pub const DEMO_EMAIL: &str = "praket@feedmorewny.org";
+pub const DEMO_PASSWORD: &str = "civicflow-demo";
 const REMEMBER_DAYS: i64 = 30;
 const SHORT_SESSION_HOURS: i64 = 12;
 /// Misses this many times in the window before the wait starts.
@@ -212,10 +216,24 @@ fn validate_password(password: &str) -> Result<()> {
     Ok(())
 }
 
+/// The role a workspace sees for an account is derived from its active
+/// membership, never from a global `users.role` column. An account with no
+/// membership has no workspace role at all. Owners and coordinators share the
+/// coordinator capabilities; only an owner may change the membership.
+const ROLE_SQL: &str = "COALESCE((
+    SELECT CASE WHEN m.role IN ('owner', 'coordinator') THEN 'coordinator' ELSE 'volunteer' END
+    FROM organization_memberships m
+    WHERE m.user_id = u.id AND m.status = 'active'
+    ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'coordinator' THEN 1 ELSE 2 END
+    LIMIT 1), 'none')";
+
 fn load_account(conn: &Connection, user_id: &str) -> Result<Option<Account>> {
     Ok(conn
         .query_row(
-            "SELECT id, name, email, role, volunteer_id FROM users WHERE id = ?1",
+            &format!(
+                "SELECT u.id, u.name, u.email, {ROLE_SQL}, u.volunteer_id
+                 FROM users u WHERE u.id = ?1"
+            ),
             params![user_id],
             |row| {
                 Ok(Account {
@@ -252,8 +270,11 @@ pub fn sign_in(
     }
     let row: Option<SignInRow> = conn
         .query_row(
-            "SELECT id, name, email, role, volunteer_id, password_hash, status
-             FROM users WHERE lower(email) = ?1",
+            &format!(
+                "SELECT u.id, u.name, u.email, {ROLE_SQL}, u.volunteer_id,
+                        u.password_hash, u.status
+                 FROM users u WHERE lower(u.email) = ?1"
+            ),
             params![clean_email],
             |row| {
                 Ok((
@@ -358,7 +379,7 @@ fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result
 
 /// Claims a roster profile with the same email, or creates one for a new
 /// volunteer account. A profile that already has an account is refused.
-fn link_or_create_volunteer(
+pub(crate) fn link_or_create_volunteer(
     conn: &Connection,
     name: &str,
     email: &str,
@@ -400,16 +421,17 @@ fn link_or_create_volunteer(
 /// is stored: `password_hash` stays NULL and the local password form keeps
 /// refusing the account until a coordinator sets one from Settings → Accounts.
 /// That keeps hosted accounts usable offline without inventing a second secret.
-pub fn sign_in_with_hosted(
-    conn: &Connection,
-    name: &str,
-    email: &str,
-    role: &str,
-) -> Result<AuthSession> {
+/// Creates or resumes the local identity behind a hosted account. Hosted
+/// identity proves only who somebody is; organization access comes from a
+/// membership row, never from signup metadata.
+pub fn sign_in_with_hosted(conn: &Connection, name: &str, email: &str) -> Result<AuthSession> {
     let email = normalize_email(email)?;
     let existing: Option<Account> = conn
         .query_row(
-            "SELECT id, name, email, role, volunteer_id FROM users WHERE lower(email) = ?1",
+            &format!(
+                "SELECT u.id, u.name, u.email, {ROLE_SQL}, u.volunteer_id
+                 FROM users u WHERE lower(u.email) = ?1"
+            ),
             params![email],
             |row| {
                 Ok(Account {
@@ -426,36 +448,26 @@ pub fn sign_in_with_hosted(
         return start_session(conn, &account, true);
     }
 
-    let role = role.trim().to_lowercase();
-    if role != "coordinator" && role != "volunteer" {
-        return Err(CoreError::Validation(
-            "Choose whether this is a coordinator or a volunteer account.".into(),
-        ));
-    }
     let name = normalize_name(name)?;
     let now = Utc::now().to_rfc3339();
     let id = format!("user-{}", uuid::Uuid::new_v4());
-    let volunteer_id = if role == "volunteer" {
-        Some(link_or_create_volunteer(conn, &name, &email, &now)?)
-    } else {
-        None
-    };
 
     conn.execute(
+        // See the note in `create_account`: the legacy column stays inside its
+        // CHECK, and the membership table is what grants a workspace role.
         "INSERT INTO users (id, name, email, role, volunteer_id, password_hash, status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'active', ?6)",
-        params![id, name, email, role, volunteer_id, now],
+         VALUES (?1, ?2, ?3, 'volunteer', NULL, NULL, 'active', ?4)",
+        params![id, name, email, now],
     )?;
     conn.execute(
         "INSERT INTO audit_events
          (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
-         VALUES (?1, ?2, ?3, ?4, 'auth.hosted_account_created', 'user', ?4, ?5)",
+         VALUES (?1, ?2, 'member', ?3, 'auth.hosted_account_created', 'user', ?3, ?4)",
         params![
             uuid::Uuid::new_v4().to_string(),
             now,
-            role,
             id,
-            format!("Created a hosted {role} account for {email}"),
+            format!("Created a hosted identity for {email}"),
         ],
     )?;
 
@@ -465,8 +477,8 @@ pub fn sign_in_with_hosted(
             id,
             name,
             email,
-            role,
-            volunteer_id,
+            role: "none".into(),
+            volunteer_id: None,
         },
         true,
     )
@@ -479,13 +491,15 @@ pub fn current_user(conn: &Connection, token: &str) -> Result<Option<Account>> {
     let now = Utc::now().to_rfc3339();
     Ok(conn
         .query_row(
-            "SELECT u.id, u.name, u.email, u.role, u.volunteer_id
-             FROM auth_sessions s
-             JOIN users u ON u.id = s.user_id
-             WHERE s.token_hash = ?1
-               AND s.revoked_at IS NULL
-               AND s.expires_at > ?2
-               AND u.status = 'active'",
+            &format!(
+                "SELECT u.id, u.name, u.email, {ROLE_SQL}, u.volunteer_id
+                 FROM auth_sessions s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.token_hash = ?1
+                   AND s.revoked_at IS NULL
+                   AND s.expires_at > ?2
+                   AND u.status = 'active'"
+            ),
             params![token_hash(token), now],
             |row| {
                 Ok(Account {
@@ -675,10 +689,10 @@ pub fn sign_out(conn: &Connection, token: &str, actor: &Account) -> Result<bool>
 
 pub fn list_accounts(conn: &Connection, token: &str) -> Result<Vec<Account>> {
     require_coordinator(conn, token)?;
-    let mut statement = conn.prepare(
-        "SELECT id, name, email, role, volunteer_id
-         FROM users ORDER BY role, name",
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT u.id, u.name, u.email, {ROLE_SQL}, u.volunteer_id
+         FROM users u ORDER BY {ROLE_SQL}, u.name"
+    ))?;
     let mut rows = statement.query([])?;
     let mut accounts = Vec::new();
     while let Some(row) = rows.next()? {
@@ -826,22 +840,16 @@ fn insert_volunteer(conn: &Connection, name: &str, email: &str, now: &str) -> Re
     Ok(id)
 }
 
-/// Creates a local account and signs it in. A volunteer account is attached to an
-/// existing roster profile when the email matches one, and otherwise a new
-/// profile is created so the coordinator can see the person on the roster.
+/// Creates a local identity and signs it in. Creating an account grants no
+/// organization role: the person either creates an organization (becoming its
+/// owner) or redeems an invitation. That is what keeps a signup form from
+/// awarding coordinator access to itself.
 pub fn create_account(
     conn: &Connection,
     name: &str,
     email: &str,
     password: &str,
-    role: &str,
 ) -> Result<AuthSession> {
-    let role = role.trim().to_lowercase();
-    if role != "coordinator" && role != "volunteer" {
-        return Err(CoreError::Validation(
-            "Choose whether this is a coordinator or a volunteer account.".into(),
-        ));
-    }
     let name = normalize_name(name)?;
     let email = normalize_email(email)?;
     validate_password(password)?;
@@ -865,35 +873,22 @@ pub fn create_account(
     let now = Utc::now().to_rfc3339();
     let id = format!("user-{}", uuid::Uuid::new_v4());
 
-    let volunteer_id = if role == "volunteer" {
-        Some(link_or_create_volunteer(conn, &name, &email, &now)?)
-    } else {
-        None
-    };
-
     conn.execute(
+        // `users.role` is a legacy v11 column with a two-value CHECK. It is no
+        // longer read for authorization; membership is the only role source.
         "INSERT INTO users (id, name, email, role, volunteer_id, password_hash, status, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7)",
-        params![
-            id,
-            name,
-            email,
-            role,
-            volunteer_id,
-            hash_password(password)?,
-            now
-        ],
+         VALUES (?1, ?2, ?3, 'volunteer', NULL, ?4, 'active', ?5)",
+        params![id, name, email, hash_password(password)?, now],
     )?;
     conn.execute(
         "INSERT INTO audit_events
          (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
-         VALUES (?1, ?2, ?3, ?4, 'auth.account_created', 'user', ?4, ?5)",
+         VALUES (?1, ?2, 'member', ?3, 'auth.account_created', 'user', ?3, ?4)",
         params![
             uuid::Uuid::new_v4().to_string(),
             now,
-            role,
             id,
-            format!("Created a {role} account for {email}"),
+            format!("Created an identity for {email}"),
         ],
     )?;
 
@@ -907,7 +902,7 @@ fn upsert_account(
     email: &str,
     role: &str,
     volunteer_id: Option<&str>,
-    demo_now: &str,
+    now: &str,
 ) -> Result<()> {
     let existing: Option<Option<String>> = conn
         .query_row(
@@ -929,7 +924,7 @@ fn upsert_account(
              role = excluded.role,
              volunteer_id = excluded.volunteer_id,
              password_hash = COALESCE(users.password_hash, excluded.password_hash)",
-        params![id, name, email, role, volunteer_id, hash, demo_now],
+        params![id, name, email, role, volunteer_id, hash, now],
     )?;
     Ok(())
 }
@@ -937,7 +932,7 @@ fn upsert_account(
 /// Creates the two demo accounts on first launch and backfills a password for a
 /// database that predates account support. A password the coordinator has reset
 /// is never overwritten.
-pub fn seed_demo_accounts(conn: &Connection, demo_now: &str) -> Result<()> {
+pub fn seed_demo_accounts(conn: &Connection, now: &str) -> Result<()> {
     let coordinator_id: Option<String> = conn
         .query_row(
             "SELECT id FROM users WHERE role = 'coordinator' ORDER BY created_at LIMIT 1",
@@ -961,7 +956,7 @@ pub fn seed_demo_accounts(conn: &Connection, demo_now: &str) -> Result<()> {
             "praket@feedmorewny.org",
             "coordinator",
             None,
-            demo_now,
+            now,
         )?;
     }
 
@@ -982,7 +977,7 @@ pub fn seed_demo_accounts(conn: &Connection, demo_now: &str) -> Result<()> {
             &email,
             "volunteer",
             Some(&volunteer_id),
-            demo_now,
+            now,
         )?;
     }
 

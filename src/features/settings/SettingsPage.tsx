@@ -28,11 +28,8 @@ import {
 import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
 import { coverPhoto } from "../../lib/images";
-import {
-  ORGANIZATION_COVERS,
-  updateOrganizationCover,
-  updateOrganizationDetails,
-} from "../../lib/organizations/store";
+import { updateOrganizationCover, updateOrganizationDetails } from "../../lib/organizations/store";
+import { ORGANIZATION_COVERS } from "../../lib/organizations/types";
 import { US_STATES, stateCode } from "../../lib/us-states";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import { useWorkspace } from "../../lib/workspace/session";
@@ -208,7 +205,7 @@ export function SettingsPage() {
     }
   }
 
-  function saveGeneral() {
+  async function saveGeneral() {
     if (!orgName.trim()) {
       setError("Organization name is required.");
       return;
@@ -221,9 +218,10 @@ export function SettingsPage() {
       setError("Select a state from the list.");
       return;
     }
+    if (!user) return;
     // The organization card, the public profile, and every report read this
     // record, so the details live there rather than only in local settings.
-    updateOrganizationDetails(workspace.organization.id, {
+    await updateOrganizationDetails(user, workspace.organization.id, {
       name: orgName.trim(),
       description: mission.trim(),
       address: address.trim(),
@@ -231,7 +229,7 @@ export function SettingsPage() {
       state: stateValue,
       website: website.trim(),
     });
-    updateOrganizationCover(workspace.organization.id, cover.src, cover.alt);
+    await updateOrganizationCover(user, workspace.organization.id, cover.src, cover.alt);
     actions.updateSettings({
       organizationName: orgName.trim(),
       contactEmail: email.trim(),
@@ -523,7 +521,11 @@ export function SettingsPage() {
                 </p>
               ) : null}
               <div className={styles.saveRow}>
-                <Button variant="primary" icon={<Save size={13} />} onClick={saveGeneral}>
+                <Button
+                  variant="primary"
+                  icon={<Save size={13} />}
+                  onClick={() => void saveGeneral()}
+                >
                   Save changes
                 </Button>
               </div>

@@ -15,6 +15,7 @@ import {
   Tabs,
 } from "../../components/ui";
 import type { Column } from "../../components/ui";
+import { currentDay, inRange, reportRange, type ReportPeriod } from "../../lib/workspace/dates";
 import { useWorkspace } from "../../lib/workspace/session";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import {
@@ -75,18 +76,18 @@ export function CustomReportPage() {
   const [error, setError] = useState("");
 
   const allRows = getHourRows(session, workspace);
+  const selectedRange = useMemo(
+    () => reportRange(workspace.now, range as ReportPeriod),
+    [workspace.now, range],
+  );
   const rows = useMemo<Row[]>(() => {
     return allRows
       .filter((row) => (cause === "all" ? true : row.opportunity.cause === cause))
-      .filter((row) => {
-        if (range === "month") return row.date.startsWith("2026-10");
-        if (range === "week") return row.date >= "2026-10-07";
-        return true;
-      })
+      .filter((row) => inRange(row.date, selectedRange))
       .map((row) => ({ ...row, id: row.id }))
       .sort((left, right) => right.date.localeCompare(left.date))
       .slice(0, 12);
-  }, [allRows, cause, range]);
+  }, [allRows, cause, selectedRange]);
 
   const columns: Column<Row>[] = [];
   if (fields.includes("volunteer")) {
@@ -131,13 +132,9 @@ export function CustomReportPage() {
   async function exportReport(format: "csv" | "pdf") {
     setError("");
     setSaved("");
-    const end = workspace.demoNow.slice(0, 10);
-    const dateStart =
-      range === "month"
-        ? `${end.slice(0, 8)}01`
-        : range === "week"
-          ? "2026-10-07"
-          : `${end.slice(0, 4)}-01-01`;
+    const end = currentDay(workspace.now);
+    const periodRange = reportRange(workspace.now, range as ReportPeriod);
+    const dateStart = periodRange ? periodRange.start : `${end.slice(0, 4)}-01-01`;
     try {
       const receipt = await getWorkspaceRepository().exportReport(
         {
@@ -247,7 +244,7 @@ export function CustomReportPage() {
               <div>
                 <h2 className={styles.paperTitle}>Preview</h2>
                 <p className={styles.paperMeta}>
-                  {workspace.organization.name} · generated {workspace.demoNow.slice(0, 10)}
+                  {workspace.organization.name} · generated {workspace.now.slice(0, 10)}
                 </p>
               </div>
               <Badge tone="cobalt">Local data</Badge>
@@ -272,13 +269,7 @@ export function CustomReportPage() {
                   data={buildTrendPoints(
                     getHourRows(session, workspace)
                       .filter((row) => (cause === "all" ? true : row.opportunity.cause === cause))
-                      .filter((row) =>
-                        range === "month"
-                          ? row.date.startsWith("2026-10")
-                          : range === "week"
-                            ? row.date >= "2026-10-07"
-                            : true,
-                      ),
+                      .filter((row) => inRange(row.date, selectedRange)),
                   )}
                   height={176}
                   label="Hours trend preview"

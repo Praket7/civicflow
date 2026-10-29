@@ -24,7 +24,8 @@ export function AppShell() {
   const [mobilePath, setMobilePath] = useState<string | null>(null);
   const mobileOpen = mobilePath === location.pathname;
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const role = user?.role ?? "volunteer";
+  const role: "coordinator" | "volunteer" =
+    user?.role === "coordinator" ? "coordinator" : "volunteer";
   // Check-in owns the full content frame: no global top bar and no canvas
   // padding, because it is used one-handed at a door.
   const surface = location.pathname === "/volunteer/check-in" ? "checkin" : undefined;

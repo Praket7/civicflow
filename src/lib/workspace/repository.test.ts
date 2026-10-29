@@ -65,12 +65,7 @@ describe("workspace repository", () => {
       { candidateId: "vol-002", role: "Driver", promoteWaitlist: false },
     ]);
     await repository.resetDemo();
-    await repository.createAccount(
-      "Alicia Moreno",
-      "alicia.moreno@example.org",
-      "second-saturday",
-      "volunteer",
-    );
+    await repository.createAccount("Alicia Moreno", "alicia.moreno@example.org", "second-saturday");
 
     const calls = vi.mocked(invoke).mock.calls;
     expect(calls.map(([command]) => command)).toEqual([
@@ -137,24 +132,23 @@ describe("workspace repository", () => {
       name: "Alicia Moreno",
       email: "alicia.moreno@example.org",
       password: "second-saturday",
-      role: "volunteer",
     });
     setRepositoryToken(null);
   });
 
-  it("creates a preview account that can sign in with its own password", async () => {
+  it("creates a preview identity that can sign in with its own password", async () => {
     const created = await previewRepository.createAccount(
       "  Alicia   Moreno ",
       "Alicia.Moreno@Example.org",
       "second-saturday",
-      "volunteer",
     );
     expect(created.user).toMatchObject({
       name: "Alicia Moreno",
       email: "alicia.moreno@example.org",
-      role: "volunteer",
+      // Signing up creates an identity, not a role. Membership supplies one.
+      role: "none",
+      volunteerId: null,
     });
-    expect(created.user.volunteerId).toBeTruthy();
 
     const session = await previewRepository.signIn(
       "alicia.moreno@example.org",
@@ -169,11 +163,10 @@ describe("workspace repository", () => {
         "Alicia Moreno",
         "alicia.moreno@example.org",
         "another-password",
-        "volunteer",
       ),
     ).rejects.toThrow(/already uses that email/);
     await expect(
-      previewRepository.createAccount("Alicia Moreno", "alicia@example.org", "short", "volunteer"),
+      previewRepository.createAccount("Alicia Moreno", "alicia@example.org", "short"),
     ).rejects.toThrow(/at least 8 characters/);
   });
 

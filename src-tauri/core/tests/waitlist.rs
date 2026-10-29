@@ -27,7 +27,7 @@ fn a_guarded_open_seat(database: &Database) -> Option<Waiting> {
     let conn = database.connection();
     let now: String = conn
         .query_row(
-            "SELECT value FROM app_settings WHERE key = 'demo_now'",
+            "SELECT value FROM app_settings WHERE key = 'workspace_clock'",
             [],
             |row| row.get(0),
         )

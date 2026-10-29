@@ -91,7 +91,7 @@ const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 /*
  * Shift and audit timestamps are absolute instants. They must read the same on
  * a laptop in Buffalo and a build runner in UTC, so they are formatted in the
- * organization's timezone. Plain dates ("2026-10-17") and Date objects built
+ * organization's timezone. Plain dates and Date objects built
  * for calendar grids are civil values and stay in the local calendar, where
  * converting them could move a day or an hour.
  */
@@ -208,8 +208,8 @@ export function shiftMinutes(shift: Shift): number {
   return differenceInMinutes(parseISO(shift.endsAt), parseISO(shift.startsAt));
 }
 
-export function relativeDayLabel(iso: string, demoNow: string = demoWorkspace.demoNow): string {
-  const days = differenceInCalendarDays(parseISO(iso), parseISO(demoNow));
+export function relativeDayLabel(iso: string, now: string = demoWorkspace.now): string {
+  const days = differenceInCalendarDays(parseISO(iso), parseISO(now));
   if (days === 0) return t("Today");
   if (days === 1) return t("Tomorrow");
   if (days === -1) return t("Yesterday");
@@ -262,7 +262,7 @@ export function getShiftRows(workspace: DemoWorkspace): ShiftRow[] {
 
 export function getUpcomingShiftRows(
   workspace: DemoWorkspace,
-  from: string = workspace.demoNow,
+  from: string = workspace.now,
 ): ShiftRow[] {
   return getShiftRows(workspace).filter((row) => row.shift.startsAt > from);
 }
@@ -365,8 +365,8 @@ export function getLiveEvent(session: SessionOverrides = {}, workspace: DemoWork
     roster: getRoster(shift.id, session, workspace),
     waitlist: getWaitlist(shift.id, session, workspace),
     checkInOpen:
-      new Date(workspace.demoNow) >= new Date(parseISO(shift.startsAt).getTime() - 30 * 60_000) &&
-      new Date(workspace.demoNow) <= parseISO(shift.endsAt),
+      new Date(workspace.now) >= new Date(parseISO(shift.startsAt).getTime() - 30 * 60_000) &&
+      new Date(workspace.now) <= parseISO(shift.endsAt),
   };
 }
 
@@ -446,7 +446,7 @@ export function getHoursSummary(
   const rows = getHourRows(session, workspace).filter((row) => row.volunteer.id === volunteerId);
   const verified = rows.filter((row) => row.status === "verified");
   const pending = rows.filter((row) => row.status === "pending");
-  const thisMonth = rows.filter((row) => row.date.startsWith(workspace.demoNow.slice(0, 7)));
+  const thisMonth = rows.filter((row) => row.date.startsWith(workspace.now.slice(0, 7)));
   return {
     totalMinutes: rows.reduce((sum, row) => sum + (row.approvedMinutes ?? row.requestedMinutes), 0),
     verifiedMinutes: verified.reduce(
@@ -467,7 +467,7 @@ export function getHoursTrend(
   session: SessionOverrides = {},
   workspace: DemoWorkspace,
 ): { label: string; hours: number }[] {
-  const end = parseISO(workspace.demoNow);
+  const end = parseISO(workspace.now);
   const rows = getHourRows(session, workspace).filter((row) => row.status !== "rejected");
   return Array.from({ length: 12 }, (_, index) => {
     const month = new Date(end.getFullYear(), end.getMonth() - (11 - index), 1);
@@ -683,7 +683,7 @@ export function getReportPreview(session: SessionOverrides = {}, workspace: Demo
   const outcomes = getImpactOutcomes(session);
   return {
     organization: workspace.organization,
-    generatedAt: workspace.demoNow,
+    generatedAt: workspace.now,
     period: "January 1 – October 13, 2026",
     totals: {
       ...workspace.impact,
@@ -801,7 +801,7 @@ export function getUpcomingForVolunteer(
   workspace: DemoWorkspace,
 ): ShiftRow[] {
   return getVolunteerShifts(volunteerId, session, workspace).filter(
-    (row) => row.shift.startsAt > workspace.demoNow,
+    (row) => row.shift.startsAt > workspace.now,
   );
 }
 

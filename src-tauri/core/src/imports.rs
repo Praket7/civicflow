@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::{initials_for, normalize_email, normalize_name, Account};
 use crate::error::{CoreError, Result};
 use crate::reports::csv_cell;
-use crate::workflows::{append_actor_audit, demo_now};
+use crate::workflows::{append_actor_audit, now};
 
 /// Read order and the header the export writes. A file may name its columns in
 /// any order; the header is what decides, not the position.
@@ -501,7 +501,7 @@ pub fn apply(
         ));
     }
 
-    let now = demo_now(conn)?;
+    let now = now(conn)?;
     let transaction = conn.unchecked_transaction()?;
     let mut created_ids = Vec::with_capacity(preview.valid);
     for row in &preview.rows {

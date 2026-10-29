@@ -1,7 +1,7 @@
 //! The organization's matching policy: what a workspace follows before anyone
 //! changes anything, what a change does, and what it refuses.
 
-use civicflow_core::auth::{create_account, require_coordinator, Account};
+use civicflow_core::auth::{require_coordinator, sign_in, Account};
 use civicflow_core::matching::RosterOptions;
 use civicflow_core::policy::{current_policy, save_policy, RosterPolicy};
 use civicflow_core::roster::{plan_roster, policy_for_workspace};
@@ -21,14 +21,13 @@ fn seeded() -> Database {
 }
 
 fn coordinator(database: &Database) -> Account {
-    let session = create_account(
+    let session = sign_in(
         database.connection(),
-        "Praket Shah",
-        "matcher@feedmorewny.org",
-        "kitchen-table-2026",
-        "coordinator",
+        "praket@feedmorewny.org",
+        "civicflow-demo",
+        false,
     )
-    .expect("account is created");
+    .expect("the seeded owner signs in");
     require_coordinator(database.connection(), &session.token).expect("the account coordinates")
 }
 

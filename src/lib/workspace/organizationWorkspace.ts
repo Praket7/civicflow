@@ -158,7 +158,7 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
       : null;
   return {
     schemaVersion: demoWorkspace.schemaVersion,
-    demoNow: now,
+    now: now,
     organization,
     coordinator,
     currentVolunteerId: volunteer?.id ?? "",

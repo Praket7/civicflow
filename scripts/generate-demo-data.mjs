@@ -858,7 +858,7 @@ const impactRecords = [
 
 const workspace = {
   schemaVersion: 1,
-  demoNow: DEMO_NOW,
+  now: DEMO_NOW,
   organization: ORG,
   coordinator: COORDINATOR,
   currentVolunteerId: MAYA.id,

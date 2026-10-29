@@ -120,7 +120,7 @@ export function VerificationPage() {
 
   const recordMinutes = selected.approvedMinutes ?? selected.requestedMinutes;
   const serviceDate = format(parseISO(selected.date), "MMMM d, yyyy");
-  const issuedDate = format(parseISO(workspace.demoNow), "MMMM d, yyyy");
+  const issuedDate = format(parseISO(workspace.now), "MMMM d, yyyy");
   const recordsSummary = `${records.length} approved ${
     records.length === 1 ? "record" : "records"
   } · ${formatMinutes(totalMinutes)}`;

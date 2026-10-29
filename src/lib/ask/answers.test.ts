@@ -47,7 +47,7 @@ describe("Ask CivicFlow", () => {
 
   it("flags the credentials that are expired or expiring", () => {
     const answer = question("Whose credentials expire soon?");
-    const today = demoWorkspace.demoNow.slice(0, 10);
+    const today = demoWorkspace.now.slice(0, 10);
 
     expect(answer.matched).toBe(true);
     expect(answer.citations.length).toBeGreaterThan(0);

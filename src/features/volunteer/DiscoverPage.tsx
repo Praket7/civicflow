@@ -107,7 +107,7 @@ export function DiscoverPage() {
         if (!nextShift) return false;
         const days = differenceInCalendarDays(
           parseISO(nextShift.shift.startsAt),
-          parseISO(workspace.demoNow),
+          parseISO(workspace.now),
         );
         if (days < 0 || days > 7) return false;
       }
@@ -134,7 +134,7 @@ export function DiscoverPage() {
       }
       return (scoreById.get(b.id)?.score ?? 0) - (scoreById.get(a.id)?.score ?? 0);
     });
-  }, [opportunities, query, quick, cause, sort, shiftsByOpportunity, scoreById, workspace.demoNow]);
+  }, [opportunities, query, quick, cause, sort, shiftsByOpportunity, scoreById, workspace.now]);
 
   const bestMatch = matches[0];
   const profileScore = bestMatch?.score ?? 0;

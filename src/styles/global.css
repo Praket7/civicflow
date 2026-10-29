@@ -185,17 +185,6 @@ html[data-spacing="comfortable"] dd {
   }
 }
 
-.serif {
-  font-family: var(--font-serif);
-  font-weight: 560;
-  letter-spacing: -0.015em;
-}
-
-.mono {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
 .tabular {
   font-variant-numeric: tabular-nums;
 }

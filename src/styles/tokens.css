@@ -23,7 +23,6 @@
   /* Action: brick red, used for primary controls and links. */
   --color-cobalt: #a64b32;
   --color-cobalt-hover: #8d3d27;
-  --color-cobalt-pressed: #742f1c;
   --color-cobalt-soft: #f0dcd2;
 
   /* Signature + expressive */
@@ -154,7 +153,6 @@ html[data-theme="dark"] {
 
   --color-cobalt: #b45c42;
   --color-cobalt-hover: #c56b4f;
-  --color-cobalt-pressed: #9d4a33;
   --color-cobalt-soft: #3a2720;
 
   --tone-green-soft: #223226;

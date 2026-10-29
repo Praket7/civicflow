@@ -17,6 +17,8 @@ import {
 } from "../../components/ui";
 import { CAUSE_COLORS } from "../../lib/causes";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { reportTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   getAtRiskVolunteers,
@@ -45,6 +47,7 @@ export function RetentionPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Reports" items={reportTabs} />
       <PageHeader
         eyebrow="Insights"
         title="Retention & engagement"

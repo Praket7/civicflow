@@ -29,6 +29,8 @@ jobs:
       - run: pnpm check:copy
       - run: pnpm check:i18n
       - run: pnpm check:generated
+      - run: pnpm check:hardcodes
+      - run: pnpm docs:check
       - run: pnpm test
       - run: pnpm build:web
       - name: Print audit

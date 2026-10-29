@@ -53,7 +53,10 @@ import type {
   RecoverySeat,
   ReplacementRecommendation,
   RetentionSignal,
+  CandidateEvaluation,
+  EvaluatedSlot,
   RosterApplyAssignment,
+  RosterEvaluation,
   RosterOptions,
   RosterPlan,
   RosterPolicy,
@@ -199,6 +202,28 @@ function blankSeed(organization: OrganizationScope | null): SessionSeed {
   };
 }
 
+function revisionKey(): string {
+  return scoped("civicflow.workspace-revision.v1");
+}
+
+function loadRevision(): number {
+  try {
+    const value = Number(localStorage.getItem(revisionKey()));
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function bumpRevision(): void {
+  revision += 1;
+  try {
+    localStorage.setItem(revisionKey(), String(revision));
+  } catch {
+    // The in-memory counter still guards the open session.
+  }
+}
+
 function applyScope(next: OrganizationScope | null): void {
   organization = next;
   if (next && next.id === DEMO_ORGANIZATION_ID) {
@@ -219,6 +244,7 @@ function applyScope(next: OrganizationScope | null): void {
   }
   current = workspace.volunteers.find((volunteer) => volunteer.id === workspace.currentVolunteerId);
   state = loadSnapshot();
+  revision = loadRevision();
 }
 
 const seededAccounts: Account[] = [
@@ -234,7 +260,7 @@ const seededAccounts: Account[] = [
     name: current?.name ?? "Maya Chen",
     email: current?.email ?? "maya.chen@gmail.com",
     role: "volunteer",
-    volunteerId: current?.id ?? "vol-maya",
+    volunteerId: current?.id ?? workspace.currentVolunteerId,
   },
 ];
 
@@ -400,6 +426,7 @@ function loadSnapshot(): SessionSnapshot {
 }
 
 let state = loadSnapshot();
+let revision = loadRevision();
 
 interface StoredBackup {
   meta: BackupSnapshot;
@@ -563,6 +590,7 @@ function listBackupMeta(): BackupSnapshot[] {
 
 function persist(next: SessionSnapshot): SessionSnapshot {
   state = next;
+  bumpRevision();
   try {
     localStorage.setItem(scoped(STORAGE_KEY), JSON.stringify(next));
   } catch {
@@ -1507,6 +1535,60 @@ export const previewRepository: WorkspaceRepository = {
   async autoRoster(shiftIds, options): Promise<RosterPlan> {
     return previewRosterPlan(shiftIds, options, readRosterPolicy());
   },
+  async evaluateRoster(shiftIds, options): Promise<RosterEvaluation> {
+    return previewEvaluation(shiftIds, options);
+  },
+  async applyRosterWeek(expectedRevision, assignments) {
+    if (assignments.length === 0) {
+      throw new Error("Select at least one suggested assignment to apply");
+    }
+    if (expectedRevision !== null && expectedRevision !== revision) {
+      throw new Error(
+        "PLAN_STALE: the roster changed after this plan was generated. Rebuild the plan so nobody is double-booked.",
+      );
+    }
+    let next = state;
+    const events: AuditEvent[] = [];
+    for (const assignment of assignments) {
+      if (assignment.promoteWaitlist) {
+        next = {
+          ...next,
+          waitlist: next.waitlist.map((row) =>
+            row.shiftId === assignment.shiftId &&
+            row.volunteerId === assignment.candidateId &&
+            row.status === "waiting"
+              ? { ...row, status: "promoted" }
+              : row,
+          ),
+        };
+      }
+      next = {
+        ...next,
+        registrations: [
+          ...next.registrations.filter(
+            (row) =>
+              !(row.shiftId === assignment.shiftId && row.volunteerId === assignment.candidateId),
+          ),
+          {
+            shiftId: assignment.shiftId,
+            volunteerId: assignment.candidateId,
+            role: assignment.role,
+            status: "registered",
+          },
+        ],
+      };
+      events.push(
+        audit(
+          assignment.promoteWaitlist ? "waitlist.promote" : "autoroster.apply",
+          "shift",
+          assignment.shiftId,
+          `AutoRoster assigned ${volunteerName(assignment.candidateId)} as ${assignment.role}`,
+          "Applied from an approved AutoRoster plan",
+        ),
+      );
+    }
+    return persist({ ...next, audit: [...events, ...next.audit] });
+  },
   async getRosterPolicy(): Promise<RosterPolicyView> {
     return {
       policy: readRosterPolicy(),
@@ -2027,7 +2109,7 @@ export const previewRepository: WorkspaceRepository = {
         audit(
           "volunteer.profile_update",
           "volunteer",
-          "vol-maya",
+          workspace.currentVolunteerId,
           "Updated skills and availability",
         ),
         ...state.audit,
@@ -2350,8 +2432,13 @@ interface PreviewSeat {
   requiredCredential: string | null;
 }
 
+interface PreviewBlock {
+  start: number;
+  end: number;
+}
+
 interface PreviewLoad {
-  clashAt: Set<string>;
+  blocks: Map<string, PreviewBlock[]>;
   dayCount: Map<string, number>;
   weekCount: Map<string, number>;
 }
@@ -2899,13 +2986,39 @@ function previewReminders(): string[] {
   return due;
 }
 
+/**
+ * The skill and credential a role demands, by the same name rules the Rust
+ * core applies when it seeds requirements. The browser has to agree with the
+ * desktop here, otherwise the preview would show a different shortlist than
+ * the optimizer actually used.
+ */
+function previewRoleRequirement(role: string): { skill: string; credential: string | null } {
+  const lower = role.toLowerCase();
+  if (lower.includes("spanish")) return { skill: "Spanish", credential: null };
+  if (lower.includes("driver") || lower.includes("delivery")) {
+    return { skill: "Driver", credential: "Safe driver clearance" };
+  }
+  if (lower.includes("tutor")) return { skill: "Tutoring", credential: "Tutor certification" };
+  if (lower.includes("food") || lower.includes("pantry") || lower.includes("sort")) {
+    return { skill: "Food handling", credential: "Food safety handler" };
+  }
+  if (lower.includes("garden") || lower.includes("tool")) {
+    return { skill: "Gardening", credential: "Garden tool safety" };
+  }
+  return { skill: "", credential: null };
+}
+
 function previewSeats(shiftIds: string[]): PreviewSeat[] {
   const seats: PreviewSeat[] = [];
   for (const shift of workspace.shifts.filter((row) => shiftIds.includes(row.id))) {
     const opportunity = workspace.opportunities.find((row) => row.id === shift.opportunityId);
+    const live = state.registrations.filter(
+      (row) => row.shiftId === shift.id && row.status === "registered",
+    );
     for (const role of shift.roles) {
-      const keyword = role.name.toLowerCase().split(" ")[0];
-      for (let seat = 0; seat < Math.max(0, role.required - role.filled); seat += 1) {
+      const requirement = previewRoleRequirement(role.name);
+      const filled = live.filter((row) => row.role === role.name).length;
+      for (let seat = 0; seat < Math.max(0, role.required - filled); seat += 1) {
         seats.push({
           slotId: `${shift.id}-${role.name}-${seat + 1}`,
           shiftId: shift.id,
@@ -2916,8 +3029,8 @@ function previewSeats(shiftIds: string[]): PreviewSeat[] {
           startsAt: shift.startsAt,
           endsAt: shift.endsAt,
           dayKey: previewDayKey(shift.startsAt),
-          requiredSkill: keyword.charAt(0).toUpperCase() + keyword.slice(1),
-          requiredCredential: null,
+          requiredSkill: requirement.skill,
+          requiredCredential: requirement.credential,
         });
       }
     }
@@ -2926,15 +3039,49 @@ function previewSeats(shiftIds: string[]): PreviewSeat[] {
 }
 
 function emptyLoad(): PreviewLoad {
-  return { clashAt: new Set(), dayCount: new Map(), weekCount: new Map() };
+  return { blocks: new Map(), dayCount: new Map(), weekCount: new Map() };
 }
 
 function cloneLoad(load: PreviewLoad): PreviewLoad {
   return {
-    clashAt: new Set(load.clashAt),
+    blocks: new Map(
+      [...load.blocks].map(([volunteerId, blocks]) => [
+        volunteerId,
+        blocks.map((block) => ({ ...block })),
+      ]),
+    ),
     dayCount: new Map(load.dayCount),
     weekCount: new Map(load.weekCount),
   };
+}
+
+/**
+ * Everything the roster already holds: blocks for overlap checks, plus the
+ * day and week counts the limits read. Building it once keeps the plan and the
+ * candidate browser on the same starting point.
+ */
+function previewBaseLoad(): PreviewLoad {
+  const load = emptyLoad();
+  const now = new Date(workspace.now).getTime();
+  const horizon = now + 7 * 86_400_000;
+  for (const registration of state.registrations) {
+    if (registration.status !== "registered") continue;
+    const shift = workspace.shifts.find((row) => row.id === registration.shiftId);
+    if (!shift) continue;
+    const start = new Date(shift.startsAt).getTime();
+    const blocks = load.blocks.get(registration.volunteerId) ?? [];
+    blocks.push({ start, end: new Date(shift.endsAt).getTime() });
+    load.blocks.set(registration.volunteerId, blocks);
+    if (start < now || start > horizon) continue;
+    const day = previewDayKey(shift.startsAt);
+    const dayKey = `${registration.volunteerId}:${day}`;
+    load.dayCount.set(dayKey, (load.dayCount.get(dayKey) ?? 0) + 1);
+    load.weekCount.set(
+      registration.volunteerId,
+      (load.weekCount.get(registration.volunteerId) ?? 0) + 1,
+    );
+  }
+  return load;
 }
 
 function previewAvailability(volunteer: Volunteer, seat: PreviewSeat): boolean {
@@ -2951,14 +3098,49 @@ function previewChecks(
   load: PreviewLoad,
 ): ConstraintCheck[] {
   const checks: ConstraintCheck[] = [];
-  const skillMatch = volunteer.skills.some((skill) =>
-    skill.toLowerCase().includes(seat.requiredSkill.toLowerCase()),
+  const registered = state.registrations.some(
+    (row) =>
+      row.shiftId === seat.shiftId &&
+      row.volunteerId === volunteer.id &&
+      row.status === "registered",
   );
   checks.push({
-    name: "Required skill",
-    passed: skillMatch,
-    detail: skillMatch ? `${seat.requiredSkill} on the profile` : `Needs ${seat.requiredSkill}`,
+    name: "Already on this shift",
+    passed: !registered,
+    detail: registered
+      ? "This volunteer is already registered for the shift"
+      : "Not registered yet",
   });
+  if (seat.requiredSkill) {
+    const skillMatch = volunteer.skills.some((skill) =>
+      skill.toLowerCase().includes(seat.requiredSkill.toLowerCase()),
+    );
+    checks.push({
+      name: "Required skill",
+      passed: skillMatch,
+      detail: skillMatch ? `${seat.requiredSkill} on the profile` : `Needs ${seat.requiredSkill}`,
+    });
+  }
+
+  if (seat.requiredCredential) {
+    const on = seat.startsAt.slice(0, 10);
+    const held = state.credentials.filter(
+      (row) =>
+        row.volunteerId === volunteer.id &&
+        row.name.toLowerCase() === seat.requiredCredential!.toLowerCase(),
+    );
+    const current = held.some((row) => row.validThrough.slice(0, 10) >= on);
+    const expired = !current && held.length > 0;
+    checks.push({
+      name: "Required credential",
+      passed: current,
+      detail: current
+        ? `${seat.requiredCredential} current`
+        : expired
+          ? `${seat.requiredCredential} expired`
+          : `No ${seat.requiredCredential} on record`,
+    });
+  }
 
   const available = previewAvailability(volunteer, seat);
   checks.push({
@@ -2970,7 +3152,11 @@ function previewChecks(
   });
 
   if (options.blockConflicts) {
-    const clash = load.clashAt.has(`${volunteer.id}:${seat.startsAt}`);
+    const start = new Date(seat.startsAt).getTime();
+    const end = new Date(seat.endsAt).getTime();
+    const clash = (load.blocks.get(volunteer.id) ?? []).some(
+      (block) => block.start < end && block.end > start,
+    );
     checks.push({
       name: "No overlapping shift",
       passed: !clash,
@@ -3010,10 +3196,18 @@ function previewScore(
   policy: RosterPolicy,
   load: PreviewLoad,
 ): { components: ScoreComponent[]; total: number } {
-  const skillMatches = volunteer.skills.some((skill) =>
-    skill.toLowerCase().includes(seat.requiredSkill.toLowerCase()),
-  );
-  const skill = skillMatches ? policy.skillWeight : 0;
+  const skillMatches =
+    !seat.requiredSkill ||
+    volunteer.skills.some((skill) =>
+      skill.toLowerCase().includes(seat.requiredSkill.toLowerCase()),
+    );
+  // A role with no requirement fits anyone eligible, slightly less precisely
+  // than a matched requirement, which is how the solver scores it too.
+  const skill = seat.requiredSkill
+    ? skillMatches
+      ? policy.skillWeight
+      : 0
+    : previewShare(policy.skillWeight, 6, 7);
   const availability = 25;
   const interest = volunteer.causes.includes(seat.cause as Volunteer["causes"][number])
     ? policy.interestWeight
@@ -3072,7 +3266,11 @@ function previewBreakdown(components: ScoreComponent[]) {
 }
 
 function previewReason(choice: PreviewChoice): string {
-  const parts: string[] = [`matches the required ${choice.seat.requiredSkill} skill`];
+  const parts: string[] = [
+    choice.seat.requiredSkill
+      ? `matches the required ${choice.seat.requiredSkill} skill`
+      : "needs no special skill",
+  ];
   if (choice.volunteer.causes.includes(choice.seat.cause as Volunteer["causes"][number])) {
     parts.push(`is interested in ${choice.seat.cause}`);
   }
@@ -3095,7 +3293,7 @@ function previewPlanShape(
 ): PreviewPlanShape {
   const seats = previewSeats(shiftIds);
   const pool = workspace.volunteers.filter((volunteer) => volunteer.status === "active");
-  const load = emptyLoad();
+  const load = previewBaseLoad();
   const choices: PreviewChoice[] = [];
   const unfilled: { seat: PreviewSeat; reason: string }[] = [];
   const beforeSeat = new Map<string, PreviewLoad>();
@@ -3128,7 +3326,12 @@ function previewPlanShape(
     }
 
     choices.push(best);
-    load.clashAt.add(`${best.volunteer.id}:${seat.startsAt}`);
+    const blocks = load.blocks.get(best.volunteer.id) ?? [];
+    blocks.push({
+      start: new Date(seat.startsAt).getTime(),
+      end: new Date(seat.endsAt).getTime(),
+    });
+    load.blocks.set(best.volunteer.id, blocks);
     load.dayCount.set(
       `${best.volunteer.id}:${seat.dayKey}`,
       (load.dayCount.get(`${best.volunteer.id}:${seat.dayKey}`) ?? 0) + 1,
@@ -3303,6 +3506,100 @@ function previewRosterPlan(
       .length,
     deterministicSeed: 20260415,
     policyVersion: policy.version,
+    generatedAt: workspace.now,
+    revision,
+  };
+}
+
+function previewAvailabilityState(
+  volunteer: Volunteer,
+  seat: PreviewSeat,
+): CandidateEvaluation["availability"] {
+  if (volunteer.availability.length === 0) return "unknown";
+  const exact = volunteer.availability.some(
+    (slot) => slot.day === seat.dayKey && slot.period === previewPeriod(seat.startsAt),
+  );
+  if (exact) return "available";
+  return volunteer.availability.some((slot) => slot.day === seat.dayKey)
+    ? "partial"
+    : "unavailable";
+}
+
+/**
+ * The preview backend's answer to the same read model the Rust engine returns.
+ * The screen reads it the same way in both modes, so no scoring lives in a
+ * component.
+ */
+function previewEvaluation(shiftIds: string[], options: RosterOptions): RosterEvaluation {
+  const policy = readRosterPolicy();
+  const plan = previewRosterPlan(shiftIds, options, policy);
+  const seats = previewSeats(shiftIds);
+  const baseLoad = previewBaseLoad();
+
+  const candidates: CandidateEvaluation[] = workspace.volunteers
+    .filter((volunteer) => volunteer.status === "active")
+    .map((volunteer) => {
+      const slots: EvaluatedSlot[] = seats.map((seat) => {
+        const explanation = previewExplanation(volunteer, seat, options, policy, baseLoad, false);
+        return {
+          slotId: seat.slotId,
+          shiftId: seat.shiftId,
+          shiftTitle: seat.shiftTitle,
+          role: seat.role,
+          startsAt: seat.startsAt,
+          endsAt: seat.endsAt,
+          eligible: explanation.eligible,
+          selected: plan.assignments.some(
+            (assignment) =>
+              assignment.candidateId === volunteer.id &&
+              assignment.explanation.slotId === seat.slotId,
+          ),
+          score: explanation.totalScore,
+          checks: explanation.checks,
+          components: explanation.components,
+          selectionReason: explanation.selectionReason,
+        };
+      });
+      const eligibleRoles = [
+        ...new Set(slots.filter((slot) => slot.eligible).map((slot) => slot.role)),
+      ].sort();
+      const bestScore = slots
+        .filter((slot) => slot.eligible)
+        .map((slot) => slot.score ?? 0)
+        .reduce<number | null>(
+          (best, score) => (best === null || score > best ? score : best),
+          null,
+        );
+      const conflict = slots
+        .flatMap((slot) => slot.checks)
+        .find((check) => check.name === "No overlapping shift" && !check.passed)?.detail;
+      const eligibleIndex = slots.findIndex((slot) => slot.eligible);
+      const availabilitySeat = eligibleIndex >= 0 ? seats[eligibleIndex] : seats[0];
+      return {
+        candidateId: volunteer.id,
+        candidateName: volunteer.name,
+        candidateInitials: volunteer.initials,
+        eligibleRoles,
+        bestScore,
+        availability: availabilitySeat
+          ? previewAvailabilityState(volunteer, availabilitySeat)
+          : "unknown",
+        conflict: conflict ?? null,
+        weeklyShifts: baseLoad.weekCount.get(volunteer.id) ?? 0,
+        weeklyMinutes: 0,
+        waitlistedShiftIds: state.waitlist
+          .filter((row) => row.volunteerId === volunteer.id && row.status === "waiting")
+          .map((row) => row.shiftId),
+        slots,
+      };
+    });
+
+  return {
+    generatedAt: workspace.now,
+    policyVersion: policy.version,
+    revision,
+    plan,
+    candidates,
   };
 }
 

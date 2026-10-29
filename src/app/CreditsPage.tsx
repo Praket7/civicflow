@@ -91,10 +91,9 @@ export function CreditsPage() {
         </h2>
         <p className={styles.note}>
           Geist, Geist Mono, and Source Serif 4 are bundled under the SIL Open Font License 1.1.
-          React, React Router, TanStack Query, Recharts, date-fns, Zod, React Hook Form, Tauri,
-          rusqlite, chrono, serde, uuid, and Lucide are used under their respective MIT, Apache-2.0,
-          ISC, or public-domain terms. The full list lives in{" "}
-          <code>docs/OPEN_SOURCE_CREDITS.md</code>.
+          React, React Router, TanStack Query, date-fns, Lucide, Tauri, rusqlite, chrono, serde,
+          uuid, and thiserror are used under their respective MIT, Apache-2.0, ISC, or public-domain
+          terms. The full list lives in <code>README.md</code>.
         </p>
       </section>
 

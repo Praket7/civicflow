@@ -7,6 +7,8 @@ import { CAUSE_COLORS } from "../../lib/causes";
 import { t } from "../../lib/i18n";
 import { isDemoOrganization } from "../../lib/workspace/organizationWorkspace";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { reportTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   formatHours,
@@ -142,6 +144,7 @@ export function ImpactAnalyticsPage() {
 
   return (
     <Page width="wide" className={styles.page}>
+      <WorkAreaTabs label="Reports" items={reportTabs} />
       <PageHeader
         eyebrow="Reporting"
         title="Impact"

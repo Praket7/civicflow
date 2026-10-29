@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -9,7 +9,7 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { addDays, format, parseISO } from "date-fns";
 import { Link } from "react-router-dom";
 import {
   Avatar,
@@ -21,18 +21,22 @@ import {
   Toggle,
 } from "../../components/ui";
 import { t } from "../../lib/i18n";
-import type { CandidateAnswer, RosterPlan, Shift, Volunteer } from "../../types/domain";
+import type {
+  CandidateAnswer,
+  RosterEvaluation,
+  RosterPlan,
+  RosterPolicyView,
+  Volunteer,
+} from "../../types/domain";
 import { useWorkspace } from "../../lib/workspace/session";
 import styles from "./AutoRosterPage.module.css";
 import {
-  fillPercent,
   formatDate,
   getRoster,
-  getShiftRows,
   getUpcomingShiftRows,
-  getWaitlist,
   timeRange,
 } from "../../lib/workspace/selectors";
+import type { ShiftRow } from "../../lib/workspace/selectors";
 
 interface RoleGap {
   name: string;
@@ -57,10 +61,22 @@ interface Candidate {
   waitlisted: boolean;
 }
 
+interface ShiftPlan {
+  row: ShiftRow;
+  gaps: RoleGap[];
+  required: number;
+  filled: number;
+  rosterCount: number;
+  filledByRole: Map<string, number>;
+}
+
 interface PlanRow {
+  shiftId: string;
+  shiftTitle: string;
+  startsAt: string;
   gap: RoleGap;
-  candidate: Candidate | null;
-  backend: RosterPlan["assignments"][number] | null;
+  candidate: Candidate;
+  backend: RosterPlan["assignments"][number];
 }
 
 interface EngineOptions {
@@ -85,30 +101,7 @@ const ROLE_COLORS = [
   "var(--color-violet)",
 ];
 
-function roleEligible(volunteer: Volunteer, roleName: string): boolean {
-  const role = roleName.toLowerCase();
-  if (role.includes("driver")) return volunteer.skills.includes("Driver");
-  if (role.includes("spanish")) {
-    return volunteer.skills.includes("Spanish") || volunteer.languages.includes("Spanish");
-  }
-  if (role.includes("food")) return volunteer.skills.includes("Food handling");
-  if (role.includes("tutor")) {
-    return volunteer.skills.some((skill) => ["Tutoring", "Math tutor"].includes(skill));
-  }
-  if (role.includes("garden")) return volunteer.skills.includes("Gardening");
-  return volunteer.skills.some((skill) => role.includes(skill.toLowerCase()));
-}
-
-function dayKeyFor(shift: Shift): string {
-  return format(parseISO(shift.startsAt), "EEE").toLowerCase();
-}
-
-function periodFor(shift: Shift): string {
-  const hour = Number(format(parseISO(shift.startsAt), "H"));
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  return "evening";
-}
+const AVAILABILITY_POINTS = 25;
 
 function availabilityLabel(state: AvailabilityState): string {
   if (state === "available") return "Available for this shift";
@@ -220,17 +213,31 @@ function PlanEvidence({
 
 export function AutoRosterPage() {
   const { workspace, session, actions } = useWorkspace();
-  const shiftOptions = useMemo(
-    () =>
-      getUpcomingShiftRows(workspace).filter((row) =>
-        row.shift.roles.some((role) => role.filled < role.required),
-      ),
-    [workspace],
+  const [scope, setScope] = useState<"week" | "shift">("week");
+  const upcoming = useMemo(() => {
+    const rows = getUpcomingShiftRows(workspace);
+    return rows.filter((row) => row.shift.roles.some((role) => role.filled < role.required));
+  }, [workspace]);
+  const weekRows = useMemo(() => {
+    if (upcoming.length === 0) return [];
+    const end = addDays(parseISO(workspace.now), 7);
+    const next = upcoming.filter((row) => parseISO(row.shift.startsAt) <= end);
+    return next.length > 0 ? next : upcoming.slice(0, 4);
+  }, [upcoming, workspace.now]);
+  const [shiftId, setShiftId] = useState(
+    () => weekRows[0]?.shift.id ?? upcoming[0]?.shift.id ?? "",
   );
+  // A shift may stop having a gap while the page is open. Fall back to the
+  // first at-risk shift rather than leaving an empty single-shift view behind.
+  const selectedShiftId = upcoming.some((row) => row.shift.id === shiftId)
+    ? shiftId
+    : (weekRows[0]?.shift.id ?? upcoming[0]?.shift.id ?? "");
+  const activeRows =
+    scope === "week" ? weekRows : upcoming.filter((row) => row.shift.id === selectedShiftId);
+  const activeIdsKey = activeRows.map((row) => row.shift.id).join("|");
+  const shiftIds = useMemo(() => (activeIdsKey ? activeIdsKey.split("|") : []), [activeIdsKey]);
+  const shiftKey = shiftIds.join("|");
 
-  // The first shift with an open required seat is the one a coordinator most
-  // likely came to fix. Nothing here names a fixture.
-  const [shiftId, setShiftId] = useState(() => shiftOptions[0]?.shift.id ?? "");
   const [query, setQuery] = useState("");
   const [skillFilter, setSkillFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
@@ -238,8 +245,15 @@ export function AutoRosterPage() {
   const [showAll, setShowAll] = useState(false);
   const [options, setOptions] = useState<EngineOptions>(DEFAULT_OPTIONS);
   const [plan, setPlan] = useState<RosterPlan | null>(null);
+  // The authoritative evaluation behind the candidate browser. Fetched on load
+  // so the list is ready before a plan exists.
+  const [evaluation, setEvaluation] = useState<RosterEvaluation | null>(null);
+  const [policyView, setPolicyView] = useState<RosterPolicyView | null>(null);
   const [planning, setPlanning] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [appliedCount, setAppliedCount] = useState(0);
+  const [stale, setStale] = useState(false);
   const [error, setError] = useState("");
   // Answers to "why not that one?", kept per seat so the plan row shows the
   // explanation next to the decision it is about.
@@ -251,140 +265,115 @@ export function AutoRosterPage() {
   const [asking, setAsking] = useState("");
   const [answerError, setAnswerError] = useState("");
 
-  const selected = shiftOptions.find((row) => row.shift.id === shiftId) ?? shiftOptions[0];
-  const shift = selected?.shift;
-  const opportunity = selected?.opportunity;
+  useEffect(() => {
+    if (!shiftKey) return;
+    let active = true;
+    void actions
+      .evaluateRoster(shiftKey.split("|"), {
+        preferSpanish: options.preferSpanish,
+        includeWaitlist: options.includeWaitlist,
+        blockConflicts: options.blockConflicts,
+        capWeekly: options.capWeekly,
+      })
+      .then((result) => {
+        if (active) setEvaluation(result);
+      })
+      .catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught));
+      });
+    return () => {
+      active = false;
+    };
+  }, [actions, options, shiftKey]);
+
+  useEffect(() => {
+    let active = true;
+    actions
+      .getRosterPolicy()
+      .then((next) => {
+        if (active) setPolicyView(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [actions]);
+
+  const shiftPlans = useMemo<ShiftPlan[]>(() => {
+    return activeRows.map((row) => {
+      // The roster is the source of truth. A role count cached on the shift can
+      // lag behind a plan that was just applied.
+      const roster = getRoster(row.shift.id, session, workspace);
+      const filledByRole = new Map<string, number>();
+      for (const rosterRow of roster) {
+        filledByRole.set(rosterRow.role, (filledByRole.get(rosterRow.role) ?? 0) + 1);
+      }
+      const gaps = row.shift.roles
+        .map((role) => {
+          const filled = filledByRole.get(role.name) ?? 0;
+          return {
+            name: role.name,
+            required: role.required,
+            filled,
+            missing: Math.max(0, role.required - filled),
+          };
+        })
+        .filter((role) => role.missing > 0);
+      return {
+        row,
+        gaps,
+        required: row.shift.roles.reduce((total, role) => total + role.required, 0),
+        filled: row.shift.roles.reduce(
+          (total, role) => total + (filledByRole.get(role.name) ?? 0),
+          0,
+        ),
+        rosterCount: roster.length,
+        filledByRole,
+      };
+    });
+  }, [activeRows, session, workspace]);
 
   const data = useMemo(() => {
-    if (!shift || !opportunity) {
-      return {
-        gaps: [] as RoleGap[],
-        candidates: [] as Candidate[],
-        availableCount: 0,
-        rosterCount: 0,
-      };
-    }
-
-    const gaps: RoleGap[] = shift.roles
-      .filter((role) => role.filled < role.required)
-      .map((role) => ({
-        name: role.name,
-        required: role.required,
-        filled: role.filled,
-        missing: role.required - role.filled,
-      }));
-
-    const roster = getRoster(shift.id, session, workspace);
-    const rosterIds = new Set(roster.map((row) => row.volunteer.id));
-    const allRows = getShiftRows(workspace);
-    const rosters = new Map(
-      allRows.map((row) => [row.shift.id, getRoster(row.shift.id, session, workspace)]),
-    );
-    const waitlist = shift.waitlisted > 0 ? getWaitlist(shift.id, session, workspace) : [];
-    const waitlistIds = new Set(waitlist.map((row) => row.volunteer.id));
-
-    const base = workspace.volunteers.filter((volunteer) => !rosterIds.has(volunteer.id));
-    const pool = [...base];
-    if (options.includeWaitlist) {
-      waitlist.forEach((row) => {
-        if (!pool.some((volunteer) => volunteer.id === row.volunteer.id)) pool.push(row.volunteer);
-      });
-    }
-
-    const day = dayKeyFor(shift);
-    const period = periodFor(shift);
-    const shiftStart = parseISO(shift.startsAt).getTime();
-    const shiftEnd = parseISO(shift.endsAt).getTime();
-    const now = parseISO(workspace.now).getTime();
-
-    const candidates = pool
-      .map((volunteer): Candidate | null => {
-        const eligibleRoles = gaps
-          .filter((gap) => roleEligible(volunteer, gap.name))
-          .map((gap) => gap.name);
-        if (eligibleRoles.length === 0) return null;
-
-        const daySlots = volunteer.availability.filter((slot) => slot.day === day);
-        const exactSlot = daySlots.some((slot) => slot.period === period);
-        const availability: AvailabilityState =
-          exactSlot && daySlots.length > 0
-            ? "available"
-            : daySlots.length > 0
-              ? "partial"
-              : volunteer.availability.length === 0
-                ? "unknown"
-                : "unavailable";
-        const availabilityScore = { available: 20, partial: 12, unknown: 10, unavailable: 0 }[
-          availability
-        ];
-
-        const weeklyShifts = allRows.filter((row) => {
-          if (row.shift.id === shift.id) return false;
-          const start = parseISO(row.shift.startsAt).getTime();
-          if (start < now || start > now + 7 * 86_400_000) return false;
-          return rosters.get(row.shift.id)?.some((entry) => entry.volunteer.id === volunteer.id);
-        }).length;
-
-        // Time overlap, not the calendar day: a volunteer booked until 10am is
-        // free at 2pm, and a shift that runs past midnight still conflicts.
-        const conflictRow = allRows.find((row) => {
-          if (row.shift.id === shift.id) return false;
-          const start = parseISO(row.shift.startsAt).getTime();
-          const end = parseISO(row.shift.endsAt).getTime();
-          const overlaps = start < shiftEnd && end > shiftStart;
-          return (
-            overlaps &&
-            rosters.get(row.shift.id)?.some((entry) => entry.volunteer.id === volunteer.id)
-          );
-        });
-
-        const spanish = volunteer.languages.includes("Spanish");
-        const interest = volunteer.causes.includes(opportunity.cause) ? 15 : 0;
-        const reliability = Math.round((volunteer.attendanceRate / 100) * 15);
-        const scores: Record<string, number> = {};
-        for (const role of eligibleRoles) {
-          const language =
-            role.toLowerCase().includes("spanish") || (options.preferSpanish && spanish) ? 10 : 0;
-          scores[role] = Math.min(100, 40 + availabilityScore + interest + reliability + language);
-        }
-        const primaryRole = eligibleRoles.reduce((best, role) =>
-          (scores[role] ?? 0) > (scores[best] ?? 0) ? role : best,
+    if (!evaluation) return { candidates: [] as Candidate[] };
+    const active = new Set(shiftIds);
+    const candidates = evaluation.candidates
+      .map((row): Candidate | null => {
+        const volunteer = workspace.volunteers.find((entry) => entry.id === row.candidateId);
+        if (!volunteer) return null;
+        const open = row.slots.filter((slot) => active.has(slot.shiftId) && slot.eligible);
+        if (open.length === 0) return null;
+        const best = open.reduce((left, right) =>
+          (right.score ?? 0) > (left.score ?? 0) ? right : left,
         );
-        const score = scores[primaryRole] ?? 0;
-        const language = Math.max(0, score - (40 + availabilityScore + interest + reliability));
-
+        const scores: Record<string, number> = {};
+        for (const slot of open) {
+          scores[slot.role] = Math.max(scores[slot.role] ?? 0, slot.score ?? 0);
+        }
         return {
           volunteer,
-          primaryRole,
-          eligibleRoles,
-          score,
+          primaryRole: best.role,
+          eligibleRoles: row.eligibleRoles,
+          score: row.bestScore ?? best.score ?? 0,
           scores,
-          breakdown: [
-            { label: "Skill and credential fit", value: 40, max: 40 },
-            { label: "Availability fit", value: availabilityScore, max: 20 },
-            { label: "Interest in this cause", value: interest, max: 15 },
-            { label: "Attendance reliability", value: reliability, max: 15 },
-            { label: "Language preference", value: Math.max(0, language), max: 10 },
-          ],
+          breakdown: best.components.map((component) => ({
+            label: component.label,
+            value: component.awarded,
+            max: component.maximum,
+          })),
           reasons: [
-            availabilityLabel(availability),
-            volunteer.causes.includes(opportunity.cause)
-              ? `${opportunity.cause === "food" ? "Food security" : opportunity.cause} interest`
-              : `${volunteer.skills[0] ?? "General"} skill fit`,
+            best.selectionReason,
+            availabilityLabel(row.availability),
             `${volunteer.attendanceRate}% attendance`,
-          ].slice(0, 3),
-          availability,
-          weeklyShifts,
-          conflict: conflictRow
-            ? `${conflictRow.opportunity.title} · ${timeRange(conflictRow.shift.startsAt, conflictRow.shift.endsAt)}`
-            : null,
-          waitlisted: waitlistIds.has(volunteer.id),
+          ],
+          availability: row.availability,
+          weeklyShifts: row.weeklyShifts,
+          conflict: row.conflict,
+          waitlisted: row.waitlistedShiftIds.some((id) => active.has(id)),
         };
       })
-      .filter((candidate): candidate is Candidate => candidate !== null);
-
-    return { gaps, candidates, availableCount: base.length, rosterCount: roster.length };
-  }, [shift, opportunity, session, workspace, options.includeWaitlist, options.preferSpanish]);
+      .filter((row): row is Candidate => row !== null);
+    return { candidates };
+  }, [evaluation, shiftIds, workspace.volunteers]);
 
   const filteredCandidates = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -426,46 +415,34 @@ export function AutoRosterPage() {
   );
 
   // The optimizer lives in Rust. This screen renders the returned plan and
-  // never invents an assignment of its own; the candidate list is only the
-  // explainable pool that feeds the request.
+  // never invents an assignment of its own.
   const activePlan = useMemo<PlanRow[]>(() => {
     if (!plan) return [];
-    return plan.assignments.map((assignment) => {
-      const gap = data.gaps.find((row) => row.name === assignment.role) ?? {
+    return plan.assignments.flatMap((assignment) => {
+      const shiftPlan = shiftPlans.find((row) => row.row.shift.id === assignment.shiftId);
+      if (!shiftPlan) return [];
+      const gap = shiftPlan.gaps.find((row) => row.name === assignment.role) ?? {
         name: assignment.role,
         required: 1,
         filled: 0,
         missing: 1,
       };
-      const known = data.candidates.find(
-        (candidate) => candidate.volunteer.id === assignment.candidateId,
-      );
-      const candidate: Candidate = known ?? {
-        volunteer:
-          workspace.volunteers.find((row) => row.id === assignment.candidateId) ??
-          workspace.volunteers[0],
-        primaryRole: assignment.role,
-        eligibleRoles: assignment.eligibleRoles,
-        score: assignment.score,
-        scores: { [assignment.role]: assignment.score },
-        breakdown: [
-          { label: "Skill and credential fit", value: assignment.breakdown.skill, max: 40 },
-          { label: "Availability fit", value: assignment.breakdown.availability, max: 20 },
-          { label: "Interest in this cause", value: assignment.breakdown.interest, max: 15 },
-          { label: "Attendance reliability", value: assignment.breakdown.reliability, max: 15 },
-          { label: "Language and fairness", value: assignment.breakdown.fairness, max: 20 },
-        ],
-        reasons: assignment.reasons,
-        availability: "available",
-        weeklyShifts: 0,
-        conflict: null,
-        waitlisted: assignment.promoteWaitlist,
-      };
-      return { gap, candidate, backend: assignment };
+      const candidate = data.candidates.find((row) => row.volunteer.id === assignment.candidateId);
+      if (!candidate) return [];
+      return [
+        {
+          shiftId: assignment.shiftId,
+          shiftTitle: assignment.shiftTitle,
+          startsAt: assignment.startsAt,
+          gap,
+          candidate,
+          backend: assignment,
+        },
+      ];
     });
-  }, [data.candidates, data.gaps, plan, workspace.volunteers]);
+  }, [data.candidates, plan, shiftPlans]);
 
-  if (!shift || !opportunity) {
+  if (!selectedShiftId || activeRows.length === 0) {
     return (
       <div className={styles.page}>
         <EmptyState
@@ -477,27 +454,53 @@ export function AutoRosterPage() {
     );
   }
 
-  const requiredSlots = shift.roles.reduce((total, role) => total + role.required, 0);
-  const filledSlots = shift.roles.reduce((total, role) => total + role.filled, 0);
+  const requiredSlots = shiftPlans.reduce((total, row) => total + row.required, 0);
+  const filledSlots = shiftPlans.reduce((total, row) => total + row.filled, 0);
+  const rosterTotal = shiftPlans.reduce((total, row) => total + row.rosterCount, 0);
+  const capacityTotal = shiftPlans.reduce((total, row) => total + row.row.shift.capacity, 0);
   const beforeRolePercent =
     requiredSlots === 0 ? 100 : Math.round((filledSlots / requiredSlots) * 100);
-  const beforeSeatPercent = fillPercent(shift);
-  const plannedCandidates = activePlan.filter((assignment) => assignment.candidate);
+  const beforeSeatPercent =
+    capacityTotal === 0 ? 0 : Math.round((rosterTotal / capacityTotal) * 100);
+  const plannedCandidates = activePlan;
+  const projected = applied ? 0 : plannedCandidates.length;
   const afterRolePercent =
     requiredSlots === 0
       ? 100
-      : Math.round(((filledSlots + plannedCandidates.length) / requiredSlots) * 100);
-  const afterSeats = Math.min(shift.capacity, shift.confirmed + plannedCandidates.length);
-  const afterSeatPercent =
-    shift.capacity === 0 ? 0 : Math.round((afterSeats / shift.capacity) * 100);
+      : Math.min(100, Math.round(((filledSlots + projected) / requiredSlots) * 100));
+  const afterSeats = Math.min(capacityTotal, rosterTotal + projected);
+  const afterSeatPercent = capacityTotal === 0 ? 0 : Math.round((afterSeats / capacityTotal) * 100);
   const excludedCount = data.candidates.length - eligibleForPlan.length;
   const coverageGain = Math.max(0, afterRolePercent - beforeRolePercent);
+  const distinctPeople = new Set(plannedCandidates.map((row) => row.candidate.volunteer.id)).size;
+  const unfilledCount = plan?.unfilled.length ?? 0;
+  const conflictCount = plannedCandidates.filter((row) =>
+    row.backend.explanation.checks.some(
+      (check) => check.name === "No overlapping shift" && !check.passed,
+    ),
+  ).length;
+  const credentialCount = plannedCandidates.filter((row) =>
+    row.backend.explanation.checks.some(
+      (check) => check.name === "Required credential" && !check.passed,
+    ),
+  ).length;
+  const scopeStart = activeRows[0]?.shift.startsAt;
+  const scopeEnd = activeRows[activeRows.length - 1]?.shift.endsAt;
+  const planGroups = activeRows
+    .map((row) => ({
+      row,
+      rows: plannedCandidates.filter((assignment) => assignment.shiftId === row.shift.id),
+    }))
+    .filter((group) => group.rows.length > 0);
 
   function invalidatePlan() {
     setPlan(null);
     setApplied(false);
+    setAppliedCount(0);
+    setStale(false);
     setAnswer(null);
     setAnswerError("");
+    setError("");
   }
 
   /**
@@ -506,12 +509,12 @@ export function AutoRosterPage() {
    * forcing them into the seat would do to the rest of the plan.
    */
   async function askWhyNot(slotId: string, candidateId: string, candidateName: string) {
-    if (!shift) return;
+    if (!shiftKey) return;
     setAsking(candidateId);
     setAnswerError("");
     try {
       const result = await actions.explainRosterChoice(
-        [shift.id],
+        shiftKey.split("|"),
         {
           preferSpanish: options.preferSpanish,
           includeWaitlist: options.includeWaitlist,
@@ -547,15 +550,18 @@ export function AutoRosterPage() {
   async function generatePlan() {
     setPlanning(true);
     setError("");
+    setStale(false);
     try {
-      const result = await actions.autoRoster([shift.id], {
+      const result = await actions.evaluateRoster(shiftKey.split("|"), {
         preferSpanish: options.preferSpanish,
         includeWaitlist: options.includeWaitlist,
         blockConflicts: options.blockConflicts,
         capWeekly: options.capWeekly,
       });
-      setPlan(result);
+      setEvaluation(result);
+      setPlan(result.plan);
       setApplied(false);
+      setAppliedCount(0);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -564,28 +570,62 @@ export function AutoRosterPage() {
   }
 
   async function applyPlan() {
-    if (applied) return;
+    if (applied || applying || !plan) return;
+    setApplying(true);
+    setError("");
     try {
-      const planned = activePlan.filter((assignment) => assignment.candidate);
-      await actions.applyRoster(
-        shift.id,
-        planned.map((assignment) => ({
-          candidateId: assignment.candidate!.volunteer.id,
-          role: assignment.gap.name,
-          promoteWaitlist: assignment.backend?.promoteWaitlist ?? false,
-        })),
-      );
+      const assignments = activePlan.map((assignment) => ({
+        shiftId: assignment.shiftId,
+        candidateId: assignment.candidate.volunteer.id,
+        role: assignment.gap.name,
+        promoteWaitlist: assignment.backend.promoteWaitlist,
+      }));
+      await actions.applyRosterWeek(plan.revision, assignments);
+      // Re-read the seat evaluation after the write so the candidate browser,
+      // gaps, and roster count all describe the roster that now exists.
+      const refreshed = await actions.evaluateRoster(shiftKey.split("|"), {
+        preferSpanish: options.preferSpanish,
+        includeWaitlist: options.includeWaitlist,
+        blockConflicts: options.blockConflicts,
+        capWeekly: options.capWeekly,
+      });
+      setEvaluation(refreshed);
+      setAppliedCount(assignments.length);
       setApplied(true);
+      setPlan(null);
+      setAnswer(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      if (/PLAN_STALE|roster changed after this plan/i.test(message)) {
+        setStale(true);
+        setError(
+          "The roster changed after this plan was generated. Rebuild it so nobody is double-booked.",
+        );
+      } else {
+        setError(message);
+      }
+    } finally {
+      setApplying(false);
     }
   }
+
+  const weights = policyView?.policy;
+  const weightRows = weights
+    ? [
+        { label: "Skill and credential fit", value: weights.skillWeight },
+        { label: "Availability", value: AVAILABILITY_POINTS },
+        { label: "Cause interest", value: weights.interestWeight },
+        { label: "Language preference", value: weights.languageWeight },
+        { label: "Workload fairness", value: weights.fairnessWeight },
+        { label: "Attendance reliability", value: weights.reliabilityWeight },
+      ]
+    : [];
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
         <nav className={styles.crumb} aria-label="Breadcrumb">
-          <Link to="/coordinator/coverage">Coverage</Link>
+          <Link to="/coordinator/mission-control">Home</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">AutoRoster</span>
         </nav>
@@ -593,8 +633,8 @@ export function AutoRosterPage() {
           <div className={styles.titleCopy}>
             <h1 className={styles.title}>AutoRoster</h1>
             <p className={styles.lede}>
-              Fill the open roles on this shift from people already on your books. The optimizer
-              weighs skills, availability, clashes, and how often someone turns up.
+              Staff the open roles across the next seven days from people already on your books. The
+              optimizer weighs skills, availability, clashes, and how often someone turns up.
             </p>
           </div>
           <div className={styles.headerActions}>
@@ -607,48 +647,96 @@ export function AutoRosterPage() {
               {t(planning ? "Working…" : "Run optimizer")}
             </Button>
             <ButtonLink
-              to={`/coordinator/shifts/${shift.id}`}
+              to="/coordinator/schedule"
               variant="secondary"
               className={styles.exportButton}
             >
-              Live roster
+              Schedule
             </ButtonLink>
           </div>
         </div>
       </header>
 
-      <div className={styles.shiftBar}>
-        <div className={styles.shiftBarCopy}>
-          <span className={styles.shiftBarLabel}>This shift</span>
-          <h2 className={styles.shiftBarTitle}>{opportunity.title}</h2>
-          <p className={styles.shiftBarMeta}>
-            <CalendarClock size={13} aria-hidden="true" />
-            {formatDate(shift.startsAt)} · {timeRange(shift.startsAt, shift.endsAt)}
-            <span className={styles.sep} aria-hidden="true">
-              ·
-            </span>
-            <MapPin size={13} aria-hidden="true" />
-            {opportunity.address}
-          </p>
-        </div>
-        <label className={styles.shiftPicker}>
-          <span className={styles.srOnly}>Shift to optimize</span>
-          <select
-            value={shift.id}
-            onChange={(event) => {
-              setShiftId(event.target.value);
+      <div className={styles.scopeBar}>
+        <div className={styles.scopeOptions} role="group" aria-label="Planning scope">
+          <button
+            type="button"
+            className={styles.scopeButton}
+            data-active={scope === "week" ? "true" : "false"}
+            aria-pressed={scope === "week"}
+            onClick={() => {
+              setScope("week");
               invalidatePlan();
             }}
           >
-            {shiftOptions.map((row) => (
-              <option key={row.shift.id} value={row.shift.id}>
-                {row.opportunity.title} · {format(parseISO(row.shift.startsAt), "MMM d")}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={13} aria-hidden="true" />
-        </label>
+            Next 7 days
+            <span>{weekRows.length} shifts with gaps</span>
+          </button>
+          <button
+            type="button"
+            className={styles.scopeButton}
+            data-active={scope === "shift" ? "true" : "false"}
+            aria-pressed={scope === "shift"}
+            onClick={() => {
+              setScope("shift");
+              invalidatePlan();
+            }}
+          >
+            One shift
+            <span>Review a single roster</span>
+          </button>
+        </div>
+        <div className={styles.scopeMeta}>
+          {scope === "week" ? (
+            <>
+              <CalendarClock size={13} aria-hidden="true" />
+              {scopeStart ? formatDate(scopeStart) : "No dates"} –{" "}
+              {scopeEnd ? formatDate(scopeEnd) : "No dates"}
+              <span className={styles.sep} aria-hidden="true">
+                ·
+              </span>
+              {requiredSlots - filledSlots} open role{requiredSlots - filledSlots === 1 ? "" : "s"}
+            </>
+          ) : (
+            <label className={styles.shiftPicker}>
+              <span className={styles.srOnly}>Shift to optimize</span>
+              <select
+                value={selectedShiftId}
+                onChange={(event) => {
+                  setShiftId(event.target.value);
+                  invalidatePlan();
+                }}
+              >
+                {upcoming.map((row) => (
+                  <option key={row.shift.id} value={row.shift.id}>
+                    {row.opportunity.title} · {format(parseISO(row.shift.startsAt), "MMM d")}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={13} aria-hidden="true" />
+            </label>
+          )}
+        </div>
       </div>
+
+      {scope === "shift" && activeRows[0] ? (
+        <div className={styles.shiftBar}>
+          <div className={styles.shiftBarCopy}>
+            <span className={styles.shiftBarLabel}>This shift</span>
+            <h2 className={styles.shiftBarTitle}>{activeRows[0].opportunity.title}</h2>
+            <p className={styles.shiftBarMeta}>
+              <CalendarClock size={13} aria-hidden="true" />
+              {formatDate(activeRows[0].shift.startsAt)} ·{" "}
+              {timeRange(activeRows[0].shift.startsAt, activeRows[0].shift.endsAt)}
+              <span className={styles.sep} aria-hidden="true">
+                ·
+              </span>
+              <MapPin size={13} aria-hidden="true" />
+              {activeRows[0].opportunity.address}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className={styles.grid}>
         <section className={`${styles.pane} ${styles.available}`} aria-label="Available volunteers">
@@ -656,7 +744,8 @@ export function AutoRosterPage() {
             <div>
               <h2 className={styles.paneTitle}>Who can take it</h2>
               <p className={styles.paneSub}>
-                {data.candidates.length} people match at least one open role.
+                {data.candidates.length} people match at least one open role
+                {scope === "week" ? " this week" : ""}.
               </p>
             </div>
             <span className={styles.paneCount}>
@@ -765,16 +854,24 @@ export function AutoRosterPage() {
                         <div key={row.label} className={styles.breakdownRow}>
                           <span>{row.label}</span>
                           <div className={styles.breakdownTrack} aria-hidden="true">
-                            <span style={{ width: `${(row.value / row.max) * 100}%` }} />
+                            <span
+                              style={{
+                                width: `${row.max === 0 ? 0 : Math.min(100, (row.value / row.max) * 100)}%`,
+                              }}
+                            />
                           </div>
                           <span className={styles.breakdownValue}>{row.value}</span>
                         </div>
                       ))}
                     </div>
                     <p className={styles.whyNote}>
-                      {candidate.weeklyShifts} upcoming shift
-                      {candidate.weeklyShifts === 1 ? "" : "s"} in the next 7 days.
-                      {candidate.conflict ? ` Overlaps ${candidate.conflict}.` : ""}
+                      {t(
+                        candidate.weeklyShifts === 1
+                          ? "{count} upcoming shift in this window"
+                          : "{count} upcoming shifts in this window",
+                        { count: candidate.weeklyShifts },
+                      )}
+                      {candidate.conflict ? ` ${candidate.conflict}` : ""}
                     </p>
                   </details>
                 </div>
@@ -801,20 +898,24 @@ export function AutoRosterPage() {
         <section className={`${styles.pane} ${styles.plan}`} aria-label="Proposed roster">
           <div className={styles.paneHead}>
             <div>
-              <h2 className={styles.paneTitle}>The plan</h2>
+              <h2 className={styles.paneTitle}>
+                {scope === "week" ? "The weekly plan" : "The plan"}
+              </h2>
               <p className={styles.paneSub}>
                 {planning
                   ? "Reading availability, clashes, and recent attendance."
-                  : plan
-                    ? plannedCandidates.length > 0
-                      ? t(
-                          plannedCandidates.length === 1
-                            ? "{count} person would close a gap on this shift."
-                            : "{count} people would close the gaps on this shift.",
-                          { count: plannedCandidates.length },
-                        )
-                      : t("Nobody clears the current rules for this shift.")
-                    : t("Run the optimizer to see who fits each open role, and why.")}
+                  : applied
+                    ? `Applied ${appliedCount} assignment${appliedCount === 1 ? "" : "s"} to the live roster.`
+                    : plan
+                      ? plannedCandidates.length > 0
+                        ? t(
+                            plannedCandidates.length === 1
+                              ? "{count} person would close a gap in this plan."
+                              : "{count} people would close the gaps in this plan.",
+                            { count: plannedCandidates.length },
+                          )
+                        : t("Nobody clears the current rules for this shift.")
+                      : t("Run the optimizer to see who fits each open role, and why.")}
               </p>
             </div>
             <div
@@ -856,9 +957,11 @@ export function AutoRosterPage() {
               <span className={styles.coverageAfter} style={{ width: `${afterRolePercent}%` }} />
             </div>
             <p className={styles.coverageHint}>
-              {coverageGain > 0
-                ? t("This plan adds {points} points of role coverage.", { points: coverageGain })
-                : t("No change in role coverage yet.")}
+              {applied
+                ? t("The live roster now reflects this plan.")
+                : coverageGain > 0
+                  ? t("This plan adds {points} points of role coverage.", { points: coverageGain })
+                  : t("No change in role coverage yet.")}
               {excludedCount > 0
                 ? ` ${t(
                     excludedCount === 1
@@ -876,82 +979,138 @@ export function AutoRosterPage() {
             </p>
           ) : null}
 
+          {stale ? (
+            <div className={styles.stalePanel}>
+              <Button
+                variant="secondary"
+                size="small"
+                onClick={() => void generatePlan()}
+                disabled={planning}
+              >
+                Rebuild plan
+              </Button>
+            </div>
+          ) : null}
+
           {answerError ? (
             <p className={styles.errorNote} role="alert">
               {answerError}
             </p>
           ) : null}
 
-          {plannedCandidates.length > 0 ? (
+          {applied ? (
+            <div className={styles.appliedPanel} role="status">
+              <CheckCircle2 size={20} aria-hidden="true" />
+              <div>
+                <p className={styles.appliedTitle}>
+                  {appliedCount} assignment{appliedCount === 1 ? "" : "s"} applied
+                </p>
+                <p className={styles.appliedBody}>
+                  Written to the live roster and the audit log in one transaction.
+                </p>
+                <Link className={styles.textLink} to="/coordinator/schedule">
+                  Review the schedule
+                  <ArrowRight size={13} aria-hidden="true" />
+                </Link>
+              </div>
+            </div>
+          ) : plannedCandidates.length > 0 ? (
             <>
-              <ul className={styles.planList}>
-                {plannedCandidates.map((assignment) => {
-                  const candidate = assignment.candidate;
-                  if (!candidate) return null;
-                  return (
-                    <li
-                      key={`${assignment.gap.name}-${candidate.volunteer.id}`}
-                      className={styles.planRow}
-                    >
-                      <Avatar
-                        initials={candidate.volunteer.initials}
-                        src={candidate.volunteer.photo}
-                        tone={candidate.volunteer.tone}
-                        size={38}
-                        label={candidate.volunteer.name}
-                      />
-                      <div className={styles.planPerson}>
-                        <span className={styles.planName}>{candidate.volunteer.name}</span>
-                        <span className={styles.planRole}>
-                          {assignment.gap.name}
-                          {candidate.volunteer.languages.includes("Spanish") ? " · Spanish" : ""}
-                        </span>
-                      </div>
-                      <span className={styles.planReason}>
-                        {candidate.reasons[0] ??
-                          `${candidate.volunteer.attendanceRate}% attendance`}
-                      </span>
-                      <span className={styles.planScore}>{candidate.score}</span>
-                      {assignment.backend ? (
-                        <PlanEvidence
-                          explanation={assignment.backend.explanation}
-                          alternatives={alternativesFor(
-                            assignment.gap.name,
-                            candidate.volunteer.id,
-                          )}
-                          asking={asking}
-                          answer={answer}
-                          onAsk={(candidateId, name) =>
-                            void askWhyNot(
-                              assignment.backend!.explanation.slotId,
-                              candidateId,
-                              name,
-                            )
-                          }
-                        />
-                      ) : null}
-                    </li>
-                  );
-                })}
+              <p className={styles.planSummary}>
+                {plannedCandidates.length} assignment{plannedCandidates.length === 1 ? "" : "s"}{" "}
+                across {distinctPeople} volunteer{distinctPeople === 1 ? "" : "s"}
+                {unfilledCount > 0
+                  ? ` · ${unfilledCount} role${unfilledCount === 1 ? "" : "s"} still open`
+                  : " · every required role filled"}
+              </p>
+              <ul className={styles.outcomeStrip} aria-label="Plan checks">
+                <li data-tone={conflictCount === 0 ? "good" : "bad"}>
+                  {conflictCount === 0
+                    ? "No schedule conflicts"
+                    : `${conflictCount} scheduling conflict${conflictCount === 1 ? "" : "s"}`}
+                </li>
+                <li data-tone={credentialCount === 0 ? "good" : "bad"}>
+                  {credentialCount === 0
+                    ? "Credentials checked"
+                    : `${credentialCount} credential issue${credentialCount === 1 ? "" : "s"}`}
+                </li>
+                <li data-tone="good">Load spread across {distinctPeople}</li>
               </ul>
+              {planGroups.map((group) => (
+                <div key={group.row.shift.id} className={styles.planGroup}>
+                  <div className={styles.planGroupHead}>
+                    <h3 className={styles.planGroupTitle}>{group.row.opportunity.title}</h3>
+                    <p className={styles.planGroupMeta}>
+                      {formatDate(group.row.shift.startsAt)} ·{" "}
+                      {timeRange(group.row.shift.startsAt, group.row.shift.endsAt)}
+                    </p>
+                  </div>
+                  <ul className={styles.planList}>
+                    {group.rows.map((assignment) => {
+                      const candidate = assignment.candidate;
+                      return (
+                        <li
+                          key={`${assignment.shiftId}-${assignment.gap.name}-${candidate.volunteer.id}`}
+                          className={styles.planRow}
+                        >
+                          <Avatar
+                            initials={candidate.volunteer.initials}
+                            src={candidate.volunteer.photo}
+                            tone={candidate.volunteer.tone}
+                            size={38}
+                            label={candidate.volunteer.name}
+                          />
+                          <div className={styles.planPerson}>
+                            <span className={styles.planName}>{candidate.volunteer.name}</span>
+                            <span className={styles.planRole}>
+                              {assignment.gap.name}
+                              {candidate.volunteer.languages.includes("Spanish")
+                                ? " · Spanish"
+                                : ""}
+                            </span>
+                          </div>
+                          <span className={styles.planReason}>
+                            {candidate.reasons[0] ??
+                              `${candidate.volunteer.attendanceRate}% attendance`}
+                          </span>
+                          <span className={styles.planScore}>{candidate.score}</span>
+                          <PlanEvidence
+                            explanation={assignment.backend.explanation}
+                            alternatives={alternativesFor(
+                              assignment.gap.name,
+                              candidate.volunteer.id,
+                            )}
+                            asking={asking}
+                            answer={answer}
+                            onAsk={(candidateId, name) =>
+                              void askWhyNot(
+                                assignment.backend.explanation.slotId,
+                                candidateId,
+                                name,
+                              )
+                            }
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
               <div className={styles.planActions}>
                 <Button
                   className={styles.applyButton}
                   onClick={() => void applyPlan()}
-                  disabled={applied}
-                  icon={applied ? <CheckCircle2 size={16} /> : <ArrowRight size={16} />}
+                  disabled={applying}
+                  icon={applying ? <CheckCircle2 size={16} /> : <ArrowRight size={16} />}
                 >
-                  {applied
-                    ? "Assignments applied"
-                    : `Apply ${plannedCandidates.length} assignment${plannedCandidates.length === 1 ? "" : "s"}`}
+                  {applying
+                    ? "Applying…"
+                    : `Apply ${plannedCandidates.length} assignment${
+                        plannedCandidates.length === 1 ? "" : "s"
+                      }`}
                 </Button>
-                <p
-                  className={applied ? styles.appliedNote : styles.applyNote}
-                  role={applied ? "status" : undefined}
-                >
-                  {applied
-                    ? `Added to the roster and written to the audit log. Seat coverage is now ${afterSeatPercent}%.`
-                    : `Nothing is saved until you apply. Seat coverage will move to ${afterSeatPercent}%.`}
+                <p className={styles.applyNote}>
+                  Nothing is saved until you apply. The batch is checked again before it writes.
                 </p>
               </div>
             </>
@@ -960,8 +1119,8 @@ export function AutoRosterPage() {
               <p className={styles.emptyPlanTitle}>No automatic match.</p>
               <p className={styles.emptyPlanBody}>
                 The remaining people either lack the required skill, are already booked at this
-                time, or have unconfirmed availability. Allow waitlisted volunteers or lower the
-                weekly cap, then run it again.
+                time, or have unconfirmed availability. Allow waitlisted volunteers, then run it
+                again.
               </p>
             </div>
           ) : (
@@ -977,7 +1136,7 @@ export function AutoRosterPage() {
                 disabled={planning}
                 icon={<Wand2 size={15} />}
               >
-                {t(planning ? "Working…" : "Generate a plan")}
+                {t(planning ? "Working…" : "Build the plan")}
               </Button>
             </div>
           )}
@@ -1010,29 +1169,19 @@ export function AutoRosterPage() {
                 onChange={(value) => updateOption("capWeekly", value)}
               />
             </div>
-            <div className={styles.weights}>
-              <p className={styles.miniLabel}>How the match score is built</p>
-              <div className={styles.weightRow}>
-                <span>Skill / credential fit</span>
-                <span>40</span>
+            {weightRows.length > 0 ? (
+              <div className={styles.weights}>
+                <p className={styles.miniLabel}>
+                  How the match score is built · policy v{weights?.version}
+                </p>
+                {weightRows.map((row) => (
+                  <div key={row.label} className={styles.weightRow}>
+                    <span>{row.label}</span>
+                    <span>{row.value}</span>
+                  </div>
+                ))}
               </div>
-              <div className={styles.weightRow}>
-                <span>Availability fit</span>
-                <span>20</span>
-              </div>
-              <div className={styles.weightRow}>
-                <span>Cause interest</span>
-                <span>15</span>
-              </div>
-              <div className={styles.weightRow}>
-                <span>Attendance reliability</span>
-                <span>15</span>
-              </div>
-              <div className={styles.weightRow}>
-                <span>Language preference</span>
-                <span>10</span>
-              </div>
-            </div>
+            ) : null}
           </details>
 
           <p className={styles.engineNote}>
@@ -1046,36 +1195,50 @@ export function AutoRosterPage() {
         >
           <div className={styles.paneHead}>
             <div>
-              <h2 className={styles.paneTitle}>Shift brief</h2>
+              <h2 className={styles.paneTitle}>
+                {scope === "week" ? "Week brief" : "Shift brief"}
+              </h2>
               <p className={styles.paneSub}>
-                What the shift asks for, and what is already covered.
+                What each shift asks for, and what is already covered.
               </p>
             </div>
             <span className={styles.paneCount}>
-              <strong>{data.rosterCount}</strong> on roster
+              <strong>{rosterTotal}</strong> on roster
             </span>
           </div>
 
-          <div className={styles.briefBlock}>
-            <h3 className={styles.subhead}>Open roles</h3>
-            <ul className={styles.roleList}>
-              {shift.roles.map((role, index) => (
-                <li key={role.name} className={styles.roleRow}>
-                  <span
-                    className={styles.roleDot}
-                    style={{ background: ROLE_COLORS[index % ROLE_COLORS.length] }}
-                    aria-hidden="true"
-                  />
-                  <span className={styles.roleName}>{role.name}</span>
-                  <span
-                    className={styles.roleCount}
-                    data-full={role.filled >= role.required ? "true" : "false"}
-                  >
-                    {role.filled}/{role.required}
+          <div className={styles.briefBlocks}>
+            {shiftPlans.map((shiftPlan) => (
+              <div key={shiftPlan.row.shift.id} className={styles.briefBlock}>
+                <div className={styles.briefHead}>
+                  <h3 className={styles.subhead}>{shiftPlan.row.opportunity.title}</h3>
+                  <span className={styles.briefDate}>
+                    {formatDate(shiftPlan.row.shift.startsAt)}
                   </span>
-                </li>
-              ))}
-            </ul>
+                </div>
+                <ul className={styles.roleList}>
+                  {shiftPlan.row.shift.roles.map((role, index) => {
+                    const filled = shiftPlan.filledByRole.get(role.name) ?? 0;
+                    return (
+                      <li key={role.name} className={styles.roleRow}>
+                        <span
+                          className={styles.roleDot}
+                          style={{ background: ROLE_COLORS[index % ROLE_COLORS.length] }}
+                          aria-hidden="true"
+                        />
+                        <span className={styles.roleName}>{role.name}</span>
+                        <span
+                          className={styles.roleCount}
+                          data-full={filled >= role.required ? "true" : "false"}
+                        >
+                          {filled}/{role.required}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
           </div>
 
           <div className={styles.briefTotals}>
@@ -1088,7 +1251,7 @@ export function AutoRosterPage() {
             <div>
               <span>Seats filled</span>
               <strong>
-                {shift.confirmed} of {shift.capacity}
+                {rosterTotal} of {capacityTotal}
               </strong>
             </div>
             <div>
@@ -1105,16 +1268,9 @@ export function AutoRosterPage() {
             </p>
           </div>
 
-          {applied ? (
-            <p className={styles.savedState} role="status">
-              <CheckCircle2 size={13} aria-hidden="true" />
-              Saved to the live roster
-            </p>
-          ) : null}
-
           <p className={styles.requirementsFoot}>
-            {data.gaps.length} open role{data.gaps.length === 1 ? "" : "s"} · {data.rosterCount} on
-            roster now
+            {requiredSlots - filledSlots} open role{requiredSlots - filledSlots === 1 ? "" : "s"} ·{" "}
+            {rosterTotal} on roster now
           </p>
         </section>
       </div>

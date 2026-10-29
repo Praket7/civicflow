@@ -70,7 +70,7 @@ for (const dir of SCANNED) {
     if (ALLOWED.some((allowed) => allowed.test(path))) continue;
     const source = readFileSync(join(ROOT, path), "utf8");
     // Unit tests sit inside the module they cover in Rust. They may pin a clock
-    // and name a record; the rule is about production behaviour, so the scan
+    // and name a record; the rule is about production behavior, so the scan
     // stops at the test module.
     const production = path.endsWith(".rs") ? source.split("#[cfg(test)]")[0] : source;
     const lines = production.split("\n");

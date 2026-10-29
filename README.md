@@ -1,194 +1,328 @@
 # CivicFlow
 
-**Volunteer coordination with explainable staffing.** CivicFlow connects volunteers to
-service opportunities and gives coordinators a local-first picture of who is serving,
-where coverage is thin, and why every assignment was made.
+CivicFlow is a desktop volunteer coordination app for small nonprofits. Coordinators plan
+shifts, staff open roles, run the check-in desk, review hours, and report outcomes. Volunteers
+find service, register, check in, and keep a record of what they contributed.
 
-Fifty routes are registered today, and each one resolves to a real screen.
-Mission Control, every workflow write, and the audit trail are backed by Rust and SQLite. Accounts sign people in — locally, or through Supabase Auth with Google and email —
-and the core enforces coordinator and volunteer roles before it returns a row. The React
-session layer is a cache of one snapshot returned by the core.
+The application runs on a local SQLite database. Scheduling, reporting, check-in, and
+AutoRoster work without a network connection. Accounts and organization membership are
+enforced by the Rust core, not by hiding screens in the browser.
 
-## What is here
+<!-- CIVICFLOW_FACTS_START -->
+| Fact | Value |
+| --- | --- |
+| Package version | `0.1.1` |
+| Registered routes | 50 |
+| Migration files | 13 |
+| Database schema | v13 |
+| Application tables | 46 |
+<!-- CIVICFLOW_FACTS_END -->
 
-- **50 registered screens, one design system.** Every route resolves to a real screen, plus
-  the added account, organization and question-box surfaces. No placeholder pages remain. The
-  screen inventory is in [SCREEN_MAP.md](docs/SCREEN_MAP.md).
-- **Coordinator operations.** Mission Control, coverage and AutoRoster, schedule, programs,
-  live rosters, attendance, the kiosk, hours review, credentials, recruitment, analytics,
-  reports, records, audit, backups, settings, accounts, and accessibility.
-- **Disruption recovery.** The coverage rescue card detects open required seats and credentials
-  that lapse before a shift starts, then plans a repair ranked by coverage, the fewest disturbed
-  assignments, and match quality. Every change is reviewed before it is applied, a locked
-  assignment is never moved, and each accepted change writes its own audit event.
-- **Repeating shifts.** A coordinator schedules a weekly rule once; the series owns the shifts
-  it generated, so a top-up adds only the missing weeks, a retime reaches the next shift or the
-  whole series, and deleting a series removes its shifts together.
-- **Who takes the seat.** When a role opens, the waitlist is ranked in order and the first
-  person who still meets every requirement is recommended — with everyone passed over named and
-  the reason stated, because “why was I skipped?” deserves a sentence.
-- **Decisions, not dashboards.** Retention signals, recognition milestones, engagement metrics,
-  and credential readiness are rules over the service record: each carries its threshold, the
-  history behind it, and the action it suggests. Nothing is a prediction or a stored score.
-- **Volunteer service.** Home, discovery and opportunity detail, saved shortlist, schedule,
-  shift preparation, check-in, hours, verification, personal impact, notifications, and
-  profile.
-- **Ask CivicFlow.** A question box over the same snapshot: "Which shifts are short this
-  week?", "Who can replace Maya on Saturday?", "Whose credentials expire soon?". Answers are
-  computed by fixed rules in `src/lib/ask/answers.ts`, cite the rows they read, and link to
-  the screen where the coordinator acts. No model, no network, and a plain refusal when the
-  records do not cover the question.
-- **One read model.** Volunteers, shifts, roles, coverage, hours, credentials, applicants,
-  and audit events come from `src/lib/workspace/selectors.ts`; screens do not keep private
-  mock arrays. Saved opportunities, attendance, waitlist, registrations, hours decisions,
-  applicants, settings, created programs, and audit events come from one SQLite-backed
-  snapshot.
-- **Rust core.** Coverage rules, schema, migrations, seed, mission-control read models, and
-  every workflow command live in `src-tauri/core` with integration tests. Each command
-  validates the transition, writes SQLite, and appends its audit event before returning the
-  fresh snapshot.
-- **Free-licensed photography.** Pexels and Wikimedia images under `public/media`, credited
-  in [OPEN_SOURCE_CREDITS.md](docs/OPEN_SOURCE_CREDITS.md).
-- **Accessibility and language.** Semantic landmarks and headings, a skip link, labeled
-  controls and tables, text-plus-icon statuses, visible focus, reduced motion, high
-  contrast, underlined links, text scaling, a table alternative under every chart, and a
-  60-language interface with translated dates and right-to-left layout. The accessibility
-  tree and a 200% zoom viewport are audited on every route.
-- **Accounts and roles.** Create an account from `/create-account` as a coordinator or a
-  volunteer; a volunteer account joins the roster (claiming an existing profile when the email
-  matches one) and the app then shows that person, not the demo volunteer. Argon2id password
-  hashes, hashed session tokens, roles enforced in Rust, and a volunteer snapshot that
-  contains only the signed-in volunteer's records. See [SECURITY.md](docs/SECURITY.md).
-- **Hosted sign-in, optional.** With `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set,
-  accounts can sign in with Google or an emailed password instead. Supabase verifies the
-  identity, the app then opens the matching local workspace account, and the role is enforced
-  in Rust either way. Without the keys the app makes no account request at all. Setup and
-  limits are in [AUTH.md](docs/AUTH.md).
+## Product
 
-## Run it
+The coordinator workspace has six primary areas:
+
+- **Home** answers what needs attention now. It shows the next shift, a weekly staffing
+  summary, AutoRoster coverage, and one queue for coverage gaps, hours waiting for review,
+  applications, and expiring credentials.
+- **AutoRoster** builds a staffing plan for the next seven days. Every assignment can be
+  explained, compared with an alternative, and reviewed before it is written.
+- **Schedule** holds the calendar, shift rosters, attendance, and the check-in kiosk.
+- **Opportunities** holds programs, their shifts, roles, and capacity.
+- **People** groups volunteers, applications, credentials, hours review, and service records.
+  Each is a tab inside one work area rather than a separate destination.
+- **Reports** groups the report library, impact analytics, engagement signals, the custom
+  builder, and the printable impact report.
+
+Settings, the audit log, backups, accessibility, help, and photo credits live in the workspace
+menu so they do not compete with daily work.
+
+Volunteer navigation is five areas: Home, Discover, Schedule, Hours and Impact, and Profile.
+Saved opportunities are a tab inside Discover. Verification is a tab inside Hours and Impact.
+Notifications stay in the top bar.
+
+Every screen is still reachable from the command palette (`Cmd/Ctrl+K`). Search covers every
+registered route and the main coordinator actions, so an experienced user does not have to
+walk through the six areas.
+
+### Core journeys
+
+1. Create an organization, add an opportunity, invite a volunteer, and publish a shift.
+2. Open Home, see the staffing gaps, run AutoRoster for the week, review the evidence, and
+   apply the plan.
+3. Run an event: open the next shift, launch the kiosk, check people in, and record no-shows.
+4. Find a volunteer: search People, open a profile, check credentials, and look at upcoming
+   assignments.
+5. Report impact: choose a period, preview the result, and export a PDF or CSV.
+
+## Architecture
+
+```text
+React 19 + TypeScript + Vite
+        |
+        v
+WorkspaceRepository
+        |
+        v
+Tauri commands
+        |
+        v
+civicflow-core (Rust)
+        |
+        v
+SQLite workspace
+```
+
+- `src-tauri/core` is an independent crate. It owns the schema, migrations, seeded demo data,
+  authorization, workflow rules, matching, reporting, backups, and audit events. It has no Tauri
+  dependency and is tested with `cargo test`.
+- `src-tauri/src/lib.rs` exposes thin Tauri commands. Each command resolves the session token
+  through the core before it reads or writes workspace data.
+- `src/lib/workspace/repository.ts` is the single boundary between React and the native
+  commands. `previewRepository.ts` implements the same contract in the browser with the shared
+  demo data. The desktop build never selects the preview repository.
+- React reads one snapshot from the core. `src/lib/workspace/selectors.ts` derives display
+  values from that snapshot. Screens do not keep private copies of workspace records.
+- The database applies migrations in order and records each version in `schema_migrations`.
+  Backups check the application id, schema version, foreign keys, and table set before restore.
+
+### Local first
+
+Writes go to local SQLite first and the UI refreshes from the returned snapshot. Nothing on a
+normal screen waits for a network request. Hosted sign-in is optional and only used to prove an
+identity. The workspace itself remains on the device.
+
+### Demo mode
+
+A fresh installation starts empty. The demo workspace is created only when someone chooses
+**Explore the demo** on the welcome screen. Demo records live in `shared/demo-workspace.json`
+and are loaded by both the Rust seeder and the browser preview. A demo organization is marked
+with `is_demo`, and the workspace clock is fixed for authored demo dates. Production
+workspaces use the system clock and the organization timezone.
+
+## Organization and access
+
+An account proves an identity. Access comes from an organization membership row.
+
+Roles are `owner`, `coordinator`, and `volunteer`. A person can be an owner in one
+organization, a coordinator in another, and a volunteer in a third. There is no global
+coordinator role and no role stored in hosted-auth metadata.
+
+Membership rules:
+
+- The first person to create an organization becomes its owner.
+- An owner can invite coordinators and volunteers, change roles, disable a membership, and
+  transfer ownership.
+- A coordinator can run operations and invite volunteers when policy allows.
+- An organization always keeps at least one active owner. The last owner cannot be removed,
+  demoted, or disabled.
+- Invitations are one-time, expiring, revocable, and bound to a role. Tokens are stored hashed.
+- Every role or status change increments `membership_epoch`. A queued privileged operation
+  created under an older epoch is rejected when it reaches the authority.
+
+The organization switcher changes the active membership, not the account role. A person with
+no membership can only reach the create-or-join screens.
+
+## AutoRoster
+
+AutoRoster is a deterministic min-cost flow solver in `src-tauri/core/src/matching.rs`. React
+does not score candidates or decide eligibility. The core returns the plan together with every
+candidate evaluation, score component, hard check, and selection reason. The screen formats
+those values.
+
+The default scope is the next seven days across every shift with a required-role gap. A
+single-shift review remains available. The engine respects:
+
+- required skill and credential validity through the shift date;
+- stated availability;
+- overlapping assignments;
+- daily and weekly shift limits;
+- assignment locks;
+- waitlist membership and capacity.
+
+A plan carries its base workspace revision and policy version. Applying checks both again and
+returns `PLAN_STALE` rather than writing a plan that another change invalidated. A reviewed
+plan is applied in one SQLite transaction. Every assignment is rechecked, each assignment gets
+an audit event, and the plan gets one summary event. If any assignment fails, the batch rolls
+back.
+
+The explanation model is contrastive. Each proposed person has **Why this person?**, and other
+eligible people can be asked about with **Why not?**. The answer lists failed hard checks or
+shows what forcing that person into the seat would do to the rest of the plan.
+
+Coverage recovery uses the same solver and the same explanation model. It is not a separate
+scoring system.
+
+## Data model
+
+The schema is defined by the numbered migrations in `src-tauri/core/migrations`. All migrations
+are additive and idempotent on upgrade. Foreign keys are enabled.
+
+The main records are:
+
+- organizations, memberships, invitations, contacts, and updates;
+- accounts, sessions, auth attempts, and hosted handoffs;
+- volunteers, skills, availability rules, and credentials;
+- opportunities, shifts, shift roles, role requirements, and shift series;
+- registrations, waitlist entries, attendance events, and the attendance ledger;
+- hour entries, service verifications, and impact results;
+- notifications, notification rules, activity events, audit events, and saved views;
+- roster policies, assignment locks, workspace revisions, sync conflicts, and replica metadata;
+- backups and schema migration bookkeeping.
+
+Counts shown to people are derived from registrations, attendance events, and approved hour
+records. The shift's cached `confirmed` or role `filled` values are materialized inside the
+transaction that changes the underlying rows, not treated as independent truth.
+
+The current build is a single local workspace. Each organization in the switcher has its own
+membership and profile, and the domain snapshot is loaded through the active membership.
+
+## Security
+
+- Passwords use Argon2id. Session tokens are random, stored hashed, and expire.
+- Every Tauri command that touches workspace data calls `require_user` first. Coordinator-only
+  commands call `require_coordinator`. A volunteer command that names a volunteer checks the
+  membership between the account and that volunteer.
+- Volunteer snapshots are redacted before they cross the IPC bridge. A volunteer receives
+  their own profile, registrations, hours, credentials, and notifications, not the coordinator
+  directory or the audit log.
+- Hosted identity is accepted only after Supabase verifies the user. The app then opens or
+  creates the matching local account. Hosted metadata never grants a workspace role.
+- Invitation tokens are random, hashed at rest, single-use, and expire. Reusable coordinator
+  codes do not exist.
+- The content security policy, capability file, deep-link handling, and URL allowlist are in
+  `src-tauri/tauri.conf.json` and `src-tauri/capabilities/default.json`.
+- Reports and exports are generated in Rust and written through the native save dialog. The
+  browser never receives a filesystem path.
+
+## Accessibility
+
+- Semantic landmarks, one `h1` per screen, a skip link, visible focus, and labeled controls.
+- Status is never carried by color alone. Charts have a table alternative.
+- Reduced motion, high contrast, text scaling, underlined links, and right-to-left layout are
+  supported.
+- The automated accessibility tree audit visits every registered route and requires names on
+  every interactive control. The zoom audit renders at 200 percent and fails on horizontal
+  overflow or a missing heading. The contrast audit checks both themes.
+- A human VoiceOver or NVDA pass on a packaged build is still on the release checklist.
+
+## Testing
+
+```bash
+pnpm verify          # typecheck, lint, format, copy, hardcodes, generated data, tests, build,
+                     # browser audits, Rust fmt, clippy, and cargo test
+pnpm test            # frontend tests
+cargo test --manifest-path src-tauri/core/Cargo.toml
+pnpm test:native     # WebdriverIO against the built macOS app
+```
+
+The frontend suite covers the route registry, accessibility on every screen, selectors,
+coverage maths, preview repository behavior, hosted identity parsing, print styles, and the
+Ask CivicFlow matcher. The Rust suite covers migrations, foreign keys, accounts, membership
+and invitations, ownership invariants, role refusal, snapshot redaction, registrations,
+waitlists, attendance, hours, credentials, recurrence, recovery, reports, exports, AutoRoster
+against a brute-force oracle, plan staleness, and backup restore.
+
+Generated checks:
+
+- `pnpm check:generated` rebuilds the demo data and translation catalog and fails on drift.
+- `pnpm check:hardcodes` rejects fixture ids and ISO dates in production code.
+- `pnpm docs:check` verifies README links and generated facts.
+- `pnpm db:verify` opens the live desktop database read-only and reports integrity, schema
+  version, foreign keys, and record counts.
+
+## Build and run
 
 ```bash
 pnpm install
 pnpm dev              # browser preview at http://localhost:5173
 pnpm tauri dev        # native desktop window
-pnpm verify           # typecheck, lint, format, tests, web build, browser and Rust gates
-pnpm test:native      # WebdriverIO against the real macOS window (build it first)
-pnpm build:native:test
-pnpm db:verify        # read-only health check of the live desktop database
-pnpm tauri build      # .app and .dmg on macOS; installers on Windows/Linux
+pnpm tauri build      # installers for the current platform
+pnpm docs:update      # refresh the generated facts block
 ```
 
-Demo accounts: `praket@feedmorewny.org` (coordinator) and `maya.chen@gmail.com`
-(volunteer), both with the password `civicflow-demo`. Entry points: `/launch`, `/welcome`,
-`/sign-in`, `/create-account`, `/coordinator/mission-control`, `/volunteer/home`,
-`/coordinator/kiosk`, `/ask`, and the in-app guide at `/help`. After the desktop app has run,
-`pnpm db:verify` checks the real SQLite file: integrity, schema v7, all 38 tables, foreign
-keys and record counts. The kiosk
-displays the current six-digit code; it rotates every 15 minutes and is validated by the
-Rust core, so there is no fixed code to memorize. The volunteer screen also renders a
-`civicflow://checkin/<token>` QR code that the kiosk can scan. Workspace data never leaves
-the device. The app is fully usable offline; hosted sign-in with Google or email is optional
-and only speaks to Supabase when its two keys are configured.
+Demo accounts after choosing **Explore the demo**:
 
-## Architecture
+- `praket@feedmorewny.org` / `civicflow-demo` (coordinator)
+- `maya.chen@gmail.com` / `civicflow-demo` (volunteer)
 
-```text
-React 19 + TypeScript + Vite  →  WorkspaceRepository  →  Tauri IPC  →  civicflow-core (Rust)
-                                                       └── browser fallback (no native host)
-```
+Hosted sign-in is optional. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to enable
+Google and email links. Without both keys the app makes no hosted-auth request.
 
-- `src-tauri/core` is an independent crate: authoritative coverage rules, SQLite schema,
-  workflow commands, deterministic seed, and `cargo test` coverage. It has no Tauri
-  dependency.
-- `src-tauri/src/lib.rs` opens the database and exposes thin IPC wrappers over the core.
-- `src/lib/workspace/` holds the repository boundary, selectors, and a provider that loads
-  one snapshot. `previewRepository.ts` is a clearly scoped fallback used only when
-  `isTauri()` is false; it is never selected in the desktop shell.
-- The same `shared/demo-workspace.json` and `shared/session-seed.json` seed both the desktop
-  database and the browser fallback, so reviews never run against a second set of numbers.
+### Releases
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [AUTH.md](docs/AUTH.md),
-[DECISIONS.md](docs/DECISIONS.md), [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds macOS (Apple silicon and
+Intel), Windows x64, and Linux x64 installers, attaches them to the GitHub release, and
+publishes SHA-256 checksums.
 
-## Verification
+Unsigned macOS builds are ad-hoc signed so Gatekeeper offers **Open Anyway** instead of
+reporting a damaged app. Windows builds without a certificate are unsigned, so SmartScreen
+offers **More info** then **Run anyway**.
 
-- `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm build:web`: clean.
-- 184 frontend tests: axe checks across all 50 routes, coverage maths, selector consistency,
-  the IPC command/argument map including the session token, preview cancellation recovery,
-  the preview fallback, hosted identity and email-link parsing, preview snapshot restore, the
-  catalog completeness gate, and the Ask CivicFlow matcher and totals.
-- 172 Rust tests: migrations/seed, foreign keys, accounts and organization membership, invite
-  redemption, coverage totals, attention ordering, notifications and their audience scoping,
-  reminder rules and their idempotence, sign-in/sign-out, role refusal, volunteer snapshot
-  redaction, registration and check-in rules including QR payloads, the AutoRoster flow solver
-  and its brute-force oracle, matching-policy versions, why/why-not explanations, seat
-  replacement ranking, disruption detection and recovery plans, series expansion and retimes,
-  the cancellation → waitlist → hours → verification lifecycle, retention signals and
-  milestones, spreadsheet import, report totals and exports, impossible writes, and backup
-  restore/validation.
-- WebdriverIO drives the embedded WebDriver server inside the real macOS window: sign-in,
-  coordinator Mission Control (with the page entrance frozen, so an animation that never
-  advances cannot hide the page), volunteer route refusal, sign-out, volunteer home,
-  coordinator route refusal, and creating a volunteer account with the printed code and
-  signing it back in. `pnpm test:native` is part of CI.
-- The accessibility-tree audit reads Chromium's accessibility tree for all 50 routes and
-  requires a main landmark, one `h1`, and names on every interactive control. The 200% zoom
-  audit renders an 800 × 500 CSS viewport and fails on horizontal overflow or a lost heading.
-- All 49 registered routes plus `/help` and `/credits` were checked at 1600 × 1000, 1280,
-  1024, 820 and 390 during the visual sweep; notes are in [VISUAL_QA.md](docs/VISUAL_QA.md).
-- `pnpm db:verify` reports the live desktop database path, integrity, schema version, table
-  count, foreign-key status and record counts without writing to it.
+Signing secrets, when available, are repository secrets:
 
-Details in [TESTING.md](docs/TESTING.md).
+| Secret                         | Platform | Purpose                                  |
+| ------------------------------ | -------- | ---------------------------------------- |
+| `APPLE_CERTIFICATE`            | macOS    | Base64 Developer ID Application `.p12`   |
+| `APPLE_CERTIFICATE_PASSWORD`   | macOS    | Password for the exported certificate    |
+| `APPLE_ID`                     | macOS    | Apple ID for notarization                |
+| `APPLE_PASSWORD`               | macOS    | App-specific password                    |
+| `APPLE_TEAM_ID`                | macOS    | Apple Developer team id                  |
+| `APPLE_API_KEY`                | macOS    | Alternate App Store Connect key id       |
+| `APPLE_API_ISSUER`             | macOS    | Alternate issuer id                      |
+| `APPLE_API_KEY_CONTENT`        | macOS    | Base64 `.p8` key                         |
+| `WINDOWS_CERTIFICATE`          | Windows  | Base64 code-signing `.pfx`               |
+| `WINDOWS_CERTIFICATE_PASSWORD` | Windows  | Password for the `.pfx`                  |
+| `WINDOWS_TIMESTAMP_URL`        | Windows  | Optional RFC 3161 timestamp service      |
 
-## Install a release
+Use either the Apple ID trio or the API key trio. Never commit a certificate or password.
 
-Download the installer for your machine from [Releases](https://github.com/Praket7/civicflow/releases/latest).
-Signed releases open normally. If a build is published without signing credentials, the
-first launch needs one extra confirmation:
+## Credits
 
-- **macOS** — open the `.dmg` for your chip (`aarch64` for Apple silicon, `x64` for Intel)
-  and drag CivicFlow to Applications. Double-click it once. If macOS says it cannot verify
-  the app, click **Done**, then open **System Settings → Privacy & Security**, scroll to
-  **Security**, and choose **Open Anyway**. You can also run
-  `xattr -dr com.apple.quarantine /Applications/CivicFlow.app` in Terminal, then open it.
-- **Windows** — run the `.msi` or `-setup.exe`. If SmartScreen appears, choose **More info →
-  Run anyway**. The installer fetches WebView2 when it is missing.
-- **Linux** — install the `.deb` with `sudo apt install ./CivicFlow*_amd64.deb`, or
-  `chmod +x` the AppImage and run it. The deb needs GTK 3 and WebKitGTK 4.1; the AppImage
-  still uses the system WebKitGTK.
+All bundled photography is free-licensed. Images were cropped and resized for layout. The
+impact skyline is color-graded and scrimmed. Those changes do not alter the license.
 
-Verify a download against `SHA256SUMS.txt` on the release:
+| Asset                                                                      | Creator / source                                     | License       |
+| -------------------------------------------------------------------------- | ---------------------------------------------------- | ------------- |
+| `hero-community.jpg`, `opp-food-distribution.jpg`, `community-strip-1.jpg` | Pexels 6646918                                       | Pexels        |
+| `opp-pantry.jpg`                                                           | Pexels 6646862                                       | Pexels        |
+| `opp-community-garden.jpg`, `community-strip-3.jpg`                        | Pexels 39779034                                      | Pexels        |
+| `opp-library-tutoring.jpg`, `community-strip-2.jpg`                        | Pexels 8342411                                       | Pexels        |
+| `opp-park-cleanup.jpg`                                                     | Pexels 39037905                                      | Pexels        |
+| `opp-animal-shelter.jpg`                                                   | Pexels 35231854                                      | Pexels        |
+| `opp-senior-meals.jpg`                                                     | Pexels 6647037                                       | Pexels        |
+| `welcome-volunteer.jpg`                                                    | Pexels 6646930                                       | Pexels        |
+| `signin-volunteers.jpg`                                                    | Pexels 6995298                                       | Pexels        |
+| `opp-community-event.jpg`                                                  | Irvin Parco Sto. Tomas, Wikimedia Commons            | CC BY-SA 4.0  |
+| `buffalo-skyline.jpg`                                                      | Peter S, Wikimedia Commons                           | CC BY-SA 4.0  |
+| `volunteers/olive-carter.jpg`                                              | Pexels 40062802                                      | Pexels        |
+| `volunteers/rafael-martin.jpg`                                             | Pexels 13120070                                      | Pexels        |
+| `volunteers/jasmine-bennett.jpg`                                           | Pexels 6976400                                       | Pexels        |
+| `volunteers/diego-weber.jpg`                                               | Pexels 19285927                                      | Pexels        |
+| `volunteers/nico-carter.jpg`                                               | Pexels 8151688                                       | Pexels        |
+| `volunteers/gloria-weber.jpg`                                              | Pexels 30004320                                      | Pexels        |
 
-```bash
-sha256sum -c SHA256SUMS.txt      # macOS: shasum -a 256 -c SHA256SUMS.txt
-```
+Pexels images use the [Pexels License](https://www.pexels.com/license/). Wikimedia images use
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The in-app photo credits page
+reads the same list from `src/data/credits.ts`.
 
-## Build a release
+Bundled fonts: Geist Variable, Geist Mono Variable, and Source Serif 4 Variable, all under the
+SIL Open Font License 1.1.
 
-`pnpm tauri build` produces `src-tauri/target/release/bundle/macos/CivicFlow.app` and a
-`.dmg` on this machine. Pushing a `v*` tag runs `.github/workflows/release.yml`, which
-builds installers for macOS (Apple silicon and Intel), Windows x64, and Linux x64, attaches
-them to the GitHub release, and publishes SHA-256 checksums. Signing and notarization secrets are documented in
-[SIGNING.md](docs/SIGNING.md); without them the release is still built, but marked
-unsigned in its notes.
+Main libraries: React, React Router, TanStack Query, date-fns, Lucide, Tauri, rusqlite,
+chrono, serde, uuid, thiserror, Vitest, Testing Library, and jest-axe. The AutoRoster flow
+algorithm was implemented from published descriptions rather than copied code.
 
 ## Known limits
 
-- Snapshots use SQLite's online backup API; restore validates the artifact and applies it in
-  place, keeping a pre-restore safety snapshot. The newest 20 snapshots are kept and older
-  files are pruned automatically. CSV and PDF reports are generated in Rust and written
-  through the save dialog.
-- The workspace is single-tenant and single-device. Accounts separate the coordinator from
-  the volunteer and every IPC command checks the session, but there is no multi-user sync
-  or server-side identity provider.
-- Kiosk mode is an authenticated coordinator route in the same window. It is not a separate
-  capability-scoped webview, so it does not create an OS-level kiosk boundary.
-- QR scanning needs camera permission. The six-digit code remains the fallback when a
-  camera is unavailable or denied.
-- Code signing and notarization need certificates the repository does not carry. macOS
-  builds are ad-hoc signed, so Gatekeeper offers **Open Anyway** after the first double
-  click; Windows builds are unsigned, so SmartScreen offers **More info → Run anyway**.
-  [SIGNING.md](docs/SIGNING.md) lists the secrets that remove both prompts.
-- The accessibility tree and 200% zoom checks are automated; a human VoiceOver or NVDA pass
-  on the packaged build has not been recorded.
+- A workspace is local to one device. Accounts and organization roles are enforced locally,
+  but there is no live multi-device sync in this build. Sharing a file means using a backup or
+  an export.
+- Organization switching is scoped by membership in the UI and core, but all organizations in
+  one installation share the same SQLite file. A future workspace manager will split them into
+  per-organization databases.
+- Kiosk mode is a coordinator route in the main window, not a separate OS-level kiosk.
+- QR scanning needs camera permission. The six-digit code is the fallback.
+- Code signing and notarization require certificates that are not in the repository.
+- The accessibility audits are automated. A recorded screen-reader pass on the packaged build
+  is still pending.

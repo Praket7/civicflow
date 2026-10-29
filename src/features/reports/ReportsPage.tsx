@@ -14,6 +14,8 @@ import {
   Tabs,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { reportTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   formatHours,
@@ -58,6 +60,7 @@ export function ReportsPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Reports" items={reportTabs} />
       <PageHeader
         eyebrow="Reporting"
         title="Reports"

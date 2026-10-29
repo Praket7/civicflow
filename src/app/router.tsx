@@ -31,6 +31,7 @@ import { OpportunitiesPage } from "../features/opportunities/OpportunitiesPage";
 import { OpportunityDetailPage } from "../features/volunteer/OpportunityDetailPage";
 import { OpportunityManagementPage } from "../features/opportunities/OpportunityManagementPage";
 import { CoordinatorStartPage } from "../features/organizations/CoordinatorStartPage";
+import { OrganizationAccessPage } from "../features/organizations/OrganizationAccessPage";
 import { OrganizationCreatePage } from "../features/organizations/OrganizationCreatePage";
 import { VolunteerStartPage } from "../features/organizations/VolunteerStartPage";
 import { PersonalImpactPage } from "../features/volunteer/PersonalImpactPage";
@@ -72,6 +73,7 @@ export const pages: Record<string, ReactNode> = {
   "volunteer-onboarding": <OnboardingPage />,
   "coordinator-start": <CoordinatorStartPage />,
   "organization-create": <OrganizationCreatePage />,
+  "organization-access": <OrganizationAccessPage />,
   "volunteer-start": <VolunteerStartPage />,
   "volunteer-home": <VolunteerHomePage />,
   discover: <DiscoverPage />,
@@ -163,6 +165,7 @@ const routeConfig = [
     ),
     children: [
       { index: true, element: <HomeRedirect /> },
+      { path: "/coordinator/people", element: <Navigate to="/coordinator/volunteers" replace /> },
       ...shellRoutes,
       {
         path: "/coordinator/notifications",

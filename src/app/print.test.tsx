@@ -17,7 +17,7 @@ import type { RouteMeta } from "./routes";
  * that made printing blank in the first place — a certificate stylesheet that
  * hid every other route, and screens that rendered no content — plus a source
  * guard that the certificate rule stays scoped to its own mount. The rendered
- * PDF check lives in `docs/VISUAL_QA.md`.
+ * PDF check runs in the browser audit.
  */
 
 const demoParams: Record<string, string> = {

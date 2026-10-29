@@ -6,12 +6,12 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 
+use crate::clock::now as clock_now;
 use crate::error::{CoreError, Result};
 use crate::matching::{
     day_key, plan, Candidate, Credential, RosterOptions, RosterPlan, Slot, TimeBlock,
 };
 use crate::models::WorkspaceSnapshot;
-use crate::services::now;
 use crate::workflows::{append_audit, snapshot, validate_registration};
 
 fn parse_date(raw: &str) -> Option<NaiveDate> {
@@ -343,6 +343,30 @@ pub struct RosterApplyAssignment {
     pub promote_waitlist: bool,
 }
 
+/// One assignment in a weekly plan, which may span several shifts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeeklyAssignment {
+    pub shift_id: String,
+    pub candidate_id: String,
+    pub role: String,
+    #[serde(default)]
+    pub promote_waitlist: bool,
+}
+
+/// The workspace revision a plan was generated from. Every roster-changing
+/// write bumps it, so a stale plan is detected before anything is applied.
+pub fn workspace_revision(conn: &Connection) -> Result<i64> {
+    Ok(conn
+        .query_row(
+            "SELECT revision FROM workspace_revision WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+        .unwrap_or(0))
+}
+
 /// Applies an approved AutoRoster plan in one transaction so a partially
 /// applied roster can never reach the database.
 pub fn apply_roster_plan(
@@ -350,100 +374,144 @@ pub fn apply_roster_plan(
     shift_id: &str,
     assignments: &[RosterApplyAssignment],
 ) -> Result<WorkspaceSnapshot> {
+    let weekly: Vec<WeeklyAssignment> = assignments
+        .iter()
+        .map(|assignment| WeeklyAssignment {
+            shift_id: shift_id.to_string(),
+            candidate_id: assignment.candidate_id.clone(),
+            role: assignment.role.clone(),
+            promote_waitlist: assignment.promote_waitlist,
+        })
+        .collect();
+    apply_roster_week(conn, None, &weekly)
+}
+
+/// Applies a whole reviewed week atomically. Every hard invariant is re-checked
+/// against the database first, then all assignments commit together: a plan
+/// cannot half-apply because one seat filled while the coordinator was reading.
+pub fn apply_roster_week(
+    conn: &Connection,
+    expected_revision: Option<i64>,
+    assignments: &[WeeklyAssignment],
+) -> Result<WorkspaceSnapshot> {
     if assignments.is_empty() {
         return Err(CoreError::Validation(
             "Select at least one suggested assignment to apply".into(),
         ));
     }
-    let (status, capacity, confirmed): (String, i64, i64) = conn.query_row(
-        "SELECT status, capacity, confirmed FROM shifts WHERE id = ?1",
-        params![shift_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    )?;
-    if status != "scheduled" {
-        return Err(CoreError::rule(
-            "SHIFT_CLOSED",
-            "This shift is no longer accepting assignments.",
-            Some("shiftId".into()),
-            None,
-        ));
-    }
-    if confirmed + assignments.len() as i64 > capacity {
-        return Err(CoreError::rule(
-            "SHIFT_FULL",
-            "That plan fills more seats than the shift has.",
-            Some("shiftId".into()),
-            Some("REPLAN".into()),
-        ));
-    }
-
-    let mut seen = HashSet::new();
-    let mut per_role: HashMap<String, i64> = HashMap::new();
-    for assignment in assignments {
-        if !seen.insert(assignment.candidate_id.clone()) {
-            return Err(CoreError::Validation(
-                "A volunteer appears twice in the same plan".into(),
-            ));
-        }
-        *per_role.entry(assignment.role.clone()).or_insert(0) += 1;
-    }
-    for (role, count) in &per_role {
-        let row: Option<(i64, i64)> = conn
-            .query_row(
-                "SELECT required, filled FROM shift_roles WHERE shift_id = ?1 AND name = ?2",
-                params![shift_id, role],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let Some((required, filled)) = row else {
-            return Err(CoreError::Validation(format!(
-                "{role} is not part of this shift"
-            )));
-        };
-        if filled + count > required {
+    if let Some(expected) = expected_revision {
+        let current = workspace_revision(conn)?;
+        if current != expected {
             return Err(CoreError::rule(
-                "ROLE_FULL",
-                format!("The plan assigns more {role} volunteers than the shift needs."),
-                Some("role".into()),
-                Some("REPLAN".into()),
+                "PLAN_STALE",
+                "The roster changed after this plan was generated. Rebuild the plan so nobody is double-booked.",
+                None,
+                Some("REBUILD_PLAN".into()),
             ));
         }
     }
 
-    let mut names = HashMap::new();
+    // Group by shift so capacity, role counts and duplicate people are checked
+    // against the shift they actually belong to.
+    let mut per_shift: HashMap<&str, Vec<&WeeklyAssignment>> = HashMap::new();
     for assignment in assignments {
-        validate_registration(conn, shift_id, &assignment.candidate_id, &assignment.role)?;
-        // A lock is a coordinator's decision, so a plan may not quietly move the
-        // seat it protects. Filling an open seat is still allowed.
-        let locked: Option<String> = conn
-            .query_row(
-                "SELECT role FROM registrations
-                 WHERE shift_id = ?1 AND volunteer_id = ?2 AND locked = 1",
-                params![shift_id, assignment.candidate_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(role) = locked {
-            if role != assignment.role {
+        per_shift
+            .entry(assignment.shift_id.as_str())
+            .or_default()
+            .push(assignment);
+    }
+
+    let mut names: HashMap<String, String> = HashMap::new();
+    for (shift_id, rows) in &per_shift {
+        let (status, capacity, confirmed): (String, i64, i64) = conn.query_row(
+            "SELECT status, capacity, confirmed FROM shifts WHERE id = ?1",
+            params![shift_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        if status != "scheduled" {
+            return Err(CoreError::rule(
+                "SHIFT_CLOSED",
+                "A shift in this plan is no longer accepting assignments.",
+                Some("shiftId".into()),
+                Some("REBUILD_PLAN".into()),
+            ));
+        }
+        if confirmed + rows.len() as i64 > capacity {
+            return Err(CoreError::rule(
+                "SHIFT_FULL",
+                "A shift in this plan filled while you were reviewing it.",
+                Some("shiftId".into()),
+                Some("REBUILD_PLAN".into()),
+            ));
+        }
+
+        let mut seen = HashSet::new();
+        let mut per_role: HashMap<&str, i64> = HashMap::new();
+        for assignment in rows {
+            if !seen.insert(assignment.candidate_id.clone()) {
+                return Err(CoreError::Validation(
+                    "A volunteer appears twice in the same shift".into(),
+                ));
+            }
+            *per_role.entry(assignment.role.as_str()).or_insert(0) += 1;
+        }
+        for (role, count) in &per_role {
+            let row: Option<(i64, i64)> = conn
+                .query_row(
+                    "SELECT required, filled FROM shift_roles WHERE shift_id = ?1 AND name = ?2",
+                    params![shift_id, role],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some((required, filled)) = row else {
+                return Err(CoreError::Validation(format!(
+                    "{role} is not part of this shift"
+                )));
+            };
+            if filled + count > required {
                 return Err(CoreError::rule(
-                    "ASSIGNMENT_LOCKED",
-                    format!(
-                        "That volunteer's seat is locked as {role}. Unlock it before replanning."
-                    ),
+                    "ROLE_FULL",
+                    format!("The plan assigns more {role} volunteers than the shift needs."),
                     Some("role".into()),
-                    Some("REPLAN".into()),
+                    Some("REBUILD_PLAN".into()),
                 ));
             }
         }
-        let name: String = conn.query_row(
-            "SELECT name FROM volunteers WHERE id = ?1",
-            params![assignment.candidate_id],
-            |row| row.get(0),
-        )?;
-        names.insert(assignment.candidate_id.clone(), name);
+
+        for assignment in rows {
+            validate_registration(conn, shift_id, &assignment.candidate_id, &assignment.role)?;
+            // A lock is a coordinator's decision, so a plan may not quietly move
+            // the seat it protects. Filling an open seat is still allowed.
+            let locked: Option<String> = conn
+                .query_row(
+                    "SELECT role FROM registrations
+                     WHERE shift_id = ?1 AND volunteer_id = ?2 AND locked = 1",
+                    params![shift_id, assignment.candidate_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(role) = locked {
+                if role != assignment.role {
+                    return Err(CoreError::rule(
+                        "ASSIGNMENT_LOCKED",
+                        format!(
+                            "That volunteer's seat is locked as {role}. Unlock it before replanning."
+                        ),
+                        Some("role".into()),
+                        Some("REBUILD_PLAN".into()),
+                    ));
+                }
+            }
+            let name: String = conn.query_row(
+                "SELECT name FROM volunteers WHERE id = ?1",
+                params![assignment.candidate_id],
+                |row| row.get(0),
+            )?;
+            names.insert(assignment.candidate_id.clone(), name);
+        }
     }
 
-    let now = now(conn)?.to_rfc3339();
+    let now = crate::clock::now(conn)?.to_rfc3339();
     let transaction = conn.unchecked_transaction()?;
     for assignment in assignments {
         let name = &names[&assignment.candidate_id];
@@ -451,7 +519,7 @@ pub fn apply_roster_plan(
             transaction.execute(
                 "UPDATE waitlist_entries SET status = 'promoted'
                  WHERE shift_id = ?1 AND volunteer_id = ?2 AND status = 'waiting'",
-                params![shift_id, assignment.candidate_id],
+                params![assignment.shift_id, assignment.candidate_id],
             )?;
         }
         transaction.execute(
@@ -459,16 +527,21 @@ pub fn apply_roster_plan(
              VALUES (?1, ?2, ?3, ?4, 'registered', ?4)
              ON CONFLICT(shift_id, volunteer_id) DO UPDATE SET
                role = excluded.role, status = 'registered', updated_at = excluded.updated_at",
-            params![shift_id, assignment.candidate_id, assignment.role, now],
+            params![
+                assignment.shift_id,
+                assignment.candidate_id,
+                assignment.role,
+                now
+            ],
         )?;
         transaction.execute(
             "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
-            params![shift_id],
+            params![assignment.shift_id],
         )?;
         transaction.execute(
             "UPDATE shift_roles SET filled = filled + 1
              WHERE shift_id = ?1 AND name = ?2 AND filled < required",
-            params![shift_id, assignment.role],
+            params![assignment.shift_id, assignment.role],
         )?;
         append_audit(
             &transaction,
@@ -478,11 +551,23 @@ pub fn apply_roster_plan(
                 "autoroster.apply"
             },
             "shift",
-            shift_id,
+            &assignment.shift_id,
             format!("AutoRoster assigned {name} as {}", assignment.role),
             Some("Applied from an approved AutoRoster plan".into()),
         )?;
     }
+    append_audit(
+        &transaction,
+        "autoroster.apply_week",
+        "workspace",
+        "roster",
+        format!(
+            "Applied a weekly AutoRoster plan: {} assignment(s) across {} shift(s)",
+            assignments.len(),
+            per_shift.len()
+        ),
+        Some("The reviewed plan was applied atomically".into()),
+    )?;
     transaction.commit()?;
     snapshot(conn)
 }
@@ -500,11 +585,39 @@ pub fn plan_roster(
             "Choose at least one shift for AutoRoster".into(),
         ));
     }
-    let now = now(conn)?;
+    let now = clock_now(conn)?;
     let policy = policy_for_workspace(conn)?;
     let slots = load_open_slots(conn, shift_ids, now)?;
     let candidates = load_candidates(conn, now, options)?;
-    Ok(plan(&candidates, &slots, &policy, options))
+    let mut roster = plan(&candidates, &slots, &policy, options);
+    roster.generated_at = now.to_rfc3339();
+    roster.revision = workspace_revision(conn)?;
+    Ok(roster)
+}
+
+/// The plan and every candidate evaluation behind it, generated together. The
+/// AutoRoster screen reads this and formats it; it derives no eligibility or
+/// score of its own.
+pub fn evaluate_roster_candidates(
+    conn: &Connection,
+    shift_ids: &[String],
+    options: &RosterOptions,
+) -> Result<crate::matching::RosterEvaluation> {
+    if shift_ids.is_empty() {
+        return Err(CoreError::Validation(
+            "Choose at least one shift for AutoRoster".into(),
+        ));
+    }
+    let now = clock_now(conn)?;
+    let policy = policy_for_workspace(conn)?;
+    let slots = load_open_slots(conn, shift_ids, now)?;
+    let candidates = load_candidates(conn, now, options)?;
+    let mut evaluation = crate::matching::evaluate_roster(&candidates, &slots, &policy, options);
+    evaluation.generated_at = now.to_rfc3339();
+    evaluation.revision = workspace_revision(conn)?;
+    evaluation.plan.generated_at = evaluation.generated_at.clone();
+    evaluation.plan.revision = evaluation.revision;
+    Ok(evaluation)
 }
 
 /// The organization this workspace belongs to. One organization lives in a
@@ -537,7 +650,7 @@ pub fn explain_candidate(
     candidate_id: &str,
     slot_id: &str,
 ) -> Result<crate::explain::CandidateAnswer> {
-    let now = now(conn)?;
+    let now = clock_now(conn)?;
     let policy = policy_for_workspace(conn)?;
     let slots = load_open_slots(conn, shift_ids, now)?;
     let candidates = load_candidates(conn, now, options)?;

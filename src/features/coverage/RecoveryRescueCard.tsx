@@ -172,7 +172,8 @@ export function RecoveryRescueCard() {
           <ul className={styles.rescueRiskList}>
             {report.atRisk.map((row) => (
               <li key={`${row.shiftId}:${row.volunteerId}`}>
-                <strong>{row.volunteerName}</strong> · {row.role} · {row.credential}
+                <strong>{row.volunteerName}</strong> · {row.shiftTitle} · {row.role} ·{" "}
+                {row.credential}
                 {row.validThrough
                   ? ` (${t("valid through {date}", { date: row.validThrough })})`
                   : ""}

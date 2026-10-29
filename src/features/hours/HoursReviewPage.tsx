@@ -15,6 +15,8 @@ import {
 } from "../../components/ui";
 import { t } from "../../lib/i18n";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { peopleTabs } from "../../app/workAreas";
 import {
   formatDate,
   formatMinutes,
@@ -131,6 +133,7 @@ export function HoursReviewPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="People" items={peopleTabs} />
       <PageHeader
         eyebrow="Service records"
         title="Hours review"

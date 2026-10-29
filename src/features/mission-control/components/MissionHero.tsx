@@ -77,8 +77,11 @@ export function MissionHero({ data }: MissionHeroProps) {
         </p>
 
         <div className={styles.heroActions}>
-          <Link className={styles.primaryAction} to="/coordinator/schedule">
-            Open the schedule
+          <Link
+            className={styles.primaryAction}
+            to={data.attentionCount > 0 ? "/coordinator/autoroster" : "/coordinator/schedule"}
+          >
+            {data.attentionCount > 0 ? "Staff next week" : "Open the schedule"}
             <ArrowRight size={15} aria-hidden="true" />
           </Link>
           <Link className={styles.ghostAction} to="/coordinator/impact">

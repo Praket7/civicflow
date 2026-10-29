@@ -21,6 +21,8 @@ import {
   SectionHeader,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { hoursTabs } from "../../app/workAreas";
 import {
   currentVolunteer,
   formatMinutes,
@@ -128,6 +130,7 @@ export function VerificationPage() {
 
   return (
     <Page width="wide">
+      <WorkAreaTabs label="Hours and impact" items={hoursTabs} />
       <div className={styles.noPrint}>
         <PageHeader
           title="Service Verification"

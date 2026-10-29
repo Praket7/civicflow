@@ -97,6 +97,73 @@
   background: transparent;
 }
 
+/* --------------------------------- scope ---------------------------------- */
+
+.scopeBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 0;
+  border-top: 1px solid var(--border-strong);
+}
+
+.scopeOptions {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+
+.scopeButton {
+  display: grid;
+  gap: 1px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.scopeButton span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.scopeButton[data-active="true"] {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--border-soft);
+}
+
+.scopeButton[data-active="true"] span {
+  color: var(--text-secondary);
+}
+
+.scopeMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.scopeMeta svg {
+  flex: none;
+  color: var(--text-muted);
+}
+
 /* ------------------------------- shift bar -------------------------------- */
 
 .shiftBar {
@@ -785,6 +852,142 @@
   color: var(--text-muted);
   font-size: 10px;
   line-height: 1.45;
+}
+
+/* ------------------------------- plan groups ----------------------------- */
+
+.planSummary {
+  margin: 0 0 4px;
+  padding: 8px 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.outcomeStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.outcomeStrip li {
+  padding: 3px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.outcomeStrip li[data-tone="good"] {
+  color: var(--tone-green-ink);
+  border-color: var(--tone-green-soft);
+  background: var(--tone-green-soft);
+}
+
+.outcomeStrip li[data-tone="bad"] {
+  color: var(--tone-red-ink);
+  border-color: var(--tone-red-soft);
+  background: var(--tone-red-soft);
+}
+
+.planGroup {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.planGroupHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 2px;
+}
+
+.planGroupTitle {
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.planGroupMeta {
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+.appliedPanel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--tone-green-soft);
+  color: var(--tone-green-ink);
+}
+
+.appliedPanel svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.appliedTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.appliedBody {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--tone-green-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.stalePanel {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.briefBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.briefHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.briefDate {
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
 }
 
 /* ----------------------------- shift brief ------------------------------- */

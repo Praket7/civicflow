@@ -252,6 +252,213 @@ pub struct RosterPlan {
     pub deterministic_seed: u64,
     /// Which version of the organization's policy produced this plan.
     pub policy_version: i64,
+    /// When the plan was generated, from the workspace clock.
+    #[serde(default)]
+    pub generated_at: String,
+    /// The workspace revision the plan was built from. Applying a plan whose
+    /// revision has moved would overwrite somebody else's decision.
+    #[serde(default)]
+    pub revision: i64,
+}
+
+/// One seat as this candidate sees it: eligible or not, what the solver scored,
+/// and the checks behind both answers. The screen formats these values; it never
+/// derives its own.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EvaluatedSlot {
+    pub slot_id: String,
+    pub shift_id: String,
+    pub shift_title: String,
+    pub role: String,
+    pub starts_at: String,
+    pub ends_at: String,
+    pub eligible: bool,
+    pub selected: bool,
+    pub score: Option<i32>,
+    pub checks: Vec<ConstraintCheck>,
+    pub components: Vec<ScoreComponent>,
+    pub selection_reason: String,
+}
+
+/// Everything the AutoRoster screen may show about a volunteer. Weekly load,
+/// waitlist state, availability and conflict text all come from the same rules
+/// the solver used, so the browser cannot disagree with the plan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateEvaluation {
+    pub candidate_id: String,
+    pub candidate_name: String,
+    pub candidate_initials: String,
+    pub eligible_roles: Vec<String>,
+    pub best_score: Option<i32>,
+    pub availability: String,
+    pub conflict: Option<String>,
+    pub weekly_shifts: i64,
+    pub weekly_minutes: i64,
+    pub waitlisted_shift_ids: Vec<String>,
+    pub slots: Vec<EvaluatedSlot>,
+}
+
+/// The plan plus the full evaluation it was drawn from, generated together so a
+/// displayed score is the score the solver optimized.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterEvaluation {
+    pub generated_at: String,
+    pub policy_version: i64,
+    pub revision: i64,
+    pub plan: RosterPlan,
+    pub candidates: Vec<CandidateEvaluation>,
+}
+
+/// How the candidate's stated availability relates to this seat. `unknown`
+/// means they have not told us yet; `partial` means they are free that day but
+/// not in this half of it.
+pub fn availability_state(candidate: &Candidate, slot: &Slot) -> String {
+    let key = format!("{}:{}", slot.day_key, period_for(slot.starts_at));
+    if candidate.availability.is_empty() {
+        return "unknown".into();
+    }
+    if candidate.availability.contains(&key) {
+        return "available".into();
+    }
+    let day_prefix = format!("{}:", slot.day_key);
+    if candidate
+        .availability
+        .iter()
+        .any(|entry| entry.starts_with(&day_prefix))
+    {
+        return "partial".into();
+    }
+    "unavailable".into()
+}
+
+/// Evaluates every candidate against every open seat and returns the plan those
+/// evaluations produce. This is the single read model behind the AutoRoster
+/// screen: eligibility, scores, components and reasons are all the solver's.
+pub fn evaluate_roster(
+    candidates: &[Candidate],
+    slots: &[Slot],
+    policy: &RosterPolicy,
+    options: &RosterOptions,
+) -> RosterEvaluation {
+    let plan = plan(candidates, slots, policy, options);
+    let selected: std::collections::HashSet<(String, String)> = plan
+        .assignments
+        .iter()
+        .map(|assignment| {
+            (
+                assignment.candidate_id.clone(),
+                assignment.explanation.slot_id.clone(),
+            )
+        })
+        .collect();
+
+    let mut ordered_candidates: Vec<&Candidate> = candidates.iter().collect();
+    ordered_candidates.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut ordered_slots: Vec<&Slot> = slots.iter().collect();
+    ordered_slots.sort_by(|a, b| {
+        a.starts_at
+            .cmp(&b.starts_at)
+            .then_with(|| a.shift_id.cmp(&b.shift_id))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    let rows = ordered_candidates
+        .into_iter()
+        .map(|candidate| {
+            let mut evaluations = Vec::new();
+            for slot in &ordered_slots {
+                let is_selected = selected.contains(&(candidate.id.clone(), slot.id.clone()));
+                // A chosen seat reuses the plan's own explanation, which includes
+                // the load this run assigned. Everything else is evaluated on the
+                // database state alone.
+                let explanation = if is_selected {
+                    plan.assignments
+                        .iter()
+                        .find(|assignment| {
+                            assignment.candidate_id == candidate.id
+                                && assignment.explanation.slot_id == slot.id
+                        })
+                        .map(|assignment| assignment.explanation.clone())
+                        .unwrap_or_else(|| {
+                            explain_selection(candidate, slot, policy, options, true)
+                        })
+                } else {
+                    explain_selection(candidate, slot, policy, options, false)
+                };
+                evaluations.push(EvaluatedSlot {
+                    slot_id: slot.id.clone(),
+                    shift_id: slot.shift_id.clone(),
+                    shift_title: slot.shift_title.clone(),
+                    role: slot.role.clone(),
+                    starts_at: slot.starts_at.to_rfc3339(),
+                    ends_at: slot.ends_at.to_rfc3339(),
+                    eligible: explanation.eligible,
+                    selected: is_selected,
+                    score: explanation.total_score,
+                    checks: explanation.checks.clone(),
+                    components: explanation.components.clone(),
+                    selection_reason: explanation.selection_reason.clone(),
+                });
+            }
+
+            let mut eligible_roles: Vec<String> = evaluations
+                .iter()
+                .filter(|slot| slot.eligible)
+                .map(|slot| slot.role.clone())
+                .collect();
+            eligible_roles.sort();
+            eligible_roles.dedup();
+            let best_score = evaluations
+                .iter()
+                .filter(|slot| slot.eligible)
+                .filter_map(|slot| slot.score)
+                .max();
+            // A seat the candidate can actually take is the one whose
+            // availability answers the question. Falling back to the first seat
+            // would label someone unavailable because of a role they cannot do.
+            let availability = evaluations
+                .iter()
+                .position(|slot| slot.eligible)
+                .and_then(|index| ordered_slots.get(index))
+                .or_else(|| ordered_slots.first())
+                .map(|slot| availability_state(candidate, slot))
+                .unwrap_or_else(|| "unknown".into());
+            let conflict = evaluations.iter().find_map(|slot| {
+                slot.checks
+                    .iter()
+                    .find(|check| check.name == "No overlapping shift" && !check.passed)
+                    .map(|check| check.detail.clone())
+            });
+            let mut waitlisted: Vec<String> =
+                candidate.waitlisted_shift_ids.iter().cloned().collect();
+            waitlisted.sort();
+
+            CandidateEvaluation {
+                candidate_id: candidate.id.clone(),
+                candidate_name: candidate.name.clone(),
+                candidate_initials: candidate.initials.clone(),
+                eligible_roles,
+                best_score,
+                availability,
+                conflict,
+                weekly_shifts: candidate.weekly_load,
+                weekly_minutes: candidate.weekly_minutes,
+                waitlisted_shift_ids: waitlisted,
+                slots: evaluations,
+            }
+        })
+        .collect();
+
+    RosterEvaluation {
+        generated_at: String::new(),
+        policy_version: policy.version,
+        revision: 0,
+        plan,
+        candidates: rows,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1383,6 +1590,8 @@ fn plan_inner(
         candidates_considered: ordered_candidates.len(),
         deterministic_seed: 20_261_013,
         policy_version: policy.version,
+        generated_at: String::new(),
+        revision: 0,
     }
 }
 

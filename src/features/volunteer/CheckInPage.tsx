@@ -431,7 +431,7 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
               <dd>{checkedInCount}</dd>
             </div>
             <div>
-              <dt>Not yet in</dt>
+              <dt>{t("Seats left")}</dt>
               <dd>{Math.max(0, capacity - checkedInCount)}</dd>
             </div>
           </dl>

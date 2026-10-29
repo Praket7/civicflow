@@ -21,12 +21,14 @@ import type {
   ReplacementRecommendation,
   RetentionSignal,
   RosterApplyAssignment,
+  RosterEvaluation,
   RosterOptions,
   RosterPlan,
   RosterPolicy,
   RosterPolicyView,
   SeriesRole,
   SessionSnapshot,
+  WeeklyAssignment,
   ShiftSeriesRecord,
   VolunteerInsight,
   ExportReceipt,
@@ -76,6 +78,13 @@ interface WorkspaceSessionValue {
     joinWaitlist(shiftId: string, volunteerId: string, role: string): Promise<void>;
     getCheckinCode(shiftId: string): Promise<CheckinCode>;
     autoRoster(shiftIds: string[], options: RosterOptions): Promise<RosterPlan>;
+    /** The plan and the authoritative evaluation behind every displayed value. */
+    evaluateRoster(shiftIds: string[], options: RosterOptions): Promise<RosterEvaluation>;
+    /** Applies a reviewed plan across its shifts in one transaction. */
+    applyRosterWeek(
+      expectedRevision: number | null,
+      assignments: WeeklyAssignment[],
+    ): Promise<void>;
     getRosterPolicy(): Promise<RosterPolicyView>;
     updateRosterPolicy(policy: RosterPolicy): Promise<RosterPolicyView>;
     explainRosterChoice(
@@ -196,10 +205,34 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
       session?.createdShifts ?? [],
     );
     if (!session) return base;
+    // Shift totals are a projection of the registration rows. The desktop
+    // database maintains them in SQLite; the browser preview keeps only the
+    // rows, so derive the same totals here instead of letting Schedule and
+    // Coverage show counts from before the last write.
+    const registrations = session.registrations;
+    const waitlist = session.waitlist;
+    const counted = {
+      ...base,
+      shifts: base.shifts.map((shift) => {
+        const live = registrations.filter(
+          (row) => row.shiftId === shift.id && row.status === "registered",
+        );
+        return {
+          ...shift,
+          confirmed: live.length,
+          waitlisted: waitlist.filter((row) => row.shiftId === shift.id && row.status === "waiting")
+            .length,
+          roles: shift.roles.map((role) => ({
+            ...role,
+            filled: live.filter((row) => row.role === role.name).length,
+          })),
+        };
+      }),
+    };
     const profile = session.volunteerProfile;
     return {
-      ...base,
-      volunteers: base.volunteers.map((volunteer) =>
+      ...counted,
+      volunteers: counted.volunteers.map((volunteer) =>
         volunteer.id === base.currentVolunteerId
           ? {
               ...volunteer,
@@ -276,6 +309,15 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     [apply],
   );
 
+  // A caller that has to react to a rejected write — AutoRoster's stale-plan
+  // check, for one — needs the error rather than only the session banner.
+  const runChecked = useCallback(
+    async (operation: () => Promise<SessionSnapshot>) => {
+      apply(await operation());
+    },
+    [apply],
+  );
+
   const actions = useMemo<WorkspaceSessionValue["actions"]>(
     () => ({
       setSaved: (opportunityId, saved) => run(() => repository.setSaved(opportunityId, saved)),
@@ -291,6 +333,9 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
         run(() => repository.joinWaitlist(shiftId, volunteerId, role)),
       getCheckinCode: (shiftId) => repository.getCheckinCode(shiftId),
       autoRoster: (shiftIds, options) => repository.autoRoster(shiftIds, options),
+      evaluateRoster: (shiftIds, options) => repository.evaluateRoster(shiftIds, options),
+      applyRosterWeek: (expectedRevision, assignments) =>
+        enqueue(() => runChecked(() => repository.applyRosterWeek(expectedRevision, assignments))),
       getRosterPolicy: () => repository.getRosterPolicy(),
       updateRosterPolicy: (policy) => repository.updateRosterPolicy(policy),
       explainRosterChoice: (shiftIds, options, candidateId, slotId) =>
@@ -366,7 +411,7 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
         }),
       exportVolunteerRoster: () => repository.exportVolunteerRoster(),
     }),
-    [apply, repository, run],
+    [apply, repository, run, runChecked],
   );
 
   const value = useMemo<WorkspaceSessionValue | null>(() => {

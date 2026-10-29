@@ -38,7 +38,7 @@ function isUpcoming(shift: Shift, now: string): boolean {
 /**
  * Coverage health = filled required role slots / required role slots across the
  * upcoming window. Seat coverage is reported separately on the schedule bars, so
- * the two numbers are never conflated. See docs/METRICS.md.
+ * the two numbers are never conflated.
  */
 export function roleCoveragePercent(shifts: Shift[], now: string): number {
   const upcoming = shifts.filter((shift) => isUpcoming(shift, now));

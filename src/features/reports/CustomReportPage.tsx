@@ -17,6 +17,8 @@ import {
 import type { Column } from "../../components/ui";
 import { currentDay, inRange, reportRange, type ReportPeriod } from "../../lib/workspace/dates";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { reportTabs } from "../../app/workAreas";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import {
   CAUSE_LABELS,
@@ -163,6 +165,7 @@ export function CustomReportPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Reports" items={reportTabs} />
       <PageHeader
         eyebrow="Reporting"
         title={template ? template.title : "Custom report builder"}

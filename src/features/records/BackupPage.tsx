@@ -9,6 +9,7 @@ import {
   SectionHeader,
   StatCard,
 } from "../../components/ui";
+import { t } from "../../lib/i18n";
 import { isTauri } from "../../lib/platform";
 import { useWorkspace } from "../../lib/workspace/session";
 import { formatDateTime, formatTime } from "../../lib/workspace/selectors";
@@ -107,7 +108,7 @@ export function BackupPage() {
           </p>
         </div>
         <Badge tone="green" dot>
-          {backups.length} snapshots
+          {backups.length} {t("available")}
         </Badge>
       </div>
 

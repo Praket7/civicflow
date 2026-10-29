@@ -16,6 +16,8 @@ import {
 } from "../../components/ui";
 import type { Column } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { peopleTabs } from "../../app/workAreas";
 import { formatDate, formatMinutes, getShiftRows, timeRange } from "../../lib/workspace/selectors";
 import styles from "./Records.module.css";
 
@@ -216,6 +218,7 @@ export function RecordsPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="People" items={peopleTabs} />
       <PageHeader
         eyebrow="Records"
         title="Records"

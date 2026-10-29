@@ -2,7 +2,7 @@ export type ShellRole = "coordinator" | "volunteer" | "public";
 
 export interface RouteMeta {
   id: string;
-  /** Registry order. Reference numbers live in docs/SCREEN_MAP.md. */
+  /** Stable registry order. */
   number: number;
   title: string;
   path: string;
@@ -446,6 +446,15 @@ export const routes: RouteMeta[] = [
     role: "coordinator",
     spec: "Comfort and access",
     keywords: ["accessibility", "contrast", "text size", "motion"],
+  },
+  {
+    id: "organization-access",
+    number: 51,
+    title: "Organization & Access",
+    path: "/coordinator/access",
+    role: "coordinator",
+    spec: "Members, roles, and invitations",
+    keywords: ["organization", "members", "access", "invite", "owner"],
   },
   {
     id: "ask",

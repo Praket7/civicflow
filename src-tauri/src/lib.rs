@@ -548,6 +548,21 @@ fn auto_roster(
     roster::plan_roster(database.connection(), &shift_ids, &options).map_err(AppError::from)
 }
 
+/// The plan and the full candidate evaluation it came from. The AutoRoster
+/// screen renders these values instead of deriving its own eligibility or score.
+#[tauri::command]
+fn evaluate_roster_candidates(
+    state: State<'_, AppState>,
+    token: String,
+    shift_ids: Vec<String>,
+    options: RosterOptions,
+) -> Result<civicflow_core::matching::RosterEvaluation, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_coordinator(&database, &token)?;
+    roster::evaluate_roster_candidates(database.connection(), &shift_ids, &options)
+        .map_err(AppError::from)
+}
+
 /// The matching policy in force, plus the named priorities a coordinator may
 /// choose from, so the screen never invents a numeric weight of its own.
 #[derive(Serialize)]
@@ -633,6 +648,22 @@ fn apply_roster_plan(
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_coordinator(&database, &token)?;
     roster::apply_roster_plan(database.connection(), &shift_id, &assignments)
+        .map_err(AppError::from)?;
+    snapshot_for(&database, &account)
+}
+
+/// Applies every assignment of a reviewed week in one transaction. A plan that
+/// went stale while the coordinator was reading is refused, not half-applied.
+#[tauri::command]
+fn apply_roster_week(
+    state: State<'_, AppState>,
+    token: String,
+    expected_revision: Option<i64>,
+    assignments: Vec<roster::WeeklyAssignment>,
+) -> Result<WorkspaceSnapshot, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    roster::apply_roster_week(database.connection(), expected_revision, &assignments)
         .map_err(AppError::from)?;
     snapshot_for(&database, &account)
 }
@@ -1370,7 +1401,9 @@ pub fn run() {
             mark_notification_read,
             get_workspace_snapshot,
             auto_roster,
+            evaluate_roster_candidates,
             apply_roster_plan,
+            apply_roster_week,
             get_roster_policy,
             update_roster_policy,
             explain_roster_choice,

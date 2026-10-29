@@ -25,6 +25,8 @@ import {
   timeRange,
 } from "../../lib/workspace/selectors";
 import type { RosterRow } from "../../lib/workspace/selectors";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { scheduleTabs } from "../../app/workAreas";
 import styles from "./Attendance.module.css";
 
 export function AttendancePage() {
@@ -34,6 +36,7 @@ export function AttendancePage() {
   if (!event) {
     return (
       <Page>
+        <WorkAreaTabs label="Schedule" items={scheduleTabs} />
         <PageHeader
           title={t("Attendance")}
           description={t("Check-in evidence, late arrivals, and no-show follow-up list.")}
@@ -140,6 +143,7 @@ export function AttendancePage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Schedule" items={scheduleTabs} />
       <PageHeader
         eyebrow="Live event"
         title="Attendance"

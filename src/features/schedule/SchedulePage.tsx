@@ -32,6 +32,8 @@ import {
 import type { Column } from "../../components/ui";
 import { t } from "../../lib/i18n";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { scheduleTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   fillPercent,
@@ -188,6 +190,7 @@ export function SchedulePage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Schedule" items={scheduleTabs} />
       <PageHeader
         eyebrow="Scheduling"
         title="Schedule"

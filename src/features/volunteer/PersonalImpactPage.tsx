@@ -25,6 +25,8 @@ import {
 import { CAUSE_COLORS } from "../../lib/causes";
 import { t } from "../../lib/i18n";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { hoursTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   currentVolunteer,
@@ -99,6 +101,7 @@ export function PersonalImpactPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Hours and impact" items={hoursTabs} />
       <section className={styles.hero} aria-labelledby="impact-title">
         <img
           className={styles.heroImage}

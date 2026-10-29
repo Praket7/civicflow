@@ -11,7 +11,7 @@ import {
 import type { ReactNode } from "react";
 import { setDefaultOptions } from "date-fns";
 import type { Locale } from "date-fns";
-import { enUS } from "date-fns/locale";
+import { enUS } from "date-fns/locale/en-US";
 import localeData from "./locales.json";
 import polished from "./polish.json";
 

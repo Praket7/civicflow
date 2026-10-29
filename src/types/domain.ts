@@ -426,6 +426,57 @@ export interface RosterPlan {
   deterministicSeed: number;
   /** Which version of the organization's matching policy produced this plan. */
   policyVersion: number;
+  /** When the workspace clock said the plan was generated. */
+  generatedAt: string;
+  /** The workspace revision the plan was built from; applying a later one is stale. */
+  revision: number;
+}
+
+/** One seat as one candidate sees it, straight from the matching engine. */
+export interface EvaluatedSlot {
+  slotId: string;
+  shiftId: string;
+  shiftTitle: string;
+  role: string;
+  startsAt: string;
+  endsAt: string;
+  eligible: boolean;
+  selected: boolean;
+  score: number | null;
+  checks: ConstraintCheck[];
+  components: ScoreComponent[];
+  selectionReason: string;
+}
+
+/** Everything the AutoRoster screen may show about one volunteer. */
+export interface CandidateEvaluation {
+  candidateId: string;
+  candidateName: string;
+  candidateInitials: string;
+  eligibleRoles: string[];
+  bestScore: number | null;
+  availability: "available" | "partial" | "unknown" | "unavailable";
+  conflict: string | null;
+  weeklyShifts: number;
+  weeklyMinutes: number;
+  waitlistedShiftIds: string[];
+  slots: EvaluatedSlot[];
+}
+
+/** The plan and the evaluation it was drawn from, generated together. */
+export interface RosterEvaluation {
+  generatedAt: string;
+  policyVersion: number;
+  revision: number;
+  plan: RosterPlan;
+  candidates: CandidateEvaluation[];
+}
+
+export interface WeeklyAssignment {
+  shiftId: string;
+  candidateId: string;
+  role: string;
+  promoteWaitlist: boolean;
 }
 
 export interface RosterApplyAssignment {

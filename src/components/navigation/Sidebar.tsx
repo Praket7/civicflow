@@ -1,47 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Accessibility,
-  BadgeCheck,
   BarChart3,
-  Bell,
-  Bookmark,
   BriefcaseBusiness,
   CalendarDays,
   Check,
   ChevronDown,
-  ClipboardCheck,
   Clock3,
   Compass,
-  DatabaseBackup,
-  FileCheck2,
-  FolderOpen,
-  Gauge,
-  HeartHandshake,
-  HelpCircle,
   Home,
-  Inbox,
-  Lightbulb,
   LogOut,
-  MessageCircleQuestion,
   PanelLeftClose,
   Pin,
   Sparkles,
-  ScrollText,
-  Settings,
-  ShieldCheck,
   UserRound,
   Users,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import type { ShellRole } from "../../app/routes";
 import { useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
 import { initialsOf } from "../../lib/initials";
 import { selectOrganization } from "../../lib/organizations/store";
 import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
-import { useNotifications } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
 import { Avatar } from "../ui/Avatar";
 import styles from "./Sidebar.module.css";
@@ -50,7 +32,8 @@ interface NavItem {
   label: string;
   to: string;
   icon: LucideIcon;
-  showsUnread?: boolean;
+  /** Extra paths that belong to this work area. */
+  also?: string[];
   accent?: boolean;
 }
 
@@ -63,58 +46,45 @@ const coordinatorGroups: NavGroup[] = [
   {
     label: "Work",
     items: [
+      { label: "Home", to: "/coordinator/mission-control", icon: Home },
       { label: "AutoRoster", to: "/coordinator/autoroster", icon: Sparkles, accent: true },
-      { label: "Mission Control", to: "/coordinator/mission-control", icon: Gauge },
-      { label: "Ask CivicFlow", to: "/ask", icon: MessageCircleQuestion },
       { label: "Schedule", to: "/coordinator/schedule", icon: CalendarDays },
-      { label: "Volunteers", to: "/coordinator/volunteers", icon: Users },
       { label: "Opportunities", to: "/coordinator/opportunities", icon: BriefcaseBusiness },
-      { label: "Coverage", to: "/coordinator/coverage", icon: ShieldCheck },
-      { label: "Attendance", to: "/coordinator/attendance", icon: ClipboardCheck },
-    ],
-  },
-  {
-    label: "Understand",
-    items: [
-      { label: "Reports", to: "/coordinator/reports", icon: BarChart3 },
-      { label: "Impact", to: "/coordinator/impact", icon: HeartHandshake },
-      { label: "Insights", to: "/coordinator/insights", icon: Lightbulb },
-      { label: "Credentials", to: "/coordinator/credentials", icon: BadgeCheck },
-    ],
-  },
-  {
-    label: "Organize",
-    items: [
-      { label: "Applications", to: "/coordinator/applications", icon: Inbox },
-      { label: "Records", to: "/coordinator/records", icon: FolderOpen },
-      { label: "Audit log", to: "/coordinator/audit", icon: ScrollText },
-      { label: "Backups", to: "/coordinator/backup", icon: DatabaseBackup },
-      { label: "Notifications", to: "/coordinator/notifications", icon: Bell, showsUnread: true },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { label: "Settings", to: "/coordinator/settings", icon: Settings },
-      { label: "Accessibility", to: "/coordinator/accessibility", icon: Accessibility },
+      {
+        label: "People",
+        to: "/coordinator/volunteers",
+        icon: Users,
+        also: [
+          "/coordinator/applications",
+          "/coordinator/credentials",
+          "/coordinator/hours",
+          "/coordinator/records",
+        ],
+      },
+      {
+        label: "Reports",
+        to: "/coordinator/reports",
+        icon: BarChart3,
+        also: ["/coordinator/impact", "/coordinator/insights", "/coordinator/reports/custom"],
+      },
     ],
   },
 ];
 
 const volunteerGroups: NavGroup[] = [
   {
-    label: "Explore",
+    label: "Volunteer",
     items: [
       { label: "Home", to: "/volunteer/home", icon: Home },
-      { label: "Ask CivicFlow", to: "/ask", icon: MessageCircleQuestion },
-      { label: "Discover", to: "/volunteer/discover", icon: Compass },
-      { label: "My Schedule", to: "/volunteer/schedule", icon: CalendarDays },
-      { label: "My Hours", to: "/volunteer/hours", icon: Clock3 },
-      { label: "My Impact", to: "/volunteer/impact", icon: HeartHandshake },
-      { label: "Verification", to: "/volunteer/verification", icon: FileCheck2 },
-      { label: "Saved", to: "/volunteer/saved", icon: Bookmark },
+      { label: "Discover", to: "/volunteer/discover", icon: Compass, also: ["/volunteer/saved"] },
+      { label: "Schedule", to: "/volunteer/schedule", icon: CalendarDays },
+      {
+        label: "Hours & Impact",
+        to: "/volunteer/hours",
+        icon: Clock3,
+        also: ["/volunteer/impact", "/volunteer/verification"],
+      },
       { label: "Profile", to: "/volunteer/profile", icon: UserRound },
-      { label: "Notifications", to: "/volunteer/notifications", icon: Bell, showsUnread: true },
     ],
   },
 ];
@@ -138,6 +108,7 @@ export function Sidebar({
   const groups = isCoordinator ? coordinatorGroups : volunteerGroups;
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { workspace, session } = useWorkspace();
   const organizationWorkspace = useOrganizationWorkspace(user);
   const currentOrganization = organizationWorkspace.current;
@@ -153,12 +124,6 @@ export function Sidebar({
     role: isCoordinator ? t("Coordinator") : t("Volunteer"),
     photo: isCoordinator ? undefined : (volunteer?.photo ?? session.volunteerProfile.photo),
   };
-  const { data: notifications = [] } = useNotifications(
-    user?.role ?? (role === "volunteer" ? "volunteer" : "coordinator"),
-  );
-  const unread =
-    notifications.filter((notification) => !notification.readAt).length +
-    organizationWorkspace.unread;
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const workspaceTriggerRef = useRef<HTMLButtonElement>(null);
@@ -337,12 +302,28 @@ export function Sidebar({
               {isCoordinator ? (
                 <>
                   <Link
+                    to="/coordinator/access"
+                    className={styles.menuItem}
+                    role="menuitem"
+                    onClick={dismissOnNavigate}
+                  >
+                    Organization &amp; access
+                  </Link>
+                  <Link
                     to="/coordinator/settings"
                     className={styles.menuItem}
                     role="menuitem"
                     onClick={dismissOnNavigate}
                   >
                     Workspace settings
+                  </Link>
+                  <Link
+                    to="/coordinator/audit"
+                    className={styles.menuItem}
+                    role="menuitem"
+                    onClick={dismissOnNavigate}
+                  >
+                    Audit log
                   </Link>
                   <Link
                     to="/coordinator/backup"
@@ -353,16 +334,23 @@ export function Sidebar({
                     Backups &amp; recovery
                   </Link>
                 </>
-              ) : (
-                <Link
-                  to="/help"
-                  className={styles.menuItem}
-                  role="menuitem"
-                  onClick={dismissOnNavigate}
-                >
-                  Help
-                </Link>
-              )}
+              ) : null}
+              <Link
+                to={isCoordinator ? "/coordinator/accessibility" : "/volunteer/profile"}
+                className={styles.menuItem}
+                role="menuitem"
+                onClick={dismissOnNavigate}
+              >
+                Accessibility
+              </Link>
+              <Link
+                to="/help"
+                className={styles.menuItem}
+                role="menuitem"
+                onClick={dismissOnNavigate}
+              >
+                Help
+              </Link>
               <Link
                 to="/credits"
                 className={styles.menuItem}
@@ -388,97 +376,30 @@ export function Sidebar({
                         [
                           styles.item,
                           item.accent ? styles.itemAccent : "",
-                          isActive ? styles.itemActive : "",
+                          isActive || item.also?.some((path) => location.pathname.startsWith(path))
+                            ? styles.itemActive
+                            : "",
                         ]
                           .filter(Boolean)
                           .join(" ")
                       }
                       title={t(item.label)}
+                      aria-current={
+                        location.pathname === item.to ||
+                        item.also?.some((path) => location.pathname.startsWith(path))
+                          ? "page"
+                          : undefined
+                      }
                       onClick={dismissOnNavigate}
                     >
                       <item.icon size={16.5} strokeWidth={1.7} aria-hidden="true" />
                       <span className={styles.itemLabel}>{t(item.label)}</span>
-                      {item.showsUnread && unread > 0 ? (
-                        <span className={styles.badge} aria-label={`${unread} ${t("unread")}`}>
-                          {unread}
-                        </span>
-                      ) : null}
                     </NavLink>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
-
-          {!isCoordinator ? (
-            <div className={styles.group}>
-              <h2 className={styles.groupLabel}>{t("Support")}</h2>
-              <ul>
-                <li>
-                  <Link
-                    className={styles.item}
-                    to="/coordinator/accessibility"
-                    title="Accessibility"
-                    onClick={dismissOnNavigate}
-                  >
-                    <Accessibility size={16.5} strokeWidth={1.7} aria-hidden="true" />
-                    <span className={styles.itemLabel}>Accessibility</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className={styles.item}
-                    to="/coordinator/settings"
-                    title="Settings"
-                    onClick={dismissOnNavigate}
-                  >
-                    <Settings size={16.5} strokeWidth={1.7} aria-hidden="true" />
-                    <span className={styles.itemLabel}>Settings</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className={styles.item}
-                    to="/credits"
-                    title="Photo credits"
-                    onClick={dismissOnNavigate}
-                  >
-                    <FolderOpen size={16.5} strokeWidth={1.7} aria-hidden="true" />
-                    <span className={styles.itemLabel}>Photo credits</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link className={styles.item} to="/help" title="Help" onClick={dismissOnNavigate}>
-                    <HelpCircle size={16.5} strokeWidth={1.7} aria-hidden="true" />
-                    <span className={styles.itemLabel}>Help</span>
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          ) : (
-            <div className={styles.group}>
-              <h2 className={styles.groupLabel}>{t("About")}</h2>
-              <ul>
-                <li>
-                  <Link
-                    className={styles.item}
-                    to="/credits"
-                    title="Photo credits"
-                    onClick={dismissOnNavigate}
-                  >
-                    <FolderOpen size={16.5} strokeWidth={1.7} aria-hidden="true" />
-                    <span className={styles.itemLabel}>Photo credits</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link className={styles.item} to="/help" title="Help" onClick={dismissOnNavigate}>
-                    <HelpCircle size={16.5} strokeWidth={1.7} aria-hidden="true" />
-                    <span className={styles.itemLabel}>Help</span>
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          )}
         </nav>
 
         <div className={styles.footer}>
@@ -497,11 +418,11 @@ export function Sidebar({
           <div className={styles.footerActions}>
             <div className={styles.status}>
               <span className={styles.onlineDot} aria-hidden="true" />
-              <span>Online</span>
+              <span>Local workspace</span>
               <span className={styles.sep} aria-hidden="true">
                 ·
               </span>
-              <span>Saved locally</span>
+              <span>Saved on this device</span>
             </div>
             <button
               type="button"

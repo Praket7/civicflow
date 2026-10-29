@@ -1,0 +1,30 @@
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status[data-tone="good"] {
+  color: var(--tone-green-ink);
+  border-color: var(--tone-green-soft);
+  background: var(--tone-green-soft);
+}
+
+.status[data-tone="watch"] {
+  color: var(--tone-amber-ink);
+  border-color: var(--tone-amber-soft);
+  background: var(--tone-amber-soft);
+}
+
+@media (max-width: 900px) {
+  .status span {
+    display: none;
+  }
+}

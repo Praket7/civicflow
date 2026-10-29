@@ -1,13 +1,21 @@
 import { ArrowRight, RefreshCcw, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useMissionControl } from "../../lib/workspace/queries";
-import { formatTime } from "../../lib/workspace/selectors";
+import {
+  formatTime,
+  getApplications,
+  getCredentials,
+  getHoursQueue,
+} from "../../lib/workspace/selectors";
+import { useWorkspace } from "../../lib/workspace/session";
 import styles from "./MissionControl.module.css";
 import { AttentionCard } from "./components/AttentionCard";
+import type { OperationItem } from "./components/AttentionCard";
 import { CommunityMotionCard } from "./components/CommunityMotionCard";
 import { MetricStrip } from "./components/MetricStrip";
 import { MissionHero } from "./components/MissionHero";
 import { RecentActivityCard } from "./components/RecentActivityCard";
+import { SetupChecklist } from "./components/SetupChecklist";
 import { SuggestedCard } from "./components/SuggestedCard";
 import { WeekCoverageCard } from "./components/WeekCoverageCard";
 
@@ -35,6 +43,39 @@ function MissionControlSkeleton() {
 
 export function MissionControlPage() {
   const { data, isPending, isError, refetch } = useMissionControl();
+  const { workspace, session } = useWorkspace();
+  const operations: OperationItem[] = [];
+  const pendingHours = getHoursQueue(session, workspace).length;
+  if (pendingHours > 0) {
+    operations.push({
+      id: "hours",
+      title: `${pendingHours} hour ${pendingHours === 1 ? "entry" : "entries"} awaiting review`,
+      detail: "Approve service before verification letters go out.",
+      href: "/coordinator/hours",
+    });
+  }
+  const applications = getApplications(session).filter(
+    (row) => row.stage === "applied" || row.stage === "review",
+  ).length;
+  if (applications > 0) {
+    operations.push({
+      id: "applications",
+      title: `${applications} ${applications === 1 ? "application" : "applications"} need review`,
+      detail: "Move people into onboarding or close the loop.",
+      href: "/coordinator/applications",
+    });
+  }
+  const expiring = getCredentials(session, workspace).filter(
+    (row) => row.status === "expiring",
+  ).length;
+  if (expiring > 0) {
+    operations.push({
+      id: "credentials",
+      title: `${expiring} ${expiring === 1 ? "credential expires" : "credentials expire"} soon`,
+      detail: "Check assigned shifts before a requirement lapses.",
+      href: "/coordinator/credentials",
+    });
+  }
 
   if (isPending) return <MissionControlSkeleton />;
 
@@ -59,6 +100,8 @@ export function MissionControlPage() {
   return (
     <div className={styles.page}>
       <MissionHero data={data} />
+
+      <SetupChecklist />
 
       <section className={styles.autoroster} aria-labelledby="mc-autoroster">
         <div className={styles.autorosterCopy}>
@@ -89,7 +132,7 @@ export function MissionControlPage() {
 
       <div className={styles.mid}>
         <WeekCoverageCard days={data.coverageDays} />
-        <AttentionCard items={data.attention} count={data.attentionCount} />
+        <AttentionCard items={data.attention} count={data.attentionCount} operations={operations} />
       </div>
 
       <div className={styles.bottom}>

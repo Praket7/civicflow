@@ -23,7 +23,7 @@ function pexels(file: string, photo: string, usage: string): PhotoCredit {
 
 /**
  * Every photograph bundled in `public/media`, with the page it appears on.
- * The in-app credits page and docs/OPEN_SOURCE_CREDITS.md read from this list.
+ * The in-app credits page and the README appendix read from this list.
  */
 export const OPEN_SOURCE_CREDITS: { photos: PhotoCredit[] } = {
   photos: [

@@ -40,7 +40,7 @@ describe("Mission Control", () => {
 
   it("renders attention items with a text explanation", async () => {
     renderPage();
-    const attention = await screen.findByRole("region", { name: "What needs a hand" });
+    const attention = await screen.findByRole("region", { name: "Needs attention" });
     expect(within(attention).getByText("Driver missing · Sat 9:00 AM")).toBeInTheDocument();
     expect(within(attention).getByText("2 spots open · Sat 1:00 PM")).toBeInTheDocument();
     expect(within(attention).getByText("Math tutor missing · Sun 2:00 PM")).toBeInTheDocument();

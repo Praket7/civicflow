@@ -10,6 +10,8 @@ import {
 } from "../../components/ui";
 import { CAUSE_COLORS } from "../../lib/causes";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { reportTabs } from "../../app/workAreas";
 import { formatMinutes, getImpactStories, getReportPreview } from "../../lib/workspace/selectors";
 import styles from "./Reports.module.css";
 
@@ -22,6 +24,7 @@ export function ImpactReportPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="Reports" items={reportTabs} />
       <PageHeader
         eyebrow="Reporting"
         title="Impact report preview"

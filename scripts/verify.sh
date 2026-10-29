@@ -7,6 +7,7 @@ pnpm format
 pnpm check:copy
 pnpm check:hardcodes
 pnpm check:generated
+pnpm docs:check
 pnpm test
 pnpm build:web
 

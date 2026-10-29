@@ -5,6 +5,7 @@ import { useDisplayPreferences } from "../../lib/display";
 import { formatDateWithYear } from "../../lib/workspace/selectors";
 import { useWorkspace } from "../../lib/workspace/session";
 import { NotificationMenu } from "./NotificationMenu";
+import { SyncStatus } from "./SyncStatus";
 import styles from "./TopBar.module.css";
 
 interface TopBarProps {
@@ -59,6 +60,7 @@ export function TopBar({ onOpenPalette, onOpenSidebar }: TopBarProps) {
       </div>
 
       <div className={styles.actions}>
+        <SyncStatus />
         <time className={styles.date} dateTime={format(today, "yyyy-MM-dd")}>
           {formatDateWithYear(today)}
         </time>

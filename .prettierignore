@@ -6,3 +6,4 @@ src-tauri/gen
 shared/demo-workspace.json
 src/lib/i18n/catalogs
 pnpm-lock.yaml
+README.md

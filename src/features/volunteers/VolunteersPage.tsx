@@ -26,6 +26,8 @@ import {
 } from "../../components/ui";
 import type { Column } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { peopleTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   formatHours,
@@ -247,6 +249,7 @@ export function VolunteersPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="People" items={peopleTabs} />
       <PageHeader
         eyebrow="People"
         title="Volunteers"

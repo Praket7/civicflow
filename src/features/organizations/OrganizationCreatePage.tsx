@@ -389,7 +389,7 @@ export function OrganizationCreatePage() {
                     <label htmlFor="visibility-private">
                       <span className={styles.radioTitle}>Private</span>
                       <span className={styles.radioBody}>
-                        Hidden from Discover. Volunteers need the 6-digit code.
+                        Private: volunteers join only with an invitation from a coordinator.
                       </span>
                     </label>
                   </div>

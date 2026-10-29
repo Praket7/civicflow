@@ -5,9 +5,17 @@ import { t } from "../../../lib/i18n";
 import { useWorkspace } from "../../../lib/workspace/session";
 import styles from "../MissionControl.module.css";
 
+export interface OperationItem {
+  id: string;
+  title: string;
+  detail: string;
+  href: string;
+}
+
 interface AttentionCardProps {
   items: AttentionItem[];
   count: number;
+  operations?: OperationItem[];
 }
 
 const causeTone: Record<Cause, string> = {
@@ -19,21 +27,21 @@ const causeTone: Record<Cause, string> = {
   animals: "rose",
 };
 
-export function AttentionCard({ items, count }: AttentionCardProps) {
+export function AttentionCard({ items, count, operations = [] }: AttentionCardProps) {
   const { workspace } = useWorkspace();
   const nothingScheduled = workspace.shifts.length === 0;
   return (
     <section className={`${styles.card} ${styles.attentionCard}`} aria-labelledby="mc-attention">
       <div className={styles.cardHead}>
         <h2 id="mc-attention" className={styles.sectionTitle}>
-          What needs a hand
+          Needs attention
         </h2>
         <span className={styles.countBadge}>
-          {count} {t(count === 1 ? "gap" : "gaps")}
+          {count + operations.length} {t(count + operations.length === 1 ? "item" : "items")}
         </span>
       </div>
 
-      {items.length === 0 ? (
+      {items.length === 0 && operations.length === 0 ? (
         <div className={styles.emptyAttention}>
           <p className={styles.emptyTitle}>
             {nothingScheduled ? t("Nothing is scheduled yet.") : t("Every shift is covered.")}
@@ -49,6 +57,18 @@ export function AttentionCard({ items, count }: AttentionCardProps) {
         </div>
       ) : (
         <ul className={styles.attentionList}>
+          {operations.map((item) => (
+            <li key={item.id}>
+              <Link className={styles.attentionRow} to={item.href}>
+                <span className={styles.attentionDot} data-tone="teal" aria-hidden="true" />
+                <span className={styles.attentionText}>
+                  <span className={styles.attentionTitle}>{item.title}</span>
+                  <span className={styles.attentionDetail}>{item.detail}</span>
+                </span>
+                <ChevronRight size={16} className={styles.chevron} aria-hidden="true" />
+              </Link>
+            </li>
+          ))}
           {items.map((item) => (
             <li key={item.id}>
               <Link className={styles.attentionRow} to={item.href}>
@@ -74,8 +94,8 @@ export function AttentionCard({ items, count }: AttentionCardProps) {
       )}
 
       {items.length > 0 ? (
-        <Link className={styles.attentionFooter} to="/coordinator/coverage">
-          See every gap on the coverage board
+        <Link className={styles.attentionFooter} to="/coordinator/autoroster">
+          Staff these gaps with AutoRoster
         </Link>
       ) : null}
     </section>

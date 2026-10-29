@@ -29,6 +29,7 @@ import type {
   ReplacementRecommendation,
   RetentionSignal,
   RosterApplyAssignment,
+  RosterEvaluation,
   RosterOptions,
   RosterPlan,
   RosterPolicy,
@@ -40,6 +41,7 @@ import type {
   VolunteerInsight,
   VolunteerImportPreview,
   VolunteerImportSummary,
+  WeeklyAssignment,
   WorkspaceSettings,
 } from "../../types/domain";
 import type { HostedIdentity } from "../auth/hosted";
@@ -126,6 +128,16 @@ export interface WorkspaceRepository {
   joinWaitlist(shiftId: string, volunteerId: string, role: string): Promise<SessionSnapshot>;
   getCheckinCode(shiftId: string): Promise<CheckinCode>;
   autoRoster(shiftIds: string[], options: RosterOptions): Promise<RosterPlan>;
+  /**
+   * The plan plus the evaluation behind it. Every score, eligibility verdict and
+   * reason the screen shows comes from here; the screen formats, never derives.
+   */
+  evaluateRoster(shiftIds: string[], options: RosterOptions): Promise<RosterEvaluation>;
+  /** Applies a reviewed plan across every shift in one transaction. */
+  applyRosterWeek(
+    expectedRevision: number | null,
+    assignments: WeeklyAssignment[],
+  ): Promise<SessionSnapshot>;
   /** The matching policy in force, with the priority levels the screen offers. */
   getRosterPolicy(): Promise<RosterPolicyView>;
   updateRosterPolicy(policy: RosterPolicy): Promise<RosterPolicyView>;
@@ -326,6 +338,10 @@ const desktopRepository: WorkspaceRepository = {
   getCheckinCode: (shiftId) => invoke<CheckinCode>("get_checkin_code", withToken({ shiftId })),
   autoRoster: (shiftIds, options) =>
     invoke<RosterPlan>("auto_roster", withToken({ shiftIds, options })),
+  evaluateRoster: (shiftIds, options) =>
+    invoke<RosterEvaluation>("evaluate_roster_candidates", withToken({ shiftIds, options })),
+  applyRosterWeek: (expectedRevision, assignments) =>
+    invoke<SessionSnapshot>("apply_roster_week", withToken({ expectedRevision, assignments })),
   getRosterPolicy: () => invoke<RosterPolicyView>("get_roster_policy", withToken()),
   updateRosterPolicy: (policy) =>
     invoke<RosterPolicyView>("update_roster_policy", withToken({ policy })),

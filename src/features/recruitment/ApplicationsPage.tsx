@@ -13,6 +13,8 @@ import {
   StatCard,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace/session";
+import { WorkAreaTabs } from "../../components/navigation/WorkAreaTabs";
+import { peopleTabs } from "../../app/workAreas";
 import {
   PIPELINE_STAGES,
   getApplications,
@@ -62,6 +64,7 @@ export function ApplicationsPage() {
 
   return (
     <Page>
+      <WorkAreaTabs label="People" items={peopleTabs} />
       <PageHeader
         eyebrow="Recruitment"
         title="Recruitment pipeline"

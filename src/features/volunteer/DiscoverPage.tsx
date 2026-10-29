@@ -136,6 +136,13 @@ export function DiscoverPage() {
     });
   }, [opportunities, query, quick, cause, sort, shiftsByOpportunity, scoreById, workspace.now]);
 
+  // The header counts the shifts the filter actually leaves on screen, not every
+  // upcoming shift in the workspace.
+  const visibleShifts = rows.reduce(
+    (total, opportunity) => total + (shiftsByOpportunity.get(opportunity.id)?.length ?? 0),
+    0,
+  );
+
   const bestMatch = matches[0];
   const profileScore = bestMatch?.score ?? 0;
   const profileFactors = [
@@ -368,7 +375,9 @@ export function DiscoverPage() {
                   count: rows.length,
                 })}
                 {" · "}
-                {t("{count} upcoming shifts", { count: upcoming.length })}
+                {t(visibleShifts === 1 ? "{count} upcoming shift" : "{count} upcoming shifts", {
+                  count: visibleShifts,
+                })}
               </p>
             </div>
             {filtersActive ? (

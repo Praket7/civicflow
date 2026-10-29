@@ -102,15 +102,14 @@ mod tests {
         let mut database = Database::in_memory().unwrap();
         assert!(!database.is_demo().unwrap());
 
-        let owner: Account =
-            crate::auth::create_account(
-                database.connection(),
-                "Real Owner",
-                "owner@example.org",
-                "river-cleanup-2026",
-            )
-            .unwrap()
-            .user;
+        let owner: Account = crate::auth::create_account(
+            database.connection(),
+            "Real Owner",
+            "owner@example.org",
+            "river-cleanup-2026",
+        )
+        .unwrap()
+        .user;
         create_organization(
             database.connection(),
             &owner,

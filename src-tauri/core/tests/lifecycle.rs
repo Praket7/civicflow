@@ -1,5 +1,8 @@
 use civicflow_core::matching::RosterOptions;
-use civicflow_core::roster::{apply_roster_plan, plan_roster, RosterApplyAssignment};
+use civicflow_core::roster::{
+    apply_roster_plan, apply_roster_week, evaluate_roster_candidates, plan_roster,
+    workspace_revision, RosterApplyAssignment, WeeklyAssignment,
+};
 use civicflow_core::workflows::{
     cancel_registration, check_in, check_out, join_waitlist, review_hours, snapshot,
 };
@@ -118,6 +121,174 @@ fn an_approved_auto_roster_plan_applies_as_one_audited_write() {
         )
         .unwrap();
     assert_eq!(confirmed, 10 + plan.assignments.len() as i64);
+}
+
+#[test]
+fn every_displayed_candidate_score_matches_the_solver() {
+    let database = seeded();
+    let options = RosterOptions {
+        prefer_spanish: true,
+        block_conflicts: true,
+        cap_weekly: false,
+        include_waitlist: false,
+    };
+    let evaluation = evaluate_roster_candidates(
+        database.connection(),
+        &["sh-sat-food".to_string()],
+        &options,
+    )
+    .expect("evaluate the shift");
+
+    assert!(!evaluation.candidates.is_empty());
+    assert!(!evaluation.plan.assignments.is_empty());
+
+    for assignment in &evaluation.plan.assignments {
+        let candidate = evaluation
+            .candidates
+            .iter()
+            .find(|row| row.candidate_id == assignment.candidate_id)
+            .expect("the chosen volunteer is in the evaluation");
+        let seat = candidate
+            .slots
+            .iter()
+            .find(|slot| slot.slot_id == assignment.explanation.slot_id)
+            .expect("the chosen seat is in the evaluation");
+        assert!(seat.selected);
+        assert!(seat.eligible);
+        // The browser shows the solver's score, not a second approximation of it.
+        assert_eq!(seat.score, Some(assignment.score));
+        assert_eq!(seat.components, assignment.explanation.components);
+        assert_eq!(
+            seat.selection_reason,
+            assignment.explanation.selection_reason
+        );
+    }
+
+    // A volunteer who fails a hard gate is shown as ineligible rather than with
+    // an optimistic score of their own.
+    for candidate in &evaluation.candidates {
+        for slot in &candidate.slots {
+            if !slot.eligible {
+                assert!(slot.score.is_none());
+                assert!(slot.checks.iter().any(|check| !check.passed));
+            }
+        }
+    }
+}
+
+#[test]
+fn a_stale_plan_is_refused_without_writing_anything() {
+    let database = seeded();
+    let options = RosterOptions {
+        prefer_spanish: true,
+        block_conflicts: true,
+        cap_weekly: false,
+        include_waitlist: false,
+    };
+    let plan = plan_roster(
+        database.connection(),
+        &["sh-sat-food".to_string()],
+        &options,
+    )
+    .expect("plan the shift");
+    assert!(plan.revision > 0);
+    assert!(!plan.generated_at.is_empty());
+
+    let assignments: Vec<WeeklyAssignment> = plan
+        .assignments
+        .iter()
+        .map(|assignment| WeeklyAssignment {
+            shift_id: assignment.shift_id.clone(),
+            candidate_id: assignment.candidate_id.clone(),
+            role: assignment.role.clone(),
+            promote_waitlist: assignment.promote_waitlist,
+        })
+        .collect();
+
+    // Somebody changes the roster between planning and applying.
+    database
+        .connection()
+        .execute(
+            "UPDATE shifts SET capacity = capacity + 1 WHERE id = 'sh-sat-food'",
+            [],
+        )
+        .unwrap();
+    assert!(workspace_revision(database.connection()).unwrap() > plan.revision);
+
+    let before: i64 = database
+        .connection()
+        .query_row(
+            "SELECT confirmed FROM shifts WHERE id = 'sh-sat-food'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let error = apply_roster_week(database.connection(), Some(plan.revision), &assignments)
+        .expect_err("the stale plan is refused");
+    match error {
+        civicflow_core::CoreError::Rule { code, .. } => assert_eq!(code, "PLAN_STALE"),
+        other => panic!("expected a rule error, got {other:?}"),
+    }
+    let after: i64 = database
+        .connection()
+        .query_row(
+            "SELECT confirmed FROM shifts WHERE id = 'sh-sat-food'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(before, after, "a refused plan writes nothing");
+}
+
+#[test]
+fn a_weekly_plan_applies_across_shifts_in_one_transaction() {
+    let database = seeded();
+    let options = RosterOptions {
+        prefer_spanish: false,
+        block_conflicts: true,
+        cap_weekly: false,
+        include_waitlist: false,
+    };
+    let shifts = vec!["sh-sat-food".to_string(), "sh-sun-library".to_string()];
+    let evaluation = evaluate_roster_candidates(database.connection(), &shifts, &options)
+        .expect("evaluate the week");
+    let assignments: Vec<WeeklyAssignment> = evaluation
+        .plan
+        .assignments
+        .iter()
+        .map(|assignment| WeeklyAssignment {
+            shift_id: assignment.shift_id.clone(),
+            candidate_id: assignment.candidate_id.clone(),
+            role: assignment.role.clone(),
+            promote_waitlist: assignment.promote_waitlist,
+        })
+        .collect();
+    assert!(assignments.len() > 1);
+    let touched: std::collections::HashSet<&str> = assignments
+        .iter()
+        .map(|row| row.shift_id.as_str())
+        .collect();
+    assert!(touched.len() > 1, "the plan spans more than one shift");
+
+    let state = apply_roster_week(
+        database.connection(),
+        Some(evaluation.plan.revision),
+        &assignments,
+    )
+    .expect("apply the week");
+    for assignment in &assignments {
+        assert!(state.registrations.iter().any(|row| {
+            row.shift_id == assignment.shift_id
+                && row.volunteer_id == assignment.candidate_id
+                && row.status == "registered"
+        }));
+    }
+    let summaries = state
+        .audit
+        .iter()
+        .filter(|event| event.action == "autoroster.apply_week")
+        .count();
+    assert_eq!(summaries, 1, "one plan summary records the whole week");
 }
 
 #[test]

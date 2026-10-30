@@ -4,6 +4,7 @@ import {
   DEMO_EVENT_SHIFT_ID,
   currentVolunteer,
   getApplications,
+  getAttendanceRoster,
   getHoursSummary,
   getLiveEvent,
   getRoster,
@@ -80,6 +81,51 @@ describe("shared read model consistency", () => {
     expect(updated.roster.find((row) => row.volunteer.id === expected.volunteer.id)?.status).toBe(
       "checked_in",
     );
+  });
+
+  it("keeps a no-show on the attendance board but out of the staffing count", () => {
+    const event = getLiveEvent(base, demoWorkspace);
+    expect(event).not.toBeNull();
+    if (!event) return;
+    const absent = event.roster.find((row) => row.status === "expected");
+    expect(absent).toBeDefined();
+    if (!absent) return;
+
+    const session = {
+      ...base,
+      registrations: base.registrations.map((row) =>
+        row.shiftId === DEMO_EVENT_SHIFT_ID && row.volunteerId === absent.volunteer.id
+          ? { ...row, status: "no_show" as const }
+          : row,
+      ),
+      attendance: {
+        ...base.attendance,
+        [DEMO_EVENT_SHIFT_ID]: [
+          ...(base.attendance[DEMO_EVENT_SHIFT_ID] ?? []),
+          {
+            volunteerId: absent.volunteer.id,
+            shiftId: DEMO_EVENT_SHIFT_ID,
+            role: absent.role,
+            status: "no_show" as const,
+            checkedInAt: null,
+            checkedOutAt: null,
+          },
+        ],
+      },
+    } satisfies SessionSnapshot;
+
+    // The staffing roster no longer holds their seat…
+    expect(
+      getRoster(DEMO_EVENT_SHIFT_ID, session, demoWorkspace).some(
+        (row) => row.volunteer.id === absent.volunteer.id,
+      ),
+    ).toBe(false);
+    // …but the attendance board still shows the absence.
+    const board = getAttendanceRoster(DEMO_EVENT_SHIFT_ID, session, demoWorkspace);
+    const row = board.find((person) => person.volunteer.id === absent.volunteer.id);
+    expect(row?.status).toBe("no_show");
+    expect(rosterCounts(board).noShow).toBe(1);
+    expect(rosterCounts(board).confirmed).toBe(board.length - 1);
   });
 
   it("moves waitlisted volunteers to promoted without duplicating their chair", () => {

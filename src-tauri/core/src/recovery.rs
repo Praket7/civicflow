@@ -160,9 +160,10 @@ pub fn detect(conn: &Connection) -> Result<DisruptionReport> {
          JOIN opportunities o ON o.id = s.opportunity_id
          JOIN shift_roles sr ON sr.shift_id = s.id
          WHERE s.status = 'scheduled' AND sr.required > sr.filled
+           AND (?1 IS NULL OR o.organization_id = ?1)
          ORDER BY s.starts_at, s.id, sr.rowid",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut shifts: Vec<DisruptedShift> = Vec::new();
     while let Some(row) = rows.next()? {
         let starts_raw: String = row.get(3)?;

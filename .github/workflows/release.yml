@@ -8,8 +8,44 @@ permissions:
   contents: write
 
 jobs:
+  # A release is only cut from a commit that passed the same checks as main. The
+  # tag is the thing being shipped, so the verification runs on the checked-out
+  # tag commit itself rather than trusting that CI ran on it earlier.
+  verify:
+    name: Verify tagged commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The checked-out commit is the tagged commit
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri/core -> target
+
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/verify.sh
+
   publish:
     name: Bundle ${{ matrix.label }}
+    needs: verify
     strategy:
       fail-fast: false
       matrix:

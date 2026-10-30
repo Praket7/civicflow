@@ -163,10 +163,12 @@ pub fn retention_signals(conn: &Connection) -> Result<Vec<RetentionSignal>> {
     let now = now(conn)?;
     let today = now.date_naive();
     let mut statement = conn.prepare(
-        "SELECT id, name, initials FROM volunteers WHERE status = 'active' ORDER BY name",
+        "SELECT id, name, initials FROM volunteers
+         WHERE status = 'active' AND (?1 IS NULL OR organization_id = ?1)
+         ORDER BY name",
     )?;
     let people = statement
-        .query_map([], |row| {
+        .query_map(params![crate::scope::current(conn)?], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -397,33 +399,53 @@ pub fn volunteer_insight(conn: &Connection, volunteer_id: &str) -> Result<Volunt
 /// The numbers behind the engagement report, computed from rows.
 pub fn engagement_metrics(conn: &Connection) -> Result<EngagementMetrics> {
     let now = now(conn)?;
+    let organization = crate::scope::current(conn)?;
     let year_start = format!("{}-01-01", now.format("%Y"));
     let new_volunteers: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM volunteers WHERE substr(joined_at, 1, 10) >= ?1",
-        params![year_start],
+        "SELECT COUNT(*) FROM volunteers
+         WHERE substr(joined_at, 1, 10) >= ?1
+           AND (?2 IS NULL OR organization_id = ?2)",
+        params![year_start, organization],
         |row| row.get(0),
     )?;
     let inactive_volunteers: i64 = conn.query_row(
         "SELECT COUNT(*) FROM volunteers v
          WHERE v.status = 'active'
+           AND (?2 IS NULL OR v.organization_id = ?2)
            AND NOT EXISTS (
              SELECT 1 FROM attendance_ledger a
              WHERE a.volunteer_id = v.id AND a.at >= ?1
                AND a.event_type IN ('check_in', 'manual_check_in')
            )",
-        params![(now - chrono::Duration::days(90)).to_rfc3339()],
+        params![
+            (now - chrono::Duration::days(90)).to_rfc3339(),
+            organization
+        ],
         |row| row.get(0),
     )?;
     let completed_shifts: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM shifts WHERE status = 'completed' OR ends_at < ?1",
-        params![now.to_rfc3339()],
+        "SELECT COUNT(*) FROM shifts s
+         JOIN opportunities o ON o.id = s.opportunity_id
+         WHERE (s.status = 'completed' OR s.ends_at < ?1)
+           AND (?2 IS NULL OR o.organization_id = ?2)",
+        params![now.to_rfc3339(), organization],
         |row| row.get(0),
     )?;
+    // Arrival and no-show counts are read through the shift they happened on;
+    // the ledger row itself carries no organization.
     let (arrivals, no_shows): (i64, i64) = conn.query_row(
         "SELECT
-           (SELECT COUNT(*) FROM attendance_ledger WHERE event_type IN ('check_in', 'manual_check_in')),
-           (SELECT COUNT(*) FROM attendance_ledger WHERE event_type = 'marked_no_show')",
-        [],
+           (SELECT COUNT(*) FROM attendance_ledger a
+             JOIN shifts s ON s.id = a.shift_id
+             JOIN opportunities o ON o.id = s.opportunity_id
+             WHERE a.event_type IN ('check_in', 'manual_check_in')
+               AND (?1 IS NULL OR o.organization_id = ?1)),
+           (SELECT COUNT(*) FROM attendance_ledger a
+             JOIN shifts s ON s.id = a.shift_id
+             JOIN opportunities o ON o.id = s.opportunity_id
+             WHERE a.event_type = 'marked_no_show'
+               AND (?1 IS NULL OR o.organization_id = ?1))",
+        params![organization],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     let no_show_rate = percent(no_shows, arrivals + no_shows);
@@ -449,11 +471,18 @@ pub fn engagement_metrics(conn: &Connection) -> Result<EngagementMetrics> {
                                               AND b.event_type IN ('check_in', 'manual_check_in'))
                                THEN a.at END) AS next_at
                FROM attendance_ledger a
+               JOIN shifts s ON s.id = a.shift_id
+               JOIN opportunities o ON o.id = s.opportunity_id
                WHERE a.event_type IN ('check_in', 'manual_check_in')
+                 AND (?3 IS NULL OR o.organization_id = ?3)
                GROUP BY a.volunteer_id
              ) arrivals
              WHERE arrivals.first_at <= ?2",
-            params![window, (now - chrono::Duration::days(window)).to_rfc3339()],
+            params![
+                window,
+                (now - chrono::Duration::days(window)).to_rfc3339(),
+                organization
+            ],
             |row| Ok((row.get(0)?, row.get::<_, Option<i64>>(1)?.unwrap_or(0))),
         )?;
         let (measured, returned) = summary;
@@ -462,26 +491,41 @@ pub fn engagement_metrics(conn: &Connection) -> Result<EngagementMetrics> {
 
     let (late, registrations): (i64, i64) = conn.query_row(
         "SELECT
-           (SELECT COUNT(*) FROM registrations r JOIN shifts s ON s.id = r.shift_id
+           (SELECT COUNT(*) FROM registrations r
+             JOIN shifts s ON s.id = r.shift_id
+             JOIN opportunities o ON o.id = s.opportunity_id
              WHERE r.status = 'canceled' AND r.updated_at IS NOT NULL
                AND s.starts_at > r.updated_at
-               AND CAST((julianday(s.starts_at) - julianday(r.updated_at)) * 24 AS INTEGER) < 48),
-           (SELECT COUNT(*) FROM registrations)",
-        [],
+               AND CAST((julianday(s.starts_at) - julianday(r.updated_at)) * 24 AS INTEGER) < 48
+               AND (?1 IS NULL OR o.organization_id = ?1)),
+           (SELECT COUNT(*) FROM registrations r
+             JOIN shifts s ON s.id = r.shift_id
+             JOIN opportunities o ON o.id = s.opportunity_id
+             WHERE (?1 IS NULL OR o.organization_id = ?1))",
+        params![organization],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     let average_lead_days: i64 = conn.query_row(
         "SELECT COALESCE(CAST(AVG(julianday(s.starts_at) - julianday(r.created_at)) AS INTEGER), 0)
-         FROM registrations r JOIN shifts s ON s.id = r.shift_id
-         WHERE r.status = 'registered'",
-        [],
+         FROM registrations r
+         JOIN shifts s ON s.id = r.shift_id
+         JOIN opportunities o ON o.id = s.opportunity_id
+         WHERE r.status = 'registered'
+           AND (?1 IS NULL OR o.organization_id = ?1)",
+        params![organization],
         |row| row.get(0),
     )?;
     let (promoted, waiting): (i64, i64) = conn.query_row(
         "SELECT
-           (SELECT COUNT(*) FROM waitlist_entries WHERE status = 'promoted'),
-           (SELECT COUNT(*) FROM waitlist_entries)",
-        [],
+           (SELECT COUNT(*) FROM waitlist_entries w
+             JOIN shifts s ON s.id = w.shift_id
+             JOIN opportunities o ON o.id = s.opportunity_id
+             WHERE w.status = 'promoted' AND (?1 IS NULL OR o.organization_id = ?1)),
+           (SELECT COUNT(*) FROM waitlist_entries w
+             JOIN shifts s ON s.id = w.shift_id
+             JOIN opportunities o ON o.id = s.opportunity_id
+             WHERE (?1 IS NULL OR o.organization_id = ?1))",
+        params![organization],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 
@@ -505,26 +549,36 @@ pub fn engagement_metrics(conn: &Connection) -> Result<EngagementMetrics> {
 pub fn credential_readiness(conn: &Connection) -> Result<CredentialReadiness> {
     let today = now(conn)?.date_naive();
     let horizon = (today + chrono::Duration::days(30)).to_string();
+    let organization = crate::scope::current(conn)?;
     let (current, expiring_soon, expired): (i64, i64, i64) = conn.query_row(
         "SELECT
-           (SELECT COUNT(*) FROM volunteer_credentials WHERE valid_through > ?1),
-           (SELECT COUNT(*) FROM volunteer_credentials WHERE valid_through >= ?2 AND valid_through <= ?1),
-           (SELECT COUNT(*) FROM volunteer_credentials WHERE valid_through < ?2)",
-        params![horizon, today.to_string()],
+           (SELECT COUNT(*) FROM volunteer_credentials vc
+             JOIN volunteers v ON v.id = vc.volunteer_id
+             WHERE vc.valid_through > ?1 AND (?3 IS NULL OR v.organization_id = ?3)),
+           (SELECT COUNT(*) FROM volunteer_credentials vc
+             JOIN volunteers v ON v.id = vc.volunteer_id
+             WHERE vc.valid_through >= ?2 AND vc.valid_through <= ?1
+               AND (?3 IS NULL OR v.organization_id = ?3)),
+           (SELECT COUNT(*) FROM volunteer_credentials vc
+             JOIN volunteers v ON v.id = vc.volunteer_id
+             WHERE vc.valid_through < ?2 AND (?3 IS NULL OR v.organization_id = ?3))",
+        params![horizon, today.to_string(), organization],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     let assignments_at_risk: i64 = conn.query_row(
         "SELECT COUNT(*) FROM registrations r
          JOIN shifts s ON s.id = r.shift_id
+         JOIN opportunities o ON o.id = s.opportunity_id
          JOIN role_requirements rr ON rr.shift_id = r.shift_id AND rr.role_name = r.role
          JOIN credential_types ct ON ct.id = rr.credential_type_id
          WHERE r.status = 'registered' AND s.status = 'scheduled' AND s.starts_at > ?1
+           AND (?2 IS NULL OR o.organization_id = ?2)
            AND NOT EXISTS (
              SELECT 1 FROM volunteer_credentials vc
              WHERE vc.volunteer_id = r.volunteer_id AND vc.credential_type_id = ct.id
                AND vc.valid_through >= substr(s.starts_at, 1, 10)
            )",
-        params![now(conn)?.to_rfc3339()],
+        params![now(conn)?.to_rfc3339(), organization],
         |row| row.get(0),
     )?;
     Ok(CredentialReadiness {

@@ -10,8 +10,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Avatar, Button, ButtonLink } from "../../components/ui";
 import { CheckInQr } from "../../components/checkin/CheckInQr";
+import { Avatar, Button, ButtonLink } from "../../components/ui";
 import { t } from "../../lib/i18n";
 import {
   currentVolunteer,
@@ -73,28 +73,24 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
   const [digits, setDigits] = useState<string[]>(emptyDigits);
   const [error, setError] = useState("");
   const [codeAccepted, setCodeAccepted] = useState(false);
-  const [eventCode, setEventCode] = useState<string | null>(null);
   const [qrPayload, setQrPayload] = useState<string | null>(null);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
 
+  // The QR carries only the token for a code the check-in table already
+  // opened. It never exposes the printed six-digit secret, and a failure here
+  // simply leaves the typed code as the path.
   useEffect(() => {
     let active = true;
-    if (!opportunity) return () => undefined;
     actions
       .getCheckinCode(shift.id)
-      .then((code) => {
-        if (active) {
-          setEventCode(code.code);
-          setQrPayload(code.payload);
-        }
+      .then((credential) => {
+        if (active) setQrPayload(credential.payload || null);
       })
-      .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : String(caught));
-      });
+      .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [actions, opportunity, shift.id]);
+  }, [actions, shift.id]);
 
   if (!opportunity) return <NoEventPanel />;
 
@@ -134,11 +130,7 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
   const percent = capacity === 0 ? 0 : Math.round((checkedInCount / capacity) * 100);
   const isOpen = windowState === "open";
   const canSubmit =
-    isOpen &&
-    Boolean(myRow) &&
-    Boolean(eventCode) &&
-    !alreadyCheckedIn &&
-    digits.every((digit) => digit.length === 1);
+    isOpen && Boolean(myRow) && !alreadyCheckedIn && digits.every((digit) => digit.length === 1);
 
   function focusInput(index: number) {
     const bounded = Math.max(0, Math.min(CODE_LENGTH - 1, index));
@@ -227,22 +219,16 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
       setError(t(WINDOW_COPY[windowState]));
       return;
     }
-    if (!eventCode || digits.join("") !== eventCode) {
-      setError(
-        t(
-          "That code does not match this event. Check the board at the check-in table and try again.",
-        ),
-      );
-      resetCode();
-      return;
-    }
+    // The workspace, not this screen, decides whether the code is live. Sending
+    // what the volunteer typed also keeps the demo hint from becoming the gate.
     setError("");
     actions
-      .checkIn(shift.id, volunteer.id, eventCode)
+      .checkIn(shift.id, volunteer.id, digits.join(""))
       .then(() => setCodeAccepted(true))
-      .catch((caught: unknown) =>
-        setError(caught instanceof Error ? caught.message : String(caught)),
-      );
+      .catch((caught: unknown) => {
+        setError(caught instanceof Error ? caught.message : String(caught));
+        resetCode();
+      });
   }
 
   return (
@@ -319,6 +305,8 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
                 </h1>
                 <p className={styles.subtitle}>Enter the six-digit code from the check-in table.</p>
 
+                <CheckInQr payload={qrPayload} />
+
                 <div className={styles.digitRow} role="group" aria-label="Six-digit event code">
                   {digits.map((digit, index) => (
                     <input
@@ -346,18 +334,8 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
                 </div>
 
                 <p className={styles.codeHint} id="event-code-hint">
-                  {eventCode ? (
-                    <>
-                      Demo code <code className={styles.codeChip}>{eventCode}</code>
-                      <span aria-hidden="true"> · </span>
-                      rotated every 15 minutes, posted at the table in a live event
-                    </>
-                  ) : (
-                    "Loading today's event code…"
-                  )}
+                  {t("Event code rotates every 15 minutes · Offline check-ins sync to the roster")}
                 </p>
-
-                <CheckInQr payload={qrPayload} />
 
                 {error ? (
                   <p className={styles.error} id="event-code-error" role="alert">

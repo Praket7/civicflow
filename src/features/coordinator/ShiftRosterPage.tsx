@@ -38,7 +38,7 @@ import { useWorkspace } from "../../lib/workspace/session";
 import {
   fillPercent,
   formatDate,
-  getRoster,
+  getAttendanceRoster,
   getWaitlist,
   opportunityById,
   rosterCounts,
@@ -68,7 +68,7 @@ export function ShiftRosterPage() {
   const [message, setMessage] = useState("");
 
   const roster = useMemo(
-    () => (shift ? getRoster(shift.id, session, workspace) : []),
+    () => (shift ? getAttendanceRoster(shift.id, session, workspace) : []),
     [session, shift, workspace],
   );
   const rows: RosterTableRow[] = roster.map((row) => ({ ...row, id: row.volunteer.id }));
@@ -171,7 +171,11 @@ export function ShiftRosterPage() {
                 icon={<LogIn size={12} aria-hidden="true" />}
                 onClick={() =>
                   runAction(`${row.volunteer.name} checked in.`, () =>
-                    actions.checkIn(shift.id, row.volunteer.id),
+                    actions.manualCheckIn(
+                      shift.id,
+                      row.volunteer.id,
+                      "Recorded by a coordinator from the shift roster",
+                    ),
                   )
                 }
               >
@@ -256,7 +260,7 @@ export function ShiftRosterPage() {
               <span className={styles.heroAvatarMore}>+{Math.max(0, roster.length - 5)}</span>
             </div>
             <span className={styles.heroRosterText}>
-              {roster.length} of {shift.capacity} seats filled
+              {counts.confirmed} of {shift.capacity} seats filled
             </span>
           </div>
         </div>
@@ -269,7 +273,7 @@ export function ShiftRosterPage() {
       <div className={styles.metrics}>
         <StatCard
           icon={Users}
-          value={`${roster.length} / ${shift.capacity}`}
+          value={`${counts.confirmed} / ${shift.capacity}`}
           label="Confirmed volunteers"
           meta={counts.expected > 0 ? `${counts.expected} expected` : "All expected arrived"}
           tone="cobalt"
@@ -292,7 +296,7 @@ export function ShiftRosterPage() {
           icon={Gauge}
           value={`${fill}%`}
           label="Seat fill"
-          meta={`${shift.capacity - roster.length} seats open`}
+          meta={`${shift.capacity - counts.confirmed} seats open`}
           tone={fill < 80 ? "coral" : "violet"}
         />
       </div>
@@ -309,7 +313,7 @@ export function ShiftRosterPage() {
               subtitle="Check volunteers in and out. Every change is written to the audit trail."
               action={
                 <span className={styles.tableCount}>
-                  {counts.checkedIn + counts.completed} of {roster.length} checked in
+                  {counts.checkedIn + counts.completed} of {counts.confirmed} checked in
                 </span>
               }
             />

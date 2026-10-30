@@ -384,6 +384,25 @@ pub fn organization_access(
     })
 }
 
+/// The account that opened this installation, and still owns its first
+/// organization. Installation-wide work — the live database file and the
+/// snapshots of it — belongs to that person, not to a coordinator of some
+/// organization added later.
+pub fn is_workspace_steward(conn: &Connection, user_id: &str) -> Result<bool> {
+    let founding: Option<String> = conn
+        .query_row(
+            "SELECT id FROM organizations ORDER BY created_at, id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(founding) = founding else {
+        return Ok(false);
+    };
+    Ok(membership(conn, &founding, user_id)?
+        .is_some_and(|current| current.is_active() && current.is_owner()))
+}
+
 pub fn membership(
     conn: &Connection,
     organization_id: &str,
@@ -819,7 +838,7 @@ pub fn redeem_invite(conn: &Connection, user_id: &str, token: &str) -> Result<Me
         params![organization_id, user_id, role, joined_at],
     )?;
     if role == "volunteer" {
-        ensure_volunteer_profile(&transaction, user_id, &name, &email, &now)?;
+        ensure_volunteer_profile(&transaction, &organization_id, user_id, &name, &email, &now)?;
     }
     transaction.execute(
         "UPDATE organization_invites
@@ -847,11 +866,14 @@ pub fn redeem_invite(conn: &Connection, user_id: &str, token: &str) -> Result<Me
         .ok_or_else(|| CoreError::Data("the redeemed membership could not be read back".into()))
 }
 
-/// Gives a member the roster row their volunteer screens read. Linking an
-/// existing roster profile by email is preferred, so a person who was imported
-/// by a coordinator does not appear twice.
+/// Gives a member the roster row their volunteer screens read, in the roster of
+/// the organization they just joined. Linking an existing roster profile by
+/// email is preferred, so a person who was imported by a coordinator does not
+/// appear twice. The link is stored on the membership because one person can
+/// volunteer at two organizations, each with its own roster record.
 fn ensure_volunteer_profile(
     conn: &Connection,
+    organization_id: &str,
     user_id: &str,
     name: &str,
     email: &str,
@@ -859,17 +881,39 @@ fn ensure_volunteer_profile(
 ) -> Result<String> {
     let linked: Option<Option<String>> = conn
         .query_row(
-            "SELECT volunteer_id FROM users WHERE id = ?1",
-            params![user_id],
+            "SELECT volunteer_id FROM organization_memberships
+             WHERE organization_id = ?1 AND user_id = ?2",
+            params![organization_id, user_id],
             |row| row.get(0),
         )
         .optional()?;
     if let Some(Some(volunteer_id)) = linked {
         return Ok(volunteer_id);
     }
-    let volunteer_id = crate::auth::link_or_create_volunteer(conn, name, email, now)?;
+    // Upgraded databases carry the old single-profile link on the account. It
+    // only applies when that profile still lives in this organization.
+    let legacy: Option<String> = conn
+        .query_row(
+            "SELECT v.id FROM users u
+             JOIN volunteers v ON v.id = u.volunteer_id
+             WHERE u.id = ?1 AND v.organization_id = ?2",
+            params![user_id, organization_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let volunteer_id = match legacy {
+        Some(volunteer_id) => volunteer_id,
+        None => crate::auth::link_or_create_volunteer(conn, organization_id, name, email, now)?,
+    };
     conn.execute(
-        "UPDATE users SET volunteer_id = ?1 WHERE id = ?2",
+        "UPDATE organization_memberships SET volunteer_id = ?1
+         WHERE organization_id = ?2 AND user_id = ?3",
+        params![volunteer_id, organization_id, user_id],
+    )?;
+    // Keep the account-level pointer for older read paths, but never move it
+    // off the profile it already names.
+    conn.execute(
+        "UPDATE users SET volunteer_id = ?1 WHERE id = ?2 AND volunteer_id IS NULL",
         params![volunteer_id, user_id],
     )?;
     Ok(volunteer_id)
@@ -920,7 +964,14 @@ pub fn join_as_volunteer(
                        membership_epoch = organization_memberships.membership_epoch + 1",
         params![organization_id, user_id, now],
     )?;
-    ensure_volunteer_profile(&transaction, user_id, &account.0, &account.1, &now)?;
+    ensure_volunteer_profile(
+        &transaction,
+        organization_id,
+        user_id,
+        &account.0,
+        &account.1,
+        &now,
+    )?;
     transaction.commit()?;
     membership(conn, organization_id, user_id)?
         .ok_or_else(|| CoreError::Data("the new membership could not be read back".into()))
@@ -983,6 +1034,7 @@ pub fn set_membership_role(
         )?;
         ensure_volunteer_profile(
             conn,
+            organization_id,
             user_id,
             &account.0,
             &account.1,

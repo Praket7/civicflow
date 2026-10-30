@@ -118,7 +118,7 @@ function KioskBody({ event }: { event: LiveEvent }) {
       return;
     }
     actions
-      .checkIn(event.shift.id, selectedRow.volunteer.id, scannedToken ?? eventCode ?? undefined)
+      .checkIn(event.shift.id, selectedRow.volunteer.id, scannedToken ?? code)
       .then(() => {
         setError("");
         setSuccess(`${publicName(selectedRow.volunteer.name)}, you're checked in. Welcome!`);

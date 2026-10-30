@@ -134,12 +134,20 @@ function guarded(route: (typeof routes)[number]) {
     route.id === "settings" || route.id === "accessibility" || route.id === "ask"
       ? (["coordinator", "volunteer"] as const)
       : undefined;
+  // Choosing or creating the first organization happens before a workspace
+  // exists. Wrapping it in the workspace provider left a new account on
+  // "Opening workspace…" because there is no workspace snapshot to read yet.
+  const needsWorkspace = ![
+    "/coordinator/start",
+    "/coordinator/organization/new",
+    "/volunteer/start",
+  ].includes(route.path);
   return (
     <RequireAuth
       accountRole={route.role as "coordinator" | "volunteer"}
       roles={roles ? [...roles] : undefined}
     >
-      <WorkspaceSessionProvider>{page}</WorkspaceSessionProvider>
+      {needsWorkspace ? <WorkspaceSessionProvider>{page}</WorkspaceSessionProvider> : page}
     </RequireAuth>
   );
 }

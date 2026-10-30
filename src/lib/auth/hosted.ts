@@ -1,14 +1,21 @@
 import { createClient, type AuthError, type Session, type User } from "@supabase/supabase-js";
 import { isTauri } from "../platform";
 
-const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? "";
+/**
+ * The hosted identity backend is one deployment, and this address is part of
+ * the desktop contract: `connect-src` in `src-tauri/tauri.conf.json` allows
+ * exactly this origin, so a different project URL would be blocked by the
+ * webview. Keeping it here rather than in the environment means the two cannot
+ * drift apart; point the build at another project only by updating both.
+ */
+const url = "https://imzdblvljdcbnxtwbmbw.supabase.co";
 const key = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ?? "";
 
 /**
- * Hosted accounts are optional. With both values missing the app behaves
+ * Hosted accounts are optional. Without the publishable key the app behaves
  * exactly as it did before: local accounts, no network calls, no hosted emails.
  */
-export const hostedAuthConfigured = Boolean(url && key);
+export const hostedAuthConfigured = Boolean(key);
 
 const client = hostedAuthConfigured
   ? createClient(url, key, {

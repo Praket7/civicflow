@@ -133,10 +133,13 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
     tone: "amber",
     email: account?.role === "coordinator" ? account.email : organization.email,
   };
+  // The signed-in volunteer is part of this workspace even before a roster row
+  // exists for them. Keying the record on the account keeps the id stable, and
+  // without it the volunteer screens had nobody to render after a join.
   const volunteer: Volunteer | null =
-    account?.role === "volunteer" && account.volunteerId
+    account?.role === "volunteer"
       ? {
-          id: account.volunteerId,
+          id: account.volunteerId ?? account.id,
           name: account.name,
           firstName: firstNameFor(account.name),
           initials: initialsOf(account.name),

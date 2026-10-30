@@ -391,3 +391,76 @@ fn a_locked_assignment_is_held_still_and_the_lock_is_audited() {
     assert!(recovery::detect(conn).is_ok());
     let _ = seat.volunteer_name;
 }
+
+#[test]
+fn a_no_show_opens_a_coverage_gap_and_keeps_that_volunteer_out_of_the_rescue() {
+    let database = seeded();
+    let connection = database.connection();
+    // The pantry shift already has two arrivals on the demo clock, so the
+    // no-show case needs a filled seat that nobody has checked into yet.
+    let (shift_id, role, volunteer_id): (String, String, String) = connection
+        .query_row(
+            "SELECT r.shift_id, r.role, r.volunteer_id
+             FROM registrations r
+             JOIN shifts s ON s.id = r.shift_id
+             JOIN shift_roles sr ON sr.shift_id = r.shift_id AND sr.name = r.role
+             JOIN role_requirements rr ON rr.shift_id = r.shift_id AND rr.role_name = r.role
+             WHERE r.status = 'registered' AND s.status = 'scheduled'
+               AND sr.required = sr.filled AND s.id <> 'sh-tue-pantry'
+               AND s.starts_at > ?1
+               AND NOT EXISTS (SELECT 1 FROM attendance_events a
+                               WHERE a.shift_id = r.shift_id
+                                 AND a.volunteer_id = r.volunteer_id)
+             ORDER BY s.starts_at, r.volunteer_id LIMIT 1",
+            [now(connection).to_rfc3339()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("a filled required seat on a future shift");
+    let seat = Seat {
+        shift_id,
+        role,
+        volunteer_id,
+        volunteer_name: String::new(),
+    };
+
+    civicflow_core::workflows::mark_no_show(
+        database.connection(),
+        &seat.shift_id,
+        &seat.volunteer_id,
+    )
+    .expect("mark the no-show");
+
+    let report = recovery::detect(database.connection()).expect("detect");
+    let shift = report
+        .shifts
+        .iter()
+        .find(|item| item.shift_id == seat.shift_id)
+        .expect("the disrupted shift");
+    let role = shift
+        .roles
+        .iter()
+        .find(|item| item.role == seat.role)
+        .expect("the open role");
+    assert!(role.open >= 1);
+    assert!(shift
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("did not attend")));
+
+    let options = RosterOptions {
+        include_waitlist: true,
+        ..RosterOptions::default()
+    };
+    let plan = recovery::plan(
+        database.connection(),
+        std::slice::from_ref(&seat.shift_id),
+        &options,
+    )
+    .expect("plan the rescue");
+    assert!(
+        plan.changes
+            .iter()
+            .all(|change| change.volunteer_id != seat.volunteer_id),
+        "somebody who did not turn up is not offered the seat back"
+    );
+}

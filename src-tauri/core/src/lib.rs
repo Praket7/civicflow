@@ -21,6 +21,7 @@ pub mod recovery;
 pub mod recurrence;
 pub mod reports;
 pub mod roster;
+pub mod scope;
 pub mod services;
 pub mod waitlist;
 pub mod workflows;

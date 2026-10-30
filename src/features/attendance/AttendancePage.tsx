@@ -20,6 +20,7 @@ import { useWorkspace } from "../../lib/workspace/session";
 import {
   formatDate,
   formatTime,
+  getAttendanceRoster,
   getLiveEvent,
   rosterCounts,
   timeRange,
@@ -48,7 +49,10 @@ export function AttendancePage() {
       </Page>
     );
   }
-  const roster = event.roster;
+  // The live event's roster is the staffing view; the attendance board also
+  // keeps the people who no-showed, so a coordinator can see the absence and
+  // the open seat in one place.
+  const roster = getAttendanceRoster(event.shift.id, session, workspace);
   const counts = rosterCounts(roster);
   const capacity = event.shift.capacity;
   const attendancePercent = capacity === 0 ? 0 : Math.round((counts.checkedIn / capacity) * 100);
@@ -116,24 +120,29 @@ export function AttendancePage() {
               className={styles.actionButton}
               disabled={row.status === "completed" || row.status === "no_show"}
               onClick={() => {
-                actions.checkIn(event.shift.id, row.volunteer.id);
+                actions.manualCheckIn(
+                  event.shift.id,
+                  row.volunteer.id,
+                  "Recorded by a coordinator at the attendance board",
+                );
                 announce(t("{name} checked in.", { name: row.volunteer.name }));
               }}
             >
               Check in
             </button>
           )}
-          <button
-            type="button"
-            className={styles.actionButton}
-            disabled={row.status === "no_show"}
-            onClick={() => {
-              actions.markNoShow(event.shift.id, row.volunteer.id);
-              announce(t("{name} marked as no-show.", { name: row.volunteer.name }));
-            }}
-          >
-            No-show
-          </button>
+          {row.status === "expected" || row.status === "confirmed" ? (
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() => {
+                actions.markNoShow(event.shift.id, row.volunteer.id);
+                announce(t("{name} marked as no-show.", { name: row.volunteer.name }));
+              }}
+            >
+              No-show
+            </button>
+          ) : null}
         </div>
       ),
     },
@@ -294,7 +303,11 @@ export function AttendancePage() {
                         size="small"
                         variant="secondary"
                         onClick={() => {
-                          actions.checkIn(event.shift.id, row.volunteer.id);
+                          actions.manualCheckIn(
+                            event.shift.id,
+                            row.volunteer.id,
+                            "Recorded by a coordinator at the attendance board",
+                          );
                           announce(t("{name} checked in.", { name: row.volunteer.name }));
                         }}
                       >

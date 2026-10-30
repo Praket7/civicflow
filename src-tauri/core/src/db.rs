@@ -14,7 +14,7 @@ pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
 /// start from the same state.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
 /// Bumped with every migration so backups can check they match this build.
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 14;
 /// "CIFV" — marks a database as a CivicFlow workspace so restore can refuse
 /// an arbitrary SQLite file.
 pub const APPLICATION_ID: i64 = 0x4349_4656;
@@ -34,6 +34,7 @@ const NOTIFICATION_RULE_SCHEMA: &str = include_str!("../migrations/0011_notifica
 const OWNERSHIP_SYNC_SCHEMA: &str =
     include_str!("../migrations/0012_ownership_sync_and_revisions.sql");
 const WORKSPACE_CLOCK_SCHEMA: &str = include_str!("../migrations/0013_workspace_clock.sql");
+const ORGANIZATION_SCOPE_SCHEMA: &str = include_str!("../migrations/0014_organization_scope.sql");
 const WORKFLOW_SEED_MARKER: &str = "workflow_seed_version";
 
 const CREDENTIAL_TYPES: [(&str, i64); 6] = [
@@ -101,7 +102,7 @@ fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>)
 /// Every schema step, in order. Kept as a free function as well as a method
 /// because restoring an older snapshot replaces the live database in place and
 /// the restored copy then has to catch up to this build.
-const MIGRATIONS: [(i64, &str); 13] = [
+const MIGRATIONS: [(i64, &str); 14] = [
     (1, INITIAL_SCHEMA),
     (2, WORKFLOW_SCHEMA),
     (3, LIFECYCLE_SCHEMA),
@@ -115,6 +116,7 @@ const MIGRATIONS: [(i64, &str); 13] = [
     (11, NOTIFICATION_RULE_SCHEMA),
     (12, OWNERSHIP_SYNC_SCHEMA),
     (13, WORKSPACE_CLOCK_SCHEMA),
+    (14, ORGANIZATION_SCOPE_SCHEMA),
 ];
 
 pub fn apply_migrations(conn: &Connection) -> Result<()> {
@@ -263,6 +265,16 @@ impl Database {
             })
             .unwrap_or_default();
         let now = crate::clock::now(&self.conn)?.to_rfc3339();
+        // Workflow defaults belong to the organization this workspace was
+        // created for, which is the one the demo seed just inserted.
+        let organization: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM organizations ORDER BY created_at, id LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
 
         let transaction = self.conn.transaction()?;
         for opportunity_id in &seed.saved_opportunity_ids {
@@ -276,8 +288,8 @@ impl Database {
             transaction.execute(
                 "INSERT OR IGNORE INTO applications
                  (id, name, email, initials, tone, stage, applied_at, source, cause,
-                  skills_json, note)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                  skills_json, note, organization_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     application.id,
                     application.name,
@@ -290,6 +302,7 @@ impl Database {
                     application.cause,
                     serde_json::to_string(&application.skills)?,
                     application.note,
+                    organization,
                 ],
             )?;
         }
@@ -312,8 +325,9 @@ impl Database {
         for event in &seed.audit {
             transaction.execute(
                 "INSERT OR IGNORE INTO audit_events
-                 (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary, detail)
-                 VALUES (?1, ?2, 'coordinator', ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary,
+                  detail, organization_id)
+                 VALUES (?1, ?2, 'coordinator', ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     event.id,
                     event.at,
@@ -323,6 +337,7 @@ impl Database {
                     event.entity_id,
                     event.summary,
                     event.detail,
+                    organization,
                 ],
             )?;
         }
@@ -749,8 +764,8 @@ impl Database {
         {
             let mut definition_statement = transaction.prepare(
                 "INSERT OR IGNORE INTO impact_metric_definitions
-                 (id, opportunity_id, metric_key, name, unit, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                 (id, opportunity_id, metric_key, name, unit, created_at, organization_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
             let mut result_statement = transaction.prepare(
                 "INSERT OR IGNORE INTO impact_results
@@ -767,6 +782,7 @@ impl Database {
                     record.name,
                     record.unit,
                     record.recorded_at,
+                    seed.organization.id,
                 ])?;
                 result_statement.execute(params![
                     format!("impact-{}", record.id),
@@ -781,8 +797,8 @@ impl Database {
         {
             let mut statement = transaction.prepare(
                 "INSERT OR IGNORE INTO report_saved_views
-                 (id, owner_id, scope, name, filters_json, created_at)
-                 VALUES (?1, ?2, 'records', ?3, ?4, ?5)",
+                 (id, owner_id, scope, name, filters_json, created_at, organization_id)
+                 VALUES (?1, ?2, 'records', ?3, ?4, ?5, ?6)",
             )?;
             for view in &seed.saved_views {
                 statement.execute(params![
@@ -791,6 +807,7 @@ impl Database {
                     view.name,
                     serde_json::to_string(&view.filters)?,
                     seed.now,
+                    seed.organization.id,
                 ])?;
             }
         }
@@ -798,8 +815,9 @@ impl Database {
         {
             let mut statement = transaction.prepare(
                 "INSERT INTO notifications
-                 (id, kind, title, body, priority, created_at, read_at, href, audience)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 (id, kind, title, body, priority, created_at, read_at, href, audience,
+                  organization_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for notification in &seed.notifications {
                 let audience = if notification.href.starts_with("/volunteer") {
@@ -817,14 +835,16 @@ impl Database {
                     notification.read_at,
                     notification.href,
                     audience,
+                    seed.organization.id,
                 ])?;
             }
         }
 
         {
             let mut statement = transaction.prepare(
-                "INSERT INTO activity_events (id, volunteer_id, name, action, detail, tone, at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO activity_events
+                 (id, volunteer_id, name, action, detail, tone, at, organization_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
             for activity in &seed.recent_activity {
                 statement.execute(params![
@@ -835,6 +855,7 @@ impl Database {
                     activity.detail,
                     activity.tone,
                     activity.at,
+                    seed.organization.id,
                 ])?;
             }
         }
@@ -860,8 +881,9 @@ impl Database {
 
         transaction.execute(
             "INSERT INTO audit_events
-             (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
-             VALUES (?1, ?2, 'system', 'system', 'demo_seeded', 'workspace', ?3, ?4)",
+             (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary,
+              organization_id)
+             VALUES (?1, ?2, 'system', 'system', 'demo_seeded', 'workspace', ?3, ?4, ?3)",
             params![
                 uuid::Uuid::new_v4().to_string(),
                 Utc::now().to_rfc3339(),

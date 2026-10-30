@@ -35,7 +35,7 @@ describe("workspace repository", () => {
     await repository.getSnapshot();
     await repository.setSaved("opp-garden", false);
     await repository.setApplicationStage("app-001", "review");
-    await repository.checkIn("sh-tue-pantry", "vol-maya");
+    await repository.checkIn("sh-tue-pantry", "vol-maya", "482913");
     await repository.checkOut("sh-tue-pantry", "vol-maya");
     await repository.markNoShow("sh-tue-pantry", "vol-054");
     await repository.promoteWaitlist("sh-sat-food", "vol-054");
@@ -195,6 +195,41 @@ describe("workspace repository", () => {
     await previewRepository.resetDemo();
   });
 
+  it("preview no-show releases the seat once and keeps the absence visible", async () => {
+    await previewRepository.resetDemo();
+    const before = await previewRepository.getSnapshot();
+    const seat = before.registrations.find(
+      (row) => row.shiftId === "sh-thu-food" && row.status === "registered",
+    );
+    expect(seat).toBeDefined();
+    if (!seat) return;
+
+    const state = await previewRepository.markNoShow("sh-thu-food", seat.volunteerId);
+    expect(
+      state.registrations.find(
+        (row) => row.shiftId === "sh-thu-food" && row.volunteerId === seat.volunteerId,
+      )?.status,
+    ).toBe("no_show");
+    expect(
+      state.attendance["sh-thu-food"]?.find((row) => row.volunteerId === seat.volunteerId)?.role,
+    ).toBe(seat.role);
+
+    // Marking the same person twice is a no-op, not a second released seat.
+    const repeated = await previewRepository.markNoShow("sh-thu-food", seat.volunteerId);
+    expect(repeated.audit.filter((event) => event.action === "shift.no_show")).toHaveLength(1);
+    await previewRepository.resetDemo();
+  });
+
+  it("refuses a no-show for somebody who already checked in", async () => {
+    await previewRepository.resetDemo();
+    const code = await previewRepository.getCheckinCode("sh-tue-pantry");
+    await previewRepository.checkIn("sh-tue-pantry", "vol-maya", code.code);
+    await expect(previewRepository.markNoShow("sh-tue-pantry", "vol-maya")).rejects.toThrow(
+      /already checked in/,
+    );
+    await previewRepository.resetDemo();
+  });
+
   it("restores a preview snapshot and audits the restore", async () => {
     await previewRepository.resetDemo();
     const [backup] = await previewRepository.createBackup("Contract backup");
@@ -202,7 +237,8 @@ describe("workspace repository", () => {
     if (!backup) return;
 
     const baseline = await previewRepository.getSnapshot();
-    await previewRepository.checkIn("sh-tue-pantry", "vol-maya");
+    const pantryCode = await previewRepository.getCheckinCode("sh-tue-pantry");
+    await previewRepository.checkIn("sh-tue-pantry", "vol-maya", pantryCode.code);
     const mutated = await previewRepository.setSaved("opp-garden", false);
     expect(mutated.attendance["sh-tue-pantry"]).toHaveLength(
       (baseline.attendance["sh-tue-pantry"]?.length ?? 0) + 1,
@@ -255,7 +291,8 @@ describe("workspace repository", () => {
 
   it("keeps preview writes in one snapshot", async () => {
     await previewRepository.resetDemo();
-    const state = await previewRepository.checkIn("sh-tue-pantry", "vol-maya");
+    const pantryCode = await previewRepository.getCheckinCode("sh-tue-pantry");
+    const state = await previewRepository.checkIn("sh-tue-pantry", "vol-maya", pantryCode.code);
     expect(state.attendance["sh-tue-pantry"]?.[0]?.status).toBe("checked_in");
     const saved = await previewRepository.setSaved("opp-park", true);
     expect(saved.savedOpportunityIds).toContain("opp-park");

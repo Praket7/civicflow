@@ -1,5 +1,5 @@
 use chrono::DateTime;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::domain::{coverage_days, derive_attention, role_coverage_percent, ShiftView};
 use crate::error::{CoreError, Result};
@@ -14,6 +14,20 @@ const PHOTOS: [&str; 3] = [
 ];
 
 fn setting(conn: &Connection, key: &str) -> Result<String> {
+    // A setting written for the selected organization wins over the value this
+    // workspace shipped with.
+    if let Some(organization) = crate::scope::current(conn)? {
+        let scoped: Option<String> = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                params![format!("{key}@{organization}")],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(value) = scoped {
+            return Ok(value);
+        }
+    }
     conn.query_row(
         "SELECT value FROM app_settings WHERE key = ?1",
         params![key],
@@ -31,9 +45,10 @@ pub fn load_shifts(conn: &Connection) -> Result<Vec<ShiftView>> {
         "SELECT s.id, s.opportunity_id, o.title, o.cause, s.starts_at, s.capacity, s.confirmed
          FROM shifts s
          JOIN opportunities o ON o.id = s.opportunity_id
+         WHERE (?1 IS NULL OR o.organization_id = ?1)
          ORDER BY s.starts_at, s.id",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut shifts: Vec<ShiftView> = Vec::new();
 
     while let Some(row) = rows.next()? {
@@ -69,9 +84,11 @@ pub fn load_shifts(conn: &Connection) -> Result<Vec<ShiftView>> {
 fn activity(conn: &Connection) -> Result<Vec<ActivityItem>> {
     let mut statement = conn.prepare(
         "SELECT id, volunteer_id, name, action, detail, tone, at
-         FROM activity_events ORDER BY at DESC LIMIT 3",
+         FROM activity_events
+         WHERE (?1 IS NULL OR organization_id = ?1)
+         ORDER BY at DESC LIMIT 3",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(ActivityItem {
@@ -93,29 +110,35 @@ pub fn get_mission_control(conn: &Connection, audience: &str) -> Result<MissionC
     let attention: Vec<AttentionItem> = derive_attention(&shifts, now, 3);
     let upcoming = shifts.iter().filter(|shift| shift.starts_at > now).count() as i64;
 
-    let organization_name: String =
-        conn.query_row("SELECT name FROM organizations LIMIT 1", [], |row| {
-            row.get(0)
-        })?;
+    let organization = crate::scope::current(conn)?;
+    let organization_name: String = conn.query_row(
+        "SELECT name FROM organizations WHERE id = ?1",
+        params![organization],
+        |row| row.get(0),
+    )?;
 
     let active_volunteers: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM volunteers WHERE status = 'active'",
-        [],
+        "SELECT COUNT(*) FROM volunteers
+         WHERE status = 'active' AND (?1 IS NULL OR organization_id = ?1)",
+        params![organization],
         |row| row.get(0),
     )?;
 
     let month_prefix = now.format("%Y-%m").to_string();
     let minutes_this_month: i64 = conn.query_row(
         "SELECT COALESCE(SUM(COALESCE(approved_minutes, minutes)), 0) FROM hour_entries
-         WHERE substr(date, 1, 7) = ?1 AND status <> 'rejected'",
-        params![month_prefix],
+         WHERE substr(date, 1, 7) = ?1 AND status <> 'rejected'
+           AND (?2 IS NULL OR volunteer_id IN
+                (SELECT id FROM volunteers WHERE organization_id = ?2))",
+        params![month_prefix, organization],
         |row| row.get(0),
     )?;
 
     let unread_notifications: i64 = conn.query_row(
         "SELECT COUNT(*) FROM notifications
-         WHERE read_at IS NULL AND audience IN (?1, 'all')",
-        params![audience],
+         WHERE read_at IS NULL AND audience IN (?1, 'all')
+           AND (?2 IS NULL OR organization_id = ?2)",
+        params![audience, organization],
         |row| row.get(0),
     )?;
 
@@ -124,12 +147,17 @@ pub fn get_mission_control(conn: &Connection, audience: &str) -> Result<MissionC
         i64,
         i64,
         i64,
-    ) = conn.query_row(
-        "SELECT hours_ytd, unique_volunteers_ytd, shifts_completed, attendance_rate
-             FROM impact_totals LIMIT 1",
-        [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-    )?;
+    ) = conn
+        .query_row(
+            "SELECT hours_ytd, unique_volunteers_ytd, shifts_completed, attendance_rate
+             FROM impact_totals WHERE organization_id = ?1",
+            params![organization],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?
+        // A new organization has no lifetime totals yet; its dashboard starts
+        // at zero rather than failing to load.
+        .unwrap_or((0, 0, 0, 0));
 
     // People served are not derived from volunteer hours: they are explicit
     // outcome records attached to an opportunity. Sum the latest records by
@@ -138,9 +166,10 @@ pub fn get_mission_control(conn: &Connection, audience: &str) -> Result<MissionC
         "SELECT d.metric_key, SUM(r.value)
          FROM impact_results r
          JOIN impact_metric_definitions d ON d.id = r.definition_id
+         WHERE (?1 IS NULL OR d.organization_id = ?1)
          GROUP BY d.metric_key",
     )?;
-    let mut outcome_rows = outcome_statement.query([])?;
+    let mut outcome_rows = outcome_statement.query(params![organization])?;
     let mut meals_packed = 0;
     let mut tutoring_sessions = 0;
     let mut trees_planted = 0;
@@ -197,9 +226,14 @@ pub fn list_notifications(
          FROM notifications
          WHERE audience IN (?1, 'all')
            AND (volunteer_id IS NULL OR volunteer_id = ?2)
+           AND (?3 IS NULL OR organization_id = ?3)
          ORDER BY rowid",
     )?;
-    let mut rows = statement.query(params![audience, volunteer_id])?;
+    let mut rows = statement.query(params![
+        audience,
+        volunteer_id,
+        crate::scope::current(conn)?
+    ])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(NotificationItem {
@@ -230,8 +264,9 @@ pub fn mark_notification_read(
         .query_row(
             "SELECT title FROM notifications
              WHERE id = ?1 AND audience IN (?2, 'all')
-               AND (volunteer_id IS NULL OR volunteer_id = ?3)",
-            params![id, audience, volunteer_id],
+               AND (volunteer_id IS NULL OR volunteer_id = ?3)
+               AND (?4 IS NULL OR organization_id = ?4)",
+            params![id, audience, volunteer_id, crate::scope::current(conn)?],
             |row| row.get(0),
         )
         .ok();
@@ -249,8 +284,9 @@ pub fn mark_notification_read(
     if changed > 0 {
         conn.execute(
             "INSERT INTO audit_events
-             (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
-             VALUES (?1, ?2, ?3, ?4, 'notification_read', 'notification', ?5, ?6)",
+             (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary,
+              organization_id)
+             VALUES (?1, ?2, ?3, ?4, 'notification_read', 'notification', ?5, ?6, ?7)",
             params![
                 uuid::Uuid::new_v4().to_string(),
                 timestamp,
@@ -258,6 +294,7 @@ pub fn mark_notification_read(
                 actor_name,
                 id,
                 format!("Read notification: {title}"),
+                crate::scope::current(conn)?,
             ],
         )?;
     }

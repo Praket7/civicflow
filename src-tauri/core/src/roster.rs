@@ -93,9 +93,10 @@ pub(crate) fn load_role_rows(
                 ON rr.shift_id = s.id AND rr.role_name = sr.name
          LEFT JOIN credential_types ct ON ct.id = rr.credential_type_id
          WHERE s.status = 'scheduled'
+           AND (?1 IS NULL OR o.organization_id = ?1)
          ORDER BY s.starts_at, s.id, sr.rowid",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut roles = Vec::new();
     while let Some(row) = rows.next()? {
         let shift_id: String = row.get(0)?;
@@ -285,9 +286,11 @@ pub(crate) fn load_candidates(
     let mut statement = conn.prepare(
         "SELECT id, name, initials, status, birthdate, attendance_rate, events_completed,
                 languages_json, causes_json, availability_json
-         FROM volunteers ORDER BY id",
+         FROM volunteers
+         WHERE (?1 IS NULL OR organization_id = ?1)
+         ORDER BY id",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut candidates = Vec::new();
     while let Some(row) = rows.next()? {
         let status: String = row.get(3)?;
@@ -383,7 +386,7 @@ pub fn apply_roster_plan(
             promote_waitlist: assignment.promote_waitlist,
         })
         .collect();
-    apply_roster_week(conn, None, &weekly)
+    apply_roster_week(conn, None, None, &weekly)
 }
 
 /// Applies a whole reviewed week atomically. Every hard invariant is re-checked
@@ -392,6 +395,7 @@ pub fn apply_roster_plan(
 pub fn apply_roster_week(
     conn: &Connection,
     expected_revision: Option<i64>,
+    expected_policy_version: Option<i64>,
     assignments: &[WeeklyAssignment],
 ) -> Result<WorkspaceSnapshot> {
     if assignments.is_empty() {
@@ -405,6 +409,19 @@ pub fn apply_roster_week(
             return Err(CoreError::rule(
                 "PLAN_STALE",
                 "The roster changed after this plan was generated. Rebuild the plan so nobody is double-booked.",
+                None,
+                Some("REBUILD_PLAN".into()),
+            ));
+        }
+    }
+    // The plan also names the rules it was built with. Applying it after those
+    // rules changed would staff the shift against a policy nobody reviewed.
+    if let Some(expected) = expected_policy_version {
+        let current = policy_for_workspace(conn)?.version;
+        if current != expected {
+            return Err(CoreError::rule(
+                "POLICY_STALE",
+                "The matching policy changed after this plan was generated. Rebuild the plan before applying it.",
                 None,
                 Some("REBUILD_PLAN".into()),
             ));
@@ -479,6 +496,25 @@ pub fn apply_roster_week(
         }
 
         for assignment in rows {
+            // A plan may not count a seat that is already held. The planner avoids
+            // these, so one here means the roster moved: refuse the whole plan
+            // rather than inflate the staffing counters.
+            let active: Option<String> = conn
+                .query_row(
+                    "SELECT status FROM registrations
+                     WHERE shift_id = ?1 AND volunteer_id = ?2",
+                    params![shift_id, assignment.candidate_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if active.as_deref() == Some("registered") {
+                return Err(CoreError::rule(
+                    "PLAN_STALE",
+                    "Someone in this plan already holds a seat. Rebuild the plan before applying it.",
+                    Some("shiftId".into()),
+                    Some("REBUILD_PLAN".into()),
+                ));
+            }
             validate_registration(conn, shift_id, &assignment.candidate_id, &assignment.role)?;
             // A lock is a coordinator's decision, so a plan may not quietly move
             // the seat it protects. Filling an open seat is still allowed.
@@ -522,11 +558,12 @@ pub fn apply_roster_week(
                 params![assignment.shift_id, assignment.candidate_id],
             )?;
         }
-        transaction.execute(
+        let created = transaction.execute(
             "INSERT INTO registrations (shift_id, volunteer_id, role, created_at, status, updated_at)
              VALUES (?1, ?2, ?3, ?4, 'registered', ?4)
              ON CONFLICT(shift_id, volunteer_id) DO UPDATE SET
-               role = excluded.role, status = 'registered', updated_at = excluded.updated_at",
+               role = excluded.role, status = 'registered', updated_at = excluded.updated_at
+             WHERE registrations.status <> 'registered'",
             params![
                 assignment.shift_id,
                 assignment.candidate_id,
@@ -534,15 +571,17 @@ pub fn apply_roster_week(
                 now
             ],
         )?;
-        transaction.execute(
-            "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
-            params![assignment.shift_id],
-        )?;
-        transaction.execute(
-            "UPDATE shift_roles SET filled = filled + 1
-             WHERE shift_id = ?1 AND name = ?2 AND filled < required",
-            params![assignment.shift_id, assignment.role],
-        )?;
+        if created > 0 {
+            transaction.execute(
+                "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
+                params![assignment.shift_id],
+            )?;
+            transaction.execute(
+                "UPDATE shift_roles SET filled = filled + 1
+                 WHERE shift_id = ?1 AND name = ?2 AND filled < required",
+                params![assignment.shift_id, assignment.role],
+            )?;
+        }
         append_audit(
             &transaction,
             if assignment.promote_waitlist {
@@ -635,7 +674,12 @@ pub fn workspace_organization_id(conn: &Connection) -> Result<Option<String>> {
 /// The policy of the organization this workspace belongs to. A workspace that
 /// has never been configured follows the shipped defaults.
 pub fn policy_for_workspace(conn: &Connection) -> Result<crate::policy::RosterPolicy> {
-    match workspace_organization_id(conn)? {
+    // The policy in force is the selected organization's, not the oldest row's.
+    let organization = match crate::scope::current(conn)? {
+        Some(id) => Some(id),
+        None => workspace_organization_id(conn)?,
+    };
+    match organization {
         Some(id) => crate::policy::current_policy(conn, &id),
         None => Ok(crate::policy::RosterPolicy::default()),
     }

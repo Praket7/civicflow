@@ -77,9 +77,13 @@ export function lastNDays(now: string, dayCount: number): DateRange {
 /**
  * The range a report period selects. `all` has no bound of its own; callers
  * treat it as "every stored row".
+ *
+ * `week` is the control labeled "Last 7 days", so it is a trailing window
+ * ending today. The calendar week (which can start before today and end in
+ * the future) is a different range and is not what that control says.
  */
 export function reportRange(now: string, period: ReportPeriod): DateRange | null {
-  if (period === "week") return currentWeek(now);
+  if (period === "week") return lastNDays(now, 7);
   if (period === "month") return currentMonth(now);
   if (period === "year") return yearToDate(now);
   return null;

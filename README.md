@@ -13,9 +13,9 @@ enforced by the Rust core, not by hiding screens in the browser.
 | --- | --- |
 | Package version | `0.1.1` |
 | Registered routes | 50 |
-| Migration files | 13 |
-| Database schema | v13 |
-| Application tables | 46 |
+| Migration files | 14 |
+| Database schema | v14 |
+| Application tables | 47 |
 <!-- CIVICFLOW_FACTS_END -->
 
 ## Product
@@ -246,8 +246,10 @@ Demo accounts after choosing **Explore the demo**:
 - `praket@feedmorewny.org` / `civicflow-demo` (coordinator)
 - `maya.chen@gmail.com` / `civicflow-demo` (volunteer)
 
-Hosted sign-in is optional. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to enable
-Google and email links. Without both keys the app makes no hosted-auth request.
+Hosted sign-in is optional. Set `VITE_SUPABASE_ANON_KEY` to enable Google and email
+links. The project address is fixed in `src/lib/auth/hosted.ts` to the origin the desktop
+content-security policy allows, so moving to another Supabase project means changing both.
+Without the key the app makes no hosted-auth request.
 
 ### Releases
 

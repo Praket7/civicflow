@@ -156,13 +156,30 @@ function requirePreviewAccount(): Account {
   return demo;
 }
 
+/**
+ * The role belongs to the membership the selected organization grants, not to
+ * the identity row. The desktop core recomputes it on every read; the preview
+ * kept whatever was stored at sign-up, so a new owner stayed "none" and the
+ * router sent it back to the start screen instead of opening its own workspace.
+ */
+function withLiveRole(account: Account): Account {
+  const access = previewOrganizations.active(account);
+  if (!access) return account;
+  const role: AccountRole = access.membership.role === "volunteer" ? "volunteer" : "coordinator";
+  if (role === "coordinator") return { ...account, role, volunteerId: null };
+  const matching = workspace.volunteers.find(
+    (volunteer) => volunteer.email?.toLowerCase() === account.email.toLowerCase(),
+  );
+  return { ...account, role, volunteerId: matching?.id ?? account.volunteerId };
+}
+
 function previewAccountFromToken(token: string): Account | null {
   const match = /^preview:([^:]+):([^:]+)$/.exec(token);
   if (!match) return null;
   const account = previewAccounts.find((row) => row.id === match[1]);
   if (!account) return null;
   const expected = previewPasswords()[account.id] ?? "demo";
-  return expected === match[2] ? account : null;
+  return expected === match[2] ? withLiveRole(account) : null;
 }
 
 function previewToken(account: Account): string {
@@ -637,6 +654,84 @@ function volunteerRole(id: string): string {
   return (
     workspace.volunteers.find((volunteer) => volunteer.id === id)?.skills[0] ?? "General support"
   );
+}
+
+/** The role a volunteer holds on a shift, as the registration records it. */
+function registeredRole(shiftId: string, volunteerId: string): string {
+  return (
+    state.registrations.find(
+      (row) =>
+        row.shiftId === shiftId && row.volunteerId === volunteerId && row.status !== "canceled",
+    )?.role ?? volunteerRole(volunteerId)
+  );
+}
+
+/**
+ * The seed's seat and role totals describe the moment it was authored. Every
+ * write after that lives in the registration rows, so a read model that reports
+ * staffing has to count those rows. The session screen derives the same totals
+ * for Schedule; Mission Control reads through here, and the two must agree.
+ */
+function countedWorkspace(): DemoWorkspace {
+  return {
+    ...workspace,
+    shifts: workspace.shifts.map((shift) => {
+      const live = state.registrations.filter(
+        (row) => row.shiftId === shift.id && row.status === "registered",
+      );
+      return {
+        ...shift,
+        confirmed: live.length,
+        waitlisted: state.waitlist.filter(
+          (row) => row.shiftId === shift.id && row.status === "waiting",
+        ).length,
+        roles: shift.roles.map((role) => ({
+          ...role,
+          filled: live.filter((row) => row.role === role.name).length,
+        })),
+      };
+    }),
+  };
+}
+
+/**
+ * Records an arrival the same way the desktop core does: the attendance row,
+ * the audit entry, and (for a manual override) the reason travel together.
+ */
+function recordArrival(
+  snapshot: SessionSnapshot,
+  shiftId: string,
+  volunteerId: string,
+  action: "shift.checkin" | "shift.manual_checkin",
+  reason: string | null,
+): SessionSnapshot {
+  const existing = (snapshot.attendance[shiftId] ?? []).find(
+    (row) => row.volunteerId === volunteerId,
+  );
+  if (existing && existing.status !== "expected") return snapshot;
+  const next = withAttendance(snapshot, shiftId, {
+    volunteerId,
+    shiftId,
+    role: existing?.role ?? registeredRole(shiftId, volunteerId),
+    status: "checked_in",
+    checkedInAt: workspace.now,
+    checkedOutAt: null,
+  });
+  return persist({
+    ...next,
+    audit: [
+      audit(
+        action,
+        "shift",
+        shiftId,
+        `Checked in ${volunteerName(volunteerId)}`,
+        reason
+          ? `Role: ${existing?.role ?? registeredRole(shiftId, volunteerId)}. Recorded by hand: ${reason}`
+          : undefined,
+      ),
+      ...next.audit,
+    ],
+  });
 }
 
 function withAttendance(
@@ -1209,10 +1304,11 @@ export const previewRepository: WorkspaceRepository = {
       (row) => row.email.toLowerCase() === "praket@feedmorewny.org",
     );
     if (!demo) throw new Error("The browser preview has no demo workspace to open.");
-    activePreviewAccount = demo;
+    const live = withLiveRole(demo);
+    activePreviewAccount = live;
     return {
-      token: previewToken(demo),
-      user: demo,
+      token: previewToken(live),
+      user: live,
       expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     };
   },
@@ -1224,10 +1320,11 @@ export const previewRepository: WorkspaceRepository = {
     if (!account || password !== expected) {
       throw new Error("That email and password do not match an account on this device.");
     }
-    activePreviewAccount = account;
+    const live = withLiveRole(account);
+    activePreviewAccount = live;
     return {
-      token: previewToken(account),
-      user: account,
+      token: previewToken(live),
+      user: live,
       expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     };
   },
@@ -1275,10 +1372,11 @@ export const previewRepository: WorkspaceRepository = {
     const clean = email.trim().toLowerCase();
     const existing = previewAccounts.find((row) => row.email.toLowerCase() === clean);
     if (existing) {
-      activePreviewAccount = existing;
+      const live = withLiveRole(existing);
+      activePreviewAccount = live;
       return {
-        token: previewToken(existing),
-        user: existing,
+        token: previewToken(live),
+        user: live,
         expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       };
     }
@@ -1317,7 +1415,17 @@ export const previewRepository: WorkspaceRepository = {
   async listAccounts(token) {
     const account = previewAccountFromToken(token);
     if (account?.role !== "coordinator") throw new Error("Only a coordinator can list accounts.");
-    return previewAccounts.map((row) => ({ ...row }));
+    // Accounts are identities for the whole installation, but this list answers
+    // "who is on this team". Reading every identity here put another
+    // organization's people on a new organization's settings screen.
+    const self = previewOrganizations.active(account);
+    if (!self) return [];
+    const roster = previewOrganizations.members(account, self.organization.id);
+    const byId = new Map(previewAccounts.map((row) => [row.id, row]));
+    return roster
+      .map((member) => byId.get(member.userId))
+      .filter((row): row is Account => Boolean(row))
+      .map((row) => withLiveRole(row));
   },
   async resetPassword(token, userId, newPassword) {
     const account = previewAccountFromToken(token);
@@ -1382,28 +1490,19 @@ export const previewRepository: WorkspaceRepository = {
     });
   },
   async checkIn(shiftId, volunteerId, code) {
-    if (code && code !== previewCheckinCode(shiftId)) {
+    const supplied = code.trim().replace(/^civicflow:\/\/checkin\//, "");
+    const expected = previewCheckinCode(shiftId);
+    // The door kiosk sends the QR payload; the volunteer page sends the digits.
+    if (supplied !== expected && supplied !== `demo-${shiftId}-${expected}`) {
       throw new Error("That check-in code is not valid.");
     }
-    const existing = (state.attendance[shiftId] ?? []).find(
-      (row) => row.volunteerId === volunteerId,
-    );
-    if (existing && existing.status !== "expected") return state;
-    const next = withAttendance(state, shiftId, {
-      volunteerId,
-      shiftId,
-      role: existing?.role ?? volunteerRole(volunteerId),
-      status: "checked_in",
-      checkedInAt: workspace.now,
-      checkedOutAt: null,
-    });
-    return persist({
-      ...next,
-      audit: [
-        audit("shift.checkin", "shift", shiftId, `Checked in ${volunteerName(volunteerId)}`),
-        ...next.audit,
-      ],
-    });
+    return recordArrival(state, shiftId, volunteerId, "shift.checkin", null);
+  },
+  async manualCheckIn(shiftId, volunteerId, reason) {
+    if (reason.trim().length < 4) {
+      throw new Error("Say why this arrival is being recorded by hand.");
+    }
+    return recordArrival(state, shiftId, volunteerId, "shift.manual_checkin", reason.trim());
   },
   async checkOut(shiftId, volunteerId) {
     const existing = (state.attendance[shiftId] ?? []).find(
@@ -1538,13 +1637,18 @@ export const previewRepository: WorkspaceRepository = {
   async evaluateRoster(shiftIds, options): Promise<RosterEvaluation> {
     return previewEvaluation(shiftIds, options);
   },
-  async applyRosterWeek(expectedRevision, assignments) {
+  async applyRosterWeek(expectedRevision, expectedPolicyVersion, assignments) {
     if (assignments.length === 0) {
       throw new Error("Select at least one suggested assignment to apply");
     }
     if (expectedRevision !== null && expectedRevision !== revision) {
       throw new Error(
         "PLAN_STALE: the roster changed after this plan was generated. Rebuild the plan so nobody is double-booked.",
+      );
+    }
+    if (expectedPolicyVersion !== null && expectedPolicyVersion !== readRosterPolicy().version) {
+      throw new Error(
+        "POLICY_STALE: the matching policy changed after this plan was generated. Rebuild the plan before applying it.",
       );
     }
     let next = state;
@@ -1942,16 +2046,38 @@ export const previewRepository: WorkspaceRepository = {
     const existing = (state.attendance[shiftId] ?? []).find(
       (row) => row.volunteerId === volunteerId,
     );
+    // Marking the same person twice must not release the seat twice, and must
+    // not write a second audit entry for one absence.
+    if (existing?.status === "no_show") return state;
+    if (existing?.status === "checked_in" || existing?.status === "completed") {
+      throw new Error(
+        "This volunteer already checked in. Correct the attendance record instead of marking a no-show.",
+      );
+    }
+    const registration = state.registrations.find(
+      (row) =>
+        row.shiftId === shiftId && row.volunteerId === volunteerId && row.status === "registered",
+    );
+    if (!registration) {
+      throw new Error("That volunteer does not hold a seat on this shift.");
+    }
     const next = withAttendance(state, shiftId, {
       volunteerId,
       shiftId,
-      role: existing?.role ?? volunteerRole(volunteerId),
+      role: existing?.role ?? registration.role ?? volunteerRole(volunteerId),
       status: "no_show",
       checkedInAt: null,
       checkedOutAt: null,
     });
     return persist({
       ...next,
+      // Seat and role totals are projections of the registration rows, so the
+      // absence has to land there too or every count keeps the empty seat.
+      registrations: next.registrations.map((row) =>
+        row.shiftId === shiftId && row.volunteerId === volunteerId && row.status === "registered"
+          ? { ...row, status: "no_show" }
+          : row,
+      ),
       audit: [
         audit(
           "shift.no_show",
@@ -2236,7 +2362,7 @@ export const previewRepository: WorkspaceRepository = {
     return { snapshot: next, backups: listBackupMeta() };
   },
   async getMissionControl(role: "coordinator" | "volunteer" = "coordinator") {
-    return buildMissionControl(workspace, readIds(), role);
+    return buildMissionControl(countedWorkspace(), readIds(), role);
   },
   async getNotifications(role: AccountRole) {
     const read = readIds();

@@ -79,4 +79,16 @@ describe("workspace date ranges", () => {
     expect(inRange("2026-10-13", null)).toBe(true);
     expect(inRange("2026-09-30", currentMonth("2026-10-13T07:45:00-04:00"))).toBe(false);
   });
+
+  it("reads the week report period as the last seven days, not the calendar week", () => {
+    // 2026-10-13 is a Tuesday, so the calendar week starts on the 12th and runs
+    // past today. The control says "Last 7 days" and must deliver 7-13.
+    expect(reportRange("2026-10-13T07:45:00-04:00", "week")).toEqual({
+      start: "2026-10-07",
+      end: "2026-10-13",
+    });
+    expect(reportRange("2026-10-13T07:45:00-04:00", "week")).not.toEqual(
+      currentWeek("2026-10-13T07:45:00-04:00"),
+    );
+  });
 });

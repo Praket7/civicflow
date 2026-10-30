@@ -580,7 +580,7 @@ export function AutoRosterPage() {
         role: assignment.gap.name,
         promoteWaitlist: assignment.backend.promoteWaitlist,
       }));
-      await actions.applyRosterWeek(plan.revision, assignments);
+      await actions.applyRosterWeek(plan.revision, plan.policyVersion, assignments);
       // Re-read the seat evaluation after the write so the candidate browser,
       // gaps, and roster count all describe the roster that now exists.
       const refreshed = await actions.evaluateRoster(shiftKey.split("|"), {

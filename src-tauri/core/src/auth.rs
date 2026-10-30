@@ -217,15 +217,128 @@ fn validate_password(password: &str) -> Result<()> {
 }
 
 /// The role a workspace sees for an account is derived from its active
-/// membership, never from a global `users.role` column. An account with no
-/// membership has no workspace role at all. Owners and coordinators share the
-/// coordinator capabilities; only an owner may change the membership.
+/// membership in the **selected** organization, never from a global
+/// `users.role` column and never from the strongest membership anywhere. A
+/// person who owns one organization and volunteers in another is a volunteer
+/// when that second organization is open. An account with no membership has no
+/// workspace role at all. Owners and coordinators share the coordinator
+/// capabilities; only an owner may change the membership.
+///
+/// The selected organization is stored per account in `app_settings`. A stale
+/// selection (the membership ended, or the organization was removed) falls back
+/// to the strongest remaining membership, which is also what a brand-new
+/// session uses.
 const ROLE_SQL: &str = "COALESCE((
     SELECT CASE WHEN m.role IN ('owner', 'coordinator') THEN 'coordinator' ELSE 'volunteer' END
     FROM organization_memberships m
     WHERE m.user_id = u.id AND m.status = 'active'
-    ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'coordinator' THEN 1 ELSE 2 END
+      AND m.organization_id = COALESCE(
+          (SELECT a.value FROM app_settings a
+           WHERE a.key = 'active_organization:' || u.id
+             AND EXISTS (SELECT 1 FROM organization_memberships x
+                         WHERE x.user_id = u.id AND x.status = 'active'
+                           AND x.organization_id = a.value)),
+          (SELECT m2.organization_id FROM organization_memberships m2
+           WHERE m2.user_id = u.id AND m2.status = 'active'
+           ORDER BY CASE m2.role WHEN 'owner' THEN 0 WHEN 'coordinator' THEN 1 ELSE 2 END,
+                    m2.joined_at, m2.organization_id
+           LIMIT 1))
     LIMIT 1), 'none')";
+
+/// The organization an account is currently working in.
+///
+/// Mirrors [`ROLE_SQL`]: the stored selection when it still names an active
+/// membership, otherwise the strongest remaining membership. Returning the
+/// organization here keeps the role and the data scope from disagreeing, which
+/// is exactly how an owner of one organization used to receive coordinator
+/// treatment inside another one.
+pub fn active_organization(conn: &Connection, user_id: &str) -> Result<Option<String>> {
+    let selected: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            params![format!("active_organization:{user_id}")],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let mut statement = conn.prepare(
+        "SELECT organization_id FROM organization_memberships
+         WHERE user_id = ?1 AND status = 'active'
+         ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'coordinator' THEN 1 ELSE 2 END,
+                  joined_at, organization_id",
+    )?;
+    let memberships: Vec<String> = statement
+        .query_map(params![user_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    if let Some(selected) = selected {
+        if memberships.iter().any(|id| id == &selected) {
+            return Ok(Some(selected));
+        }
+    }
+    Ok(memberships.into_iter().next())
+}
+
+/// The roster profile the account holds in the organization it is working in.
+///
+/// The profile is a membership column, not a user column: one person can
+/// volunteer at two organizations and has a separate record in each roster.
+/// `users.volunteer_id` remains as the fallback for a database upgraded from
+/// before memberships carried one.
+pub fn active_volunteer(
+    conn: &Connection,
+    user_id: &str,
+    organization_id: &str,
+) -> Result<Option<String>> {
+    let membership: Option<Option<String>> = conn
+        .query_row(
+            "SELECT volunteer_id FROM organization_memberships
+             WHERE organization_id = ?1 AND user_id = ?2 AND status = 'active'",
+            params![organization_id, user_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(Some(volunteer_id)) = membership {
+        return Ok(Some(volunteer_id));
+    }
+    // The upgraded column is only trusted when the profile belongs to this
+    // organization; otherwise it names a roster record somewhere else and
+    // reading it here would put another team's volunteer behind this account.
+    let legacy: Option<Option<String>> = conn
+        .query_row(
+            "SELECT volunteer_id FROM users WHERE id = ?1",
+            params![user_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(Some(volunteer_id)) = legacy else {
+        return Ok(None);
+    };
+    let belongs_here: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM volunteers WHERE id = ?1 AND organization_id = ?2",
+            params![volunteer_id, organization_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(belongs_here.map(|_| volunteer_id))
+}
+
+/// Rewrites the session's volunteer id from the working organization, so a
+/// coordinator in one roster and a volunteer in another sees the right profile.
+fn with_active_profile(conn: &Connection, mut account: Account) -> Result<Account> {
+    if let Some(organization) = active_organization(conn, &account.id)? {
+        if let Some(volunteer_id) = active_volunteer(conn, &account.id, &organization)? {
+            // The read models behind the screens resolve the signed-in volunteer
+            // from this setting. Record it for the organization it belongs to so
+            // a profile from one roster can never stand in for another.
+            conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+                params![format!("current_volunteer_id@{organization}"), volunteer_id],
+            )?;
+            account.volunteer_id = Some(volunteer_id);
+        }
+    }
+    Ok(account)
+}
 
 fn load_account(conn: &Connection, user_id: &str) -> Result<Option<Account>> {
     Ok(conn
@@ -334,6 +447,11 @@ pub fn sign_in(
 
 /// Starts a session and records the audit entry shared by every sign-in path.
 fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result<AuthSession> {
+    // The workspace every following command reads and writes is the one this
+    // account selected, not whichever organization happened to be oldest.
+    let organization = active_organization(conn, &account.id)?;
+    crate::scope::select(conn, organization.as_deref())?;
+    let account = with_active_profile(conn, account.clone())?;
     let now = Utc::now();
     let lifetime = if remember {
         Duration::days(REMEMBER_DAYS)
@@ -359,14 +477,16 @@ fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result
     )?;
     conn.execute(
         "INSERT INTO audit_events
-         (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
-         VALUES (?1, ?2, ?3, ?4, 'auth.sign_in', 'user', ?4, ?5)",
+         (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary,
+          organization_id)
+         VALUES (?1, ?2, ?3, ?4, 'auth.sign_in', 'user', ?4, ?5, ?6)",
         params![
             uuid::Uuid::new_v4().to_string(),
             now.to_rfc3339(),
             account.role,
             account.id,
             format!("Signed in {}", account.email),
+            organization,
         ],
     )?;
 
@@ -381,14 +501,18 @@ fn start_session(conn: &Connection, account: &Account, remember: bool) -> Result
 /// volunteer account. A profile that already has an account is refused.
 pub(crate) fn link_or_create_volunteer(
     conn: &Connection,
+    organization_id: &str,
     name: &str,
     email: &str,
     now: &str,
 ) -> Result<String> {
+    // A roster profile belongs to one organization. The same email may already
+    // exist in another organization's roster, which is a different person
+    // record and must not be claimed here.
     let existing: Option<String> = conn
         .query_row(
-            "SELECT id FROM volunteers WHERE lower(email) = ?1",
-            params![email],
+            "SELECT id FROM volunteers WHERE lower(email) = ?1 AND organization_id = ?2",
+            params![email, organization_id],
             |row| row.get(0),
         )
         .optional()?;
@@ -396,7 +520,10 @@ pub(crate) fn link_or_create_volunteer(
         Some(volunteer_id) => {
             let linked: Option<String> = conn
                 .query_row(
-                    "SELECT id FROM users WHERE volunteer_id = ?1",
+                    "SELECT id FROM users WHERE volunteer_id = ?1
+                     UNION ALL
+                     SELECT user_id FROM organization_memberships WHERE volunteer_id = ?1
+                     LIMIT 1",
                     params![volunteer_id],
                     |row| row.get(0),
                 )
@@ -411,7 +538,7 @@ pub(crate) fn link_or_create_volunteer(
             }
             Ok(volunteer_id)
         }
-        None => insert_volunteer(conn, name, email, now),
+        None => insert_volunteer(conn, organization_id, name, email, now),
     }
 }
 
@@ -486,10 +613,11 @@ pub fn sign_in_with_hosted(conn: &Connection, name: &str, email: &str) -> Result
 
 pub fn current_user(conn: &Connection, token: &str) -> Result<Option<Account>> {
     if token.trim().is_empty() {
+        crate::scope::select(conn, None)?;
         return Ok(None);
     }
     let now = Utc::now().to_rfc3339();
-    Ok(conn
+    let account = conn
         .query_row(
             &format!(
                 "SELECT u.id, u.name, u.email, {ROLE_SQL}, u.volunteer_id
@@ -511,7 +639,26 @@ pub fn current_user(conn: &Connection, token: &str) -> Result<Option<Account>> {
                 })
             },
         )
-        .optional()?)
+        .optional()?;
+    // Every authenticated command passes through here, so this is the one place
+    // the connection learns which organization the caller is working in.
+    let account = match account {
+        Some(account) => Some(with_active_profile(conn, account)?),
+        None => None,
+    };
+    match &account {
+        Some(account) => {
+            let organization = active_organization(conn, &account.id)?;
+            match organization {
+                Some(id) => crate::scope::select(conn, Some(&id))?,
+                // A signed-in identity with no membership reads no workspace at
+                // all instead of falling back to the installation's own one.
+                None => crate::scope::select_none(conn)?,
+            }
+        }
+        None => crate::scope::select(conn, None)?,
+    }
+    Ok(account)
 }
 
 pub fn require_user(conn: &Connection, token: &str) -> Result<Account> {
@@ -523,6 +670,24 @@ pub fn require_user(conn: &Connection, token: &str) -> Result<Account> {
             Some("SIGN_IN".into()),
         )
     })
+}
+
+/// A signed-in account that belongs to at least one active organization.
+///
+/// Workspace reads and writes use this: a brand-new hosted or local identity
+/// with no membership must not fall back to the installation's demo workspace,
+/// and a disabled membership must not keep reading it either.
+pub fn require_member(conn: &Connection, token: &str) -> Result<Account> {
+    let account = require_user(conn, token)?;
+    if account.role == "none" {
+        return Err(CoreError::rule(
+            "NO_ORGANIZATION",
+            "Choose or create an organization to continue.",
+            None,
+            Some("CHOOSE_ORGANIZATION".into()),
+        ));
+    }
+    Ok(account)
 }
 
 pub fn require_coordinator(conn: &Connection, token: &str) -> Result<Account> {
@@ -673,14 +838,16 @@ pub fn sign_out(conn: &Connection, token: &str, actor: &Account) -> Result<bool>
     if changed > 0 {
         conn.execute(
             "INSERT INTO audit_events
-             (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary)
-             VALUES (?1, ?2, ?3, ?4, 'auth.sign_out', 'user', ?4, ?5)",
+             (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary,
+              organization_id)
+             VALUES (?1, ?2, ?3, ?4, 'auth.sign_out', 'user', ?4, ?5, ?6)",
             params![
                 uuid::Uuid::new_v4().to_string(),
                 now,
                 actor.role,
                 actor.id,
                 format!("Signed out {}", actor.email),
+                crate::scope::current(conn)?,
             ],
         )?;
     }
@@ -809,15 +976,13 @@ pub(crate) fn initials_for(name: &str) -> String {
 
 /// Creates a volunteer profile for a new volunteer account, so the roster and
 /// every volunteer-scoped read model have a real row to point at.
-fn insert_volunteer(conn: &Connection, name: &str, email: &str, now: &str) -> Result<String> {
-    let organization: Option<String> = conn
-        .query_row("SELECT id FROM organizations LIMIT 1", [], |row| row.get(0))
-        .optional()?;
-    let Some(organization) = organization else {
-        return Err(CoreError::Data(
-            "The workspace has no organization for this account to join.".into(),
-        ));
-    };
+fn insert_volunteer(
+    conn: &Connection,
+    organization: &str,
+    name: &str,
+    email: &str,
+    now: &str,
+) -> Result<String> {
     let id = format!("vol-{}", uuid::Uuid::new_v4());
     let first_name = name.split_whitespace().next().unwrap_or(name).to_string();
     conn.execute(

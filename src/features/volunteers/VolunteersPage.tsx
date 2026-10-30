@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import {
   AlertTriangle,
+  Check,
   ChevronRight,
   Clock3,
   Download,
@@ -31,6 +32,7 @@ import { peopleTabs } from "../../app/workAreas";
 import {
   CAUSE_LABELS,
   formatHours,
+  getCredentials,
   getUpcomingForVolunteer,
   formatDate,
   timeRange,
@@ -119,6 +121,42 @@ export function VolunteersPage() {
   const nextShift = selected
     ? getUpcomingForVolunteer(selected.id, session, workspace)[0]
     : undefined;
+
+  // One short list of what is already known about this person, so a coordinator
+  // does not have to open three screens to learn whether they are ready to
+  // schedule. Every line is read from a record; nothing is inferred.
+  const readiness = useMemo(() => {
+    if (!selected) return [];
+    const credentials = getCredentials(session, workspace).filter(
+      (row) => row.volunteer.id === selected.id,
+    );
+    const expiring = credentials.find(
+      (row) => row.status === "expiring" || row.status === "expired",
+    );
+    const rows: { ok: boolean; text: string }[] = [
+      selected.status === "active"
+        ? { ok: true, text: "Application approved" }
+        : { ok: false, text: "Application still in progress" },
+      selected.availability.length > 0
+        ? { ok: true, text: "Availability added" }
+        : { ok: false, text: "No availability on file" },
+      selected.skills.length > 0
+        ? { ok: true, text: `${selected.skills.length} skills on file` }
+        : { ok: false, text: "No skills recorded" },
+      expiring
+        ? {
+            ok: false,
+            text: `${expiring.name} ${expiring.status === "expired" ? "expired" : "expires"}${
+              expiring.expiresAt ? ` ${formatDate(expiring.expiresAt)}` : ""
+            }`,
+          }
+        : { ok: true, text: "No credentials expiring" },
+      nextShift
+        ? { ok: true, text: `Upcoming shift ${formatDate(nextShift.shift.startsAt)}` }
+        : { ok: false, text: "No upcoming shift" },
+    ];
+    return rows;
+  }, [selected, session, workspace, nextShift]);
 
   function downloadCsv() {
     const header = [
@@ -459,6 +497,25 @@ export function VolunteersPage() {
                   <span className={styles.panelValue}>{selected.eventsCompleted}</span>
                   <span className={styles.panelLabel}>Events</span>
                 </div>
+              </div>
+
+              <div className={styles.panelSection}>
+                <h3>Ready to schedule</h3>
+                <ul className={styles.readiness}>
+                  {readiness.map((row) => (
+                    <li
+                      key={row.text}
+                      className={row.ok ? styles.readinessItem : styles.readinessWarn}
+                    >
+                      {row.ok ? (
+                        <Check size={12} aria-hidden="true" />
+                      ) : (
+                        <AlertTriangle size={12} aria-hidden="true" />
+                      )}
+                      {row.text}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div className={styles.panelSection}>

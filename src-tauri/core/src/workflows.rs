@@ -32,6 +32,21 @@ const CAUSES: [&str; 6] = [
 ];
 
 fn setting(conn: &Connection, key: &str) -> Result<Option<String>> {
+    // A setting belongs to the organization it was written in. The unsuffixed
+    // key is the value this workspace shipped with, so an upgraded database and
+    // the bundled demo keep reading what they always read.
+    if let Some(organization) = crate::scope::current(conn)? {
+        let scoped: Option<String> = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                params![format!("{key}@{organization}")],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if scoped.is_some() {
+            return Ok(scoped);
+        }
+    }
     Ok(conn
         .query_row(
             "SELECT value FROM app_settings WHERE key = ?1",
@@ -94,10 +109,18 @@ pub(crate) fn append_actor_audit(
     summary: String,
     detail: Option<String>,
 ) -> Result<()> {
+    // The record names the organization it happened in. Deriving it from the
+    // entity keeps an invite to another organization from being filed under the
+    // one that happens to be open.
+    let organization = match crate::scope::for_entity(conn, entity_type, entity_id)? {
+        Some(id) => Some(id),
+        None => crate::scope::current(conn)?,
+    };
     conn.execute(
         "INSERT INTO audit_events
-         (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary, detail)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         (id, timestamp, actor_type, actor_id, action, entity_type, entity_id, summary, detail,
+          organization_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             uuid::Uuid::new_v4().to_string(),
             now(conn)?,
@@ -108,6 +131,7 @@ pub(crate) fn append_actor_audit(
             entity_id,
             summary,
             detail,
+            organization,
         ],
     )?;
     Ok(())
@@ -138,10 +162,10 @@ fn text(conn: &Connection, key: &str, fallback: &str) -> Result<String> {
 
 fn load_settings(conn: &Connection) -> Result<WorkspaceSettings> {
     let defaults = default_settings()?;
-    let (organization_name, contact_email, timezone): (String, String, String) = conn
+    let (organization_name, contact_email, timezone) = conn
         .query_row(
-            "SELECT name, email, timezone FROM organizations LIMIT 1",
-            [],
+            "SELECT name, email, timezone FROM organizations WHERE id = ?1",
+            params![crate::scope::current(conn)?],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
@@ -185,11 +209,15 @@ fn load_settings(conn: &Connection) -> Result<WorkspaceSettings> {
 
 fn load_saved_opportunities(conn: &Connection) -> Result<Vec<String>> {
     let volunteer = current_volunteer_id(conn)?;
+    let organization = crate::scope::current(conn)?;
     let mut statement = conn.prepare(
         "SELECT opportunity_id FROM saved_opportunities
-         WHERE volunteer_id = ?1 ORDER BY rowid",
+         WHERE volunteer_id = ?1
+           AND (?2 IS NULL OR opportunity_id IN
+                (SELECT id FROM opportunities WHERE organization_id = ?2))
+         ORDER BY rowid",
     )?;
-    let mut rows = statement.query(params![volunteer])?;
+    let mut rows = statement.query(params![volunteer, organization])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(row.get(0)?);
@@ -198,11 +226,17 @@ fn load_saved_opportunities(conn: &Connection) -> Result<Vec<String>> {
 }
 
 fn load_attendance(conn: &Connection) -> Result<BTreeMap<String, Vec<AttendanceEntry>>> {
+    let organization = crate::scope::current(conn)?;
     let mut statement = conn.prepare(
         "SELECT volunteer_id, shift_id, role, status, checked_in_at, checked_out_at
-         FROM attendance_events ORDER BY shift_id, rowid",
+         FROM attendance_events
+         WHERE (?1 IS NULL OR shift_id IN
+                (SELECT s.id FROM shifts s
+                 JOIN opportunities o ON o.id = s.opportunity_id
+                 WHERE o.organization_id = ?1))
+         ORDER BY shift_id, rowid",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![organization])?;
     let mut map: BTreeMap<String, Vec<AttendanceEntry>> = BTreeMap::new();
     while let Some(row) = rows.next()? {
         let entry = AttendanceEntry {
@@ -219,11 +253,15 @@ fn load_attendance(conn: &Connection) -> Result<BTreeMap<String, Vec<AttendanceE
 }
 
 fn load_hours_decisions(conn: &Connection) -> Result<BTreeMap<String, HoursDecision>> {
+    let organization = crate::scope::current(conn)?;
     let mut statement = conn.prepare(
         "SELECT id, status, approved_minutes, review_reason, reviewed_at
-         FROM hour_entries WHERE reviewed_at IS NOT NULL ORDER BY reviewed_at DESC",
+         FROM hour_entries WHERE reviewed_at IS NOT NULL
+           AND (?1 IS NULL OR volunteer_id IN
+                (SELECT id FROM volunteers WHERE organization_id = ?1))
+         ORDER BY reviewed_at DESC",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![organization])?;
     let mut map = BTreeMap::new();
     while let Some(row) = rows.next()? {
         let id: String = row.get(0)?;
@@ -244,9 +282,11 @@ fn load_applications(conn: &Connection) -> Result<Vec<Applicant>> {
     let mut statement = conn.prepare(
         "SELECT id, name, email, initials, tone, stage, applied_at, source, cause,
                 skills_json, note
-         FROM applications ORDER BY rowid",
+         FROM applications
+         WHERE (?1 IS NULL OR organization_id = ?1)
+         ORDER BY rowid",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         let skills: String = row.get(9)?;
@@ -270,9 +310,14 @@ fn load_applications(conn: &Connection) -> Result<Vec<Applicant>> {
 fn load_waitlist(conn: &Connection) -> Result<Vec<WaitlistEntry>> {
     let mut statement = conn.prepare(
         "SELECT id, shift_id, volunteer_id, created_at, status, position, eligible_role
-         FROM waitlist_entries ORDER BY shift_id, position",
+         FROM waitlist_entries
+         WHERE (?1 IS NULL OR shift_id IN
+                (SELECT s.id FROM shifts s
+                 JOIN opportunities o ON o.id = s.opportunity_id
+                 WHERE o.organization_id = ?1))
+         ORDER BY shift_id, position",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(WaitlistEntry {
@@ -291,9 +336,14 @@ fn load_waitlist(conn: &Connection) -> Result<Vec<WaitlistEntry>> {
 fn load_registrations(conn: &Connection) -> Result<Vec<Registration>> {
     let mut statement = conn.prepare(
         "SELECT shift_id, volunteer_id, role, status
-         FROM registrations ORDER BY created_at, rowid",
+         FROM registrations
+         WHERE (?1 IS NULL OR shift_id IN
+                (SELECT s.id FROM shifts s
+                 JOIN opportunities o ON o.id = s.opportunity_id
+                 WHERE o.organization_id = ?1))
+         ORDER BY created_at, rowid",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(Registration {
@@ -321,9 +371,11 @@ fn load_credentials(conn: &Connection) -> Result<Vec<CredentialRecord>> {
                 vc.valid_through, vc.verified_at, vc.verified_by, vc.notes
          FROM volunteer_credentials vc
          JOIN credential_types ct ON ct.id = vc.credential_type_id
+         WHERE (?1 IS NULL OR vc.volunteer_id IN
+                (SELECT id FROM volunteers WHERE organization_id = ?1))
          ORDER BY vc.valid_through, vc.id",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         let valid_through: String = row.get(6)?;
@@ -355,9 +407,11 @@ fn load_verifications(conn: &Connection) -> Result<Vec<ServiceVerification>> {
     let mut statement = conn.prepare(
         "SELECT id, code, volunteer_id, organization_id, date_start, date_end, total_minutes,
                 issued_at, issued_by
-         FROM service_verifications ORDER BY issued_at DESC, code",
+         FROM service_verifications
+         WHERE (?1 IS NULL OR organization_id = ?1)
+         ORDER BY issued_at DESC, code",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(ServiceVerification {
@@ -381,10 +435,11 @@ fn load_impact_metrics(conn: &Connection) -> Result<Vec<ImpactMetric>> {
                 COALESCE(SUM(r.value), 0), MAX(r.recorded_at)
          FROM impact_metric_definitions d
          LEFT JOIN impact_results r ON r.definition_id = d.id
+         WHERE (?1 IS NULL OR d.organization_id = ?1)
          GROUP BY d.id
          ORDER BY d.name",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(ImpactMetric {
@@ -403,9 +458,11 @@ fn load_impact_metrics(conn: &Connection) -> Result<Vec<ImpactMetric>> {
 fn load_saved_views(conn: &Connection) -> Result<Vec<SavedView>> {
     let mut statement = conn.prepare(
         "SELECT id, scope, name, filters_json, created_at
-         FROM report_saved_views ORDER BY created_at, name",
+         FROM report_saved_views
+         WHERE (?1 IS NULL OR organization_id = ?1)
+         ORDER BY created_at, name",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(SavedView {
@@ -431,9 +488,11 @@ fn load_retention(conn: &Connection) -> Result<Vec<RetentionCohort>> {
     let mut statement = conn.prepare(
         "SELECT volunteer_id, date FROM hour_entries
          WHERE status IN ('verified', 'pending')
+           AND (?1 IS NULL OR volunteer_id IN
+                (SELECT id FROM volunteers WHERE organization_id = ?1))
          ORDER BY date, volunteer_id",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut dates: BTreeMap<String, Vec<chrono::NaiveDate>> = BTreeMap::new();
     while let Some(row) = rows.next()? {
         let volunteer: String = row.get(0)?;
@@ -505,10 +564,10 @@ fn load_audit(conn: &Connection) -> Result<Vec<AuditEvent>> {
                 CASE WHEN actor_id = 'user-praket' THEN ?1 ELSE actor_id END,
                 action, entity_type, entity_id, summary, detail
          FROM audit_events
-         WHERE action <> 'demo_seeded'
+         WHERE action <> 'demo_seeded' AND organization_id = ?2
          ORDER BY timestamp DESC, rowid DESC",
     )?;
-    let mut rows = statement.query(params![actor_name])?;
+    let mut rows = statement.query(params![actor_name, crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         items.push(AuditEvent {
@@ -531,9 +590,10 @@ fn load_created_opportunities(conn: &Connection) -> Result<Vec<OpportunityRecord
                 address, distance_miles, coordinator, capacity, duration, training_json,
                 requirements_json, impact_metric
          FROM opportunities WHERE created_at IS NOT NULL
+           AND (?1 IS NULL OR organization_id = ?1)
          ORDER BY created_at DESC, rowid DESC",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut items = Vec::new();
     while let Some(row) = rows.next()? {
         let training: String = row.get(13)?;
@@ -560,20 +620,32 @@ fn load_created_opportunities(conn: &Connection) -> Result<Vec<OpportunityRecord
     Ok(items)
 }
 
+fn empty_volunteer_profile() -> crate::models::VolunteerProfile {
+    crate::models::VolunteerProfile {
+        skills: Vec::new(),
+        availability: Vec::new(),
+        completed_onboarding: false,
+        phone: String::new(),
+        interests: String::new(),
+        causes: Vec::new(),
+        photo: String::new(),
+    }
+}
+
 fn load_volunteer_profile(conn: &Connection) -> Result<crate::models::VolunteerProfile> {
-    let volunteer_id = current_volunteer_id(conn)?;
-    let (availability_json, completed_onboarding, phone, interests, causes_json, photo): (
-        String,
-        i64,
-        String,
-        String,
-        String,
-        String,
-    ) = conn
+    // A workspace setting can name a volunteer from the bundled demo. Reading it
+    // in an organization that person never joined would hand this session another
+    // roster's profile, so the row is checked against the active scope and the
+    // answer defaults to an empty profile rather than somebody else's.
+    let Some(volunteer_id) = setting(conn, "current_volunteer_id")? else {
+        return Ok(empty_volunteer_profile());
+    };
+    let organization = crate::scope::current(conn)?;
+    let row: Option<(String, i64, String, String, String, String)> = conn
         .query_row(
             "SELECT availability_json, onboarding_completed, phone, interests, causes_json, photo
-             FROM volunteers WHERE id = ?1",
-            params![volunteer_id],
+             FROM volunteers WHERE id = ?1 AND (?2 IS NULL OR organization_id = ?2)",
+            params![volunteer_id, organization],
             |row| {
                 Ok((
                     row.get(0)?,
@@ -585,8 +657,11 @@ fn load_volunteer_profile(conn: &Connection) -> Result<crate::models::VolunteerP
                 ))
             },
         )
-        .optional()?
-        .ok_or_else(|| CoreError::NotFound("Current volunteer".into()))?;
+        .optional()?;
+    let Some((availability_json, completed_onboarding, phone, interests, causes_json, photo)) = row
+    else {
+        return Ok(empty_volunteer_profile());
+    };
     let causes: Vec<String> = serde_json::from_str(&causes_json).unwrap_or_default();
     let raw: Vec<String> = serde_json::from_str(&availability_json)?;
     let availability = raw
@@ -669,9 +744,11 @@ fn load_roster(conn: &Connection) -> Result<Vec<crate::models::RosterVolunteer>>
 
     let mut statement = conn.prepare(
         "SELECT id, name, email, phone, status, joined_at, causes_json, availability_json
-         FROM volunteers ORDER BY name COLLATE NOCASE",
+         FROM volunteers
+         WHERE (?1 IS NULL OR organization_id = ?1)
+         ORDER BY name COLLATE NOCASE",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut roster = Vec::new();
     while let Some(row) = rows.next()? {
         let id: String = row.get(0)?;
@@ -742,10 +819,13 @@ pub fn snapshot_for(conn: &Connection, volunteer_id: Option<&str>) -> Result<Wor
     Ok(snapshot)
 }
 
+/// A roster row only exists inside the roster of its organization, so a command
+/// working in one organization cannot name a volunteer from another.
 fn volunteer_name(conn: &Connection, volunteer_id: &str) -> Result<String> {
     conn.query_row(
-        "SELECT name FROM volunteers WHERE id = ?1",
-        params![volunteer_id],
+        "SELECT name FROM volunteers
+         WHERE id = ?1 AND (?2 IS NULL OR organization_id = ?2)",
+        params![volunteer_id, crate::scope::current(conn)?],
         |row| row.get(0),
     )
     .optional()?
@@ -766,8 +846,10 @@ fn volunteer_role(conn: &Connection, volunteer_id: &str) -> Result<String> {
 fn ensure_shift(conn: &Connection, shift_id: &str) -> Result<()> {
     let found: Option<String> = conn
         .query_row(
-            "SELECT id FROM shifts WHERE id = ?1",
-            params![shift_id],
+            "SELECT s.id FROM shifts s
+             JOIN opportunities o ON o.id = s.opportunity_id
+             WHERE s.id = ?1 AND (?2 IS NULL OR o.organization_id = ?2)",
+            params![shift_id, crate::scope::current(conn)?],
             |row| row.get(0),
         )
         .optional()?;
@@ -790,10 +872,16 @@ fn append_notification(
     href: &str,
     target: NotificationTarget<'_>,
 ) -> Result<()> {
+    let organization = match target.volunteer_id {
+        Some(volunteer_id) => crate::scope::for_entity(conn, "volunteer", volunteer_id)?,
+        None => None,
+    }
+    .or(crate::scope::current(conn)?);
     conn.execute(
         "INSERT INTO notifications
-         (id, kind, title, body, priority, created_at, read_at, href, audience, volunteer_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, ?9)",
+         (id, kind, title, body, priority, created_at, read_at, href, audience, volunteer_id,
+          organization_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, ?9, ?10)",
         params![
             uuid::Uuid::new_v4().to_string(),
             kind,
@@ -804,6 +892,7 @@ fn append_notification(
             href,
             target.audience,
             target.volunteer_id,
+            organization,
         ],
     )?;
     Ok(())
@@ -834,8 +923,8 @@ fn shift_rules(conn: &Connection, shift_id: &str) -> Result<ShiftRules> {
             "SELECT s.starts_at, s.ends_at, s.capacity, s.confirmed,
                     s.status, o.title, s.opportunity_id
              FROM shifts s JOIN opportunities o ON o.id = s.opportunity_id
-             WHERE s.id = ?1",
-            params![shift_id],
+             WHERE s.id = ?1 AND (?2 IS NULL OR o.organization_id = ?2)",
+            params![shift_id, crate::scope::current(conn)?],
             |row| {
                 Ok((
                     row.get(0)?,
@@ -883,10 +972,13 @@ fn shift_availability_key(conn: &Connection, shift_id: &str) -> Result<String> {
     Ok(format!("{day}:{period}"))
 }
 
+/// The roster row's status, read only inside the roster of the organization the
+/// caller is working in. A volunteer from another organization is not found.
 fn volunteer_status(conn: &Connection, volunteer_id: &str) -> Result<String> {
     conn.query_row(
-        "SELECT status FROM volunteers WHERE id = ?1",
-        params![volunteer_id],
+        "SELECT status FROM volunteers
+         WHERE id = ?1 AND (?2 IS NULL OR organization_id = ?2)",
+        params![volunteer_id, crate::scope::current(conn)?],
         |row| row.get(0),
     )
     .optional()?
@@ -1169,9 +1261,11 @@ pub fn save_report_view(
     }
     let owner = current_volunteer_id(conn)?;
     conn.execute(
-        "INSERT INTO report_saved_views (id, owner_id, scope, name, filters_json, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT(owner_id, scope, name) DO UPDATE SET filters_json = excluded.filters_json",
+        "INSERT INTO report_saved_views
+         (id, owner_id, scope, name, filters_json, created_at, organization_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(organization_id, owner_id, scope, name)
+         DO UPDATE SET filters_json = excluded.filters_json",
         params![
             uuid::Uuid::new_v4().to_string(),
             owner,
@@ -1179,6 +1273,7 @@ pub fn save_report_view(
             name,
             filters_json,
             now(conn)?,
+            crate::scope::current(conn)?,
         ],
     )?;
     append_audit(
@@ -1199,8 +1294,9 @@ pub fn set_saved_opportunity(
 ) -> Result<WorkspaceSnapshot> {
     let title: String = conn
         .query_row(
-            "SELECT title FROM opportunities WHERE id = ?1",
-            params![opportunity_id],
+            "SELECT title FROM opportunities
+             WHERE id = ?1 AND (?2 IS NULL OR organization_id = ?2)",
+            params![opportunity_id, crate::scope::current(conn)?],
             |row| row.get(0),
         )
         .optional()?
@@ -1251,8 +1347,9 @@ pub fn set_application_stage(
     }
     let (name, current): (String, String) = conn
         .query_row(
-            "SELECT name, stage FROM applications WHERE id = ?1",
-            params![application_id],
+            "SELECT name, stage FROM applications
+             WHERE id = ?1 AND (?2 IS NULL OR organization_id = ?2)",
+            params![application_id, crate::scope::current(conn)?],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?
@@ -1296,6 +1393,7 @@ pub fn set_application_stage(
 }
 
 pub fn get_checkin_code(conn: &Connection, shift_id: &str) -> Result<CheckinCode> {
+    // Coordinator only; the command layer enforces it.
     ensure_shift(conn, shift_id)?;
     let now = now_datetime(conn)?;
     if let Some(row) = conn
@@ -1364,6 +1462,70 @@ pub fn get_checkin_code(conn: &Connection, shift_id: &str) -> Result<CheckinCode
     })
 }
 
+/// The credential a registered volunteer may show to the door kiosk.
+///
+/// Unlike `get_checkin_code`, this never issues or rotates a code: the printed
+/// six-digit secret stays with the check-in table, and a volunteer only holds
+/// the opaque token for a code the coordinator already opened.
+pub fn volunteer_checkin_credential(
+    conn: &Connection,
+    shift_id: &str,
+    volunteer_id: &str,
+) -> Result<CheckinCode> {
+    ensure_shift(conn, shift_id)?;
+    let registered: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM registrations
+         WHERE shift_id = ?1 AND volunteer_id = ?2 AND status = 'registered'",
+        params![shift_id, volunteer_id],
+        |row| row.get(0),
+    )?;
+    if registered == 0 {
+        return Err(CoreError::rule(
+            "NOT_REGISTERED",
+            "This volunteer is not registered for that shift.",
+            Some("shiftId".into()),
+            Some("REGISTER_FIRST".into()),
+        ));
+    }
+
+    let now = now_datetime(conn)?;
+    let row: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT token, issued_at, expires_at FROM checkin_codes
+             WHERE shift_id = ?1 AND active = 1 ORDER BY issued_at DESC LIMIT 1",
+            params![shift_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((token, issued_at, expires_at)) = row else {
+        return Err(CoreError::rule(
+            "CHECKIN_NOT_OPEN",
+            "The check-in table has not opened a code for this shift yet.",
+            Some("shiftId".into()),
+            Some("ASK_SHIFT_LEAD".into()),
+        ));
+    };
+    let expires = chrono::DateTime::parse_from_rfc3339(&expires_at)?;
+    if expires <= now {
+        return Err(CoreError::rule(
+            "CHECKIN_CODE_EXPIRED",
+            "That check-in code has expired. Ask the shift lead to refresh it.",
+            Some("shiftId".into()),
+            Some("ASK_SHIFT_LEAD".into()),
+        ));
+    }
+
+    Ok(CheckinCode {
+        shift_id: shift_id.into(),
+        // Deliberately empty: the six-digit secret belongs to the door board.
+        code: String::new(),
+        payload: format!("civicflow://checkin/{token}"),
+        token,
+        issued_at,
+        expires_at,
+    })
+}
+
 fn demo_checkin_code(shift_id: &str, window: i64) -> String {
     let seed = format!("{shift_id}:{window}");
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
@@ -1418,17 +1580,55 @@ fn validate_checkin_window(conn: &Connection, shift: &ShiftRules) -> Result<()> 
     Ok(())
 }
 
+/// Self check-in. The volunteer proves they are at the shift with the rotating
+/// code or QR token; the code is never optional here, because the gate is what
+/// separates a volunteer check-in from a coordinator correction.
 pub fn check_in(
     conn: &Connection,
     shift_id: &str,
     volunteer_id: &str,
-    code: Option<&str>,
+    code: &str,
+) -> Result<WorkspaceSnapshot> {
+    record_check_in(conn, shift_id, volunteer_id, CheckinMethod::Code(code))
+}
+
+/// A coordinator recording an arrival themselves. This is a separate action
+/// with its own permission, its own ledger event, and its own reason, so a
+/// direct call cannot pass for self check-in.
+pub fn manual_check_in(
+    conn: &Connection,
+    shift_id: &str,
+    volunteer_id: &str,
+    reason: &str,
+) -> Result<WorkspaceSnapshot> {
+    let reason = reason.trim();
+    if reason.chars().count() < 4 {
+        return Err(CoreError::rule(
+            "MANUAL_REASON_REQUIRED",
+            "Say why this arrival is being recorded by hand.",
+            Some("reason".into()),
+            None,
+        ));
+    }
+    record_check_in(conn, shift_id, volunteer_id, CheckinMethod::Manual(reason))
+}
+
+enum CheckinMethod<'a> {
+    Code(&'a str),
+    Manual(&'a str),
+}
+
+fn record_check_in(
+    conn: &Connection,
+    shift_id: &str,
+    volunteer_id: &str,
+    method: CheckinMethod<'_>,
 ) -> Result<WorkspaceSnapshot> {
     let name = volunteer_name(conn, volunteer_id)?;
     let shift = shift_rules(conn, shift_id)?;
     validate_checkin_window(conn, &shift)?;
-    if let Some(code) = code {
-        if !code_matches(conn, shift_id, code)? {
+    if let CheckinMethod::Code(code) = &method {
+        if code.trim().is_empty() || !code_matches(conn, shift_id, code)? {
             return Err(CoreError::rule(
                 "INVALID_CHECKIN_CODE",
                 "That code is not active for this shift.",
@@ -1469,6 +1669,15 @@ pub fn check_in(
         ));
     };
 
+    let (event_type, action, note, detail) = match &method {
+        CheckinMethod::Code(_) => ("check_in", "shift.checkin", None, format!("Role: {role}")),
+        CheckinMethod::Manual(reason) => (
+            "manual_check_in",
+            "shift.manual_checkin",
+            Some((*reason).to_string()),
+            format!("Role: {role}. Recorded by hand: {reason}"),
+        ),
+    };
     let now = now(conn)?;
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
@@ -1485,31 +1694,24 @@ pub fn check_in(
     )?;
     transaction.execute(
         "INSERT INTO attendance_ledger (id, shift_id, volunteer_id, event_type, actor, note, at)
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             uuid::Uuid::new_v4().to_string(),
             shift_id,
             volunteer_id,
-            if code.is_some() {
-                "check_in"
-            } else {
-                "manual_check_in"
-            },
+            event_type,
             coordinator_name(conn)?,
+            note,
             now,
         ],
     )?;
     append_audit(
         &transaction,
-        if code.is_some() {
-            "shift.checkin"
-        } else {
-            "shift.manual_checkin"
-        },
+        action,
         "shift",
         shift_id,
         format!("Checked in {name}"),
-        Some(format!("Role: {role}")),
+        Some(detail),
     )?;
     transaction.commit()?;
     snapshot(conn)
@@ -1528,8 +1730,7 @@ fn issue_verification(
         year,
         uuid::Uuid::new_v4().as_u128() % 1_000_000
     );
-    let organization_id: String =
-        conn.query_row("SELECT id FROM organizations LIMIT 1", [], |row| row.get(0))?;
+    let organization_id = crate::scope::require(conn)?;
     conn.execute(
         "INSERT INTO service_verifications
          (id, code, volunteer_id, organization_id, date_start, date_end, total_minutes,
@@ -1707,6 +1908,14 @@ fn format_minutes(minutes: i64) -> String {
     format!("{}h {:02}m", minutes / 60, minutes % 60)
 }
 
+/// Records that somebody did not arrive.
+///
+/// The attendance row and the roster have to move together or Coverage Recovery
+/// reads a gap that is not there. One transaction therefore moves the
+/// registration out of `registered`, gives the seat back to the shift and its
+/// role, writes the attendance row, and appends the ledger and audit entries.
+/// Marking the same person twice is a no-op: the counters may only fall once per
+/// seat.
 pub fn mark_no_show(
     conn: &Connection,
     shift_id: &str,
@@ -1714,15 +1923,60 @@ pub fn mark_no_show(
 ) -> Result<WorkspaceSnapshot> {
     ensure_shift(conn, shift_id)?;
     let name = volunteer_name(conn, volunteer_id)?;
-    let role: Option<String> = conn
+
+    let previous: Option<String> = conn
         .query_row(
-            "SELECT role FROM attendance_events WHERE shift_id = ?1 AND volunteer_id = ?2",
+            "SELECT status FROM attendance_events WHERE shift_id = ?1 AND volunteer_id = ?2",
             params![shift_id, volunteer_id],
             |row| row.get(0),
         )
         .optional()?;
-    let role = role.unwrap_or(volunteer_role(conn, volunteer_id)?);
-    conn.execute(
+    if previous.as_deref() == Some("no_show") {
+        return snapshot(conn);
+    }
+    if matches!(previous.as_deref(), Some("checked_in") | Some("completed")) {
+        return Err(CoreError::rule(
+            "ALREADY_ATTENDED",
+            "This volunteer already checked in. Correct the attendance record instead of marking a no-show.",
+            Some("volunteerId".into()),
+            Some("REVIEW_ATTENDANCE".into()),
+        ));
+    }
+
+    let role: Option<String> = conn
+        .query_row(
+            "SELECT role FROM registrations
+             WHERE shift_id = ?1 AND volunteer_id = ?2 AND status = 'registered'",
+            params![shift_id, volunteer_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(role) = role else {
+        return Err(CoreError::rule(
+            "NOT_REGISTERED",
+            "That volunteer does not hold a seat on this shift.",
+            Some("volunteerId".into()),
+            Some("REFRESH_ROSTER".into()),
+        ));
+    };
+
+    let now = now(conn)?;
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "UPDATE registrations SET status = 'no_show', updated_at = ?3
+         WHERE shift_id = ?1 AND volunteer_id = ?2 AND status = 'registered'",
+        params![shift_id, volunteer_id, now],
+    )?;
+    transaction.execute(
+        "UPDATE shifts SET confirmed = MAX(confirmed - 1, 0) WHERE id = ?1",
+        params![shift_id],
+    )?;
+    transaction.execute(
+        "UPDATE shift_roles SET filled = MAX(filled - 1, 0)
+         WHERE shift_id = ?1 AND name = ?2",
+        params![shift_id, role],
+    )?;
+    transaction.execute(
         "INSERT INTO attendance_events
          (shift_id, volunteer_id, role, status, checked_in_at, checked_out_at, recorded_at)
          VALUES (?1, ?2, ?3, 'no_show', NULL, NULL, ?4)
@@ -1732,16 +1986,28 @@ pub fn mark_no_show(
            checked_in_at = NULL,
            checked_out_at = NULL,
            recorded_at = excluded.recorded_at",
-        params![shift_id, volunteer_id, role, now(conn)?],
+        params![shift_id, volunteer_id, role, now],
+    )?;
+    transaction.execute(
+        "INSERT INTO attendance_ledger (id, shift_id, volunteer_id, event_type, actor, note, at)
+         VALUES (?1, ?2, ?3, 'marked_no_show', ?4, NULL, ?5)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            shift_id,
+            volunteer_id,
+            coordinator_name(conn)?,
+            now,
+        ],
     )?;
     append_audit(
-        conn,
+        &transaction,
         "shift.no_show",
         "shift",
         shift_id,
         format!("Marked {name} as a no-show"),
-        None,
+        Some(format!("Role: {role}. The seat is open again")),
     )?;
+    transaction.commit()?;
     snapshot(conn)
 }
 
@@ -1770,16 +2036,27 @@ pub fn promote_waitlist(
     }
     validate_registration(conn, shift_id, volunteer_id, &role)?;
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute(
-        "UPDATE waitlist_entries SET status = 'promoted' WHERE id = ?1",
-        params![entry_id],
-    )?;
-    transaction.execute(
+    let created = transaction.execute(
         "INSERT INTO registrations (shift_id, volunteer_id, role, created_at, status, updated_at)
          VALUES (?1, ?2, ?3, ?4, 'registered', ?4)
          ON CONFLICT(shift_id, volunteer_id) DO UPDATE SET
-           role = excluded.role, status = 'registered', updated_at = excluded.updated_at",
+           role = excluded.role, status = 'registered', updated_at = excluded.updated_at
+         WHERE registrations.status <> 'registered'",
         params![shift_id, volunteer_id, role, now(conn)?],
+    )?;
+    if created == 0 {
+        // The seat was already held. The promotion still clears the waitlist
+        // entry, but the counters have already counted this person.
+        transaction.execute(
+            "UPDATE waitlist_entries SET status = 'promoted' WHERE id = ?1",
+            params![entry_id],
+        )?;
+        transaction.commit()?;
+        return snapshot(conn);
+    }
+    transaction.execute(
+        "UPDATE waitlist_entries SET status = 'promoted' WHERE id = ?1",
+        params![entry_id],
     )?;
     transaction.execute(
         "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
@@ -1834,8 +2111,10 @@ pub fn review_hours(
     }
     let (current, volunteer_id, entry_date): (String, String, String) = conn
         .query_row(
-            "SELECT status, volunteer_id, date FROM hour_entries WHERE id = ?1",
-            params![entry_id],
+            "SELECT h.status, h.volunteer_id, h.date FROM hour_entries h
+             JOIN volunteers v ON v.id = h.volunteer_id
+             WHERE h.id = ?1 AND (?2 IS NULL OR v.organization_id = ?2)",
+            params![entry_id, crate::scope::current(conn)?],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
@@ -1958,6 +2237,13 @@ fn validate_settings(settings: &WorkspaceSettings) -> Result<()> {
 }
 
 fn write_setting(conn: &Connection, key: &str, value: String) -> Result<()> {
+    // Settings are written per organization. The unprefixed key stays as the
+    // shipped default so an upgraded workspace and the bundled demo keep
+    // reading the values they were seeded with.
+    let key = match crate::scope::current(conn)? {
+        Some(organization) => format!("{key}@{organization}"),
+        None => key.to_string(),
+    };
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -2009,12 +2295,14 @@ pub fn update_settings(conn: &Connection, patch: SettingsPatch) -> Result<Worksp
     }
     validate_settings(&settings)?;
 
+    // A settings form edits the organization it is shown for, never every row.
     conn.execute(
-        "UPDATE organizations SET name = ?1, email = ?2, timezone = ?3",
+        "UPDATE organizations SET name = ?1, email = ?2, timezone = ?3 WHERE id = ?4",
         params![
             settings.organization_name,
             settings.contact_email,
-            settings.timezone
+            settings.timezone,
+            crate::scope::require(conn)?
         ],
     )?;
     let pairs = [
@@ -2126,12 +2414,15 @@ pub fn create_opportunity(
             input.cause
         )));
     }
-    let organization_id: String =
-        conn.query_row("SELECT id FROM organizations LIMIT 1", [], |row| row.get(0))?;
-    let organization_name: String =
-        conn.query_row("SELECT name FROM organizations LIMIT 1", [], |row| {
-            row.get(0)
-        })?;
+    // A program belongs to the organization the coordinator is working in. It
+    // used to take the first organization row, which put a program created
+    // inside a second organization on the first organization's schedule.
+    let organization_id = crate::scope::require(conn)?;
+    let organization_name: String = conn.query_row(
+        "SELECT name FROM organizations WHERE id = ?1",
+        params![organization_id],
+        |row| row.get(0),
+    )?;
     let coordinator = coordinator_name(conn)?;
     let image = "/media/opp-community-event.jpg".to_string();
     let image_alt = format!("{title} volunteers at work");
@@ -2231,13 +2522,20 @@ pub fn register_for_shift(
 
     let shift = validate_registration(conn, shift_id, volunteer_id, &role)?;
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute(
+    // Only a genuinely new seat may move the counters. The conditional update
+    // makes a repeated or crafted call do nothing instead of counting the same
+    // volunteer twice.
+    let created = transaction.execute(
         "INSERT INTO registrations (shift_id, volunteer_id, role, created_at, status, updated_at)
          VALUES (?1, ?2, ?3, ?4, 'registered', ?4)
          ON CONFLICT(shift_id, volunteer_id) DO UPDATE SET
-           role = excluded.role, status = 'registered', updated_at = excluded.updated_at",
+           role = excluded.role, status = 'registered', updated_at = excluded.updated_at
+         WHERE registrations.status <> 'registered'",
         params![shift_id, volunteer_id, role, now(conn)?],
     )?;
+    if created == 0 {
+        return snapshot(conn);
+    }
     transaction.execute(
         "UPDATE shifts SET confirmed = confirmed + 1 WHERE id = ?1",
         params![shift_id],
@@ -2313,6 +2611,19 @@ pub fn join_waitlist(
                 None,
             ));
         }
+    }
+    // Joining twice keeps the place already held. Only a new waitlist entry
+    // takes the back of the queue, so a refresh never demotes somebody.
+    let waiting: Option<i64> = conn
+        .query_row(
+            "SELECT position FROM waitlist_entries
+             WHERE shift_id = ?1 AND volunteer_id = ?2 AND status = 'waiting'",
+            params![shift_id, volunteer_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if waiting.is_some() {
+        return snapshot(conn);
     }
     let position: i64 = conn.query_row(
         "SELECT COALESCE(MAX(position), 0) + 1 FROM waitlist_entries WHERE shift_id = ?1",
@@ -2525,6 +2836,20 @@ pub fn save_volunteer_profile(
         ));
     }
     let volunteer_id = current_volunteer_id(conn)?;
+    let organization = crate::scope::require(conn)?;
+    let belongs: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM volunteers WHERE id = ?1 AND organization_id = ?2)",
+        params![volunteer_id, organization],
+        |row| row.get(0),
+    )?;
+    if !belongs {
+        return Err(CoreError::rule(
+            "NOT_A_VOLUNTEER",
+            "Only a volunteer in this organization can change this profile.",
+            None,
+            Some("RETURN_TO_VOLUNTEER_HOME".into()),
+        ));
+    }
     let availability_json = serde_json::to_string(
         &availability
             .iter()

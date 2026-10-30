@@ -4,7 +4,7 @@ use civicflow_core::roster::{
     workspace_revision, RosterApplyAssignment, WeeklyAssignment,
 };
 use civicflow_core::workflows::{
-    cancel_registration, check_in, check_out, join_waitlist, review_hours, snapshot,
+    cancel_registration, check_out, join_waitlist, manual_check_in, review_hours, snapshot,
 };
 use civicflow_core::Database;
 
@@ -223,8 +223,13 @@ fn a_stale_plan_is_refused_without_writing_anything() {
             |row| row.get(0),
         )
         .unwrap();
-    let error = apply_roster_week(database.connection(), Some(plan.revision), &assignments)
-        .expect_err("the stale plan is refused");
+    let error = apply_roster_week(
+        database.connection(),
+        Some(plan.revision),
+        Some(plan.policy_version),
+        &assignments,
+    )
+    .expect_err("the stale plan is refused");
     match error {
         civicflow_core::CoreError::Rule { code, .. } => assert_eq!(code, "PLAN_STALE"),
         other => panic!("expected a rule error, got {other:?}"),
@@ -273,6 +278,7 @@ fn a_weekly_plan_applies_across_shifts_in_one_transaction() {
     let state = apply_roster_week(
         database.connection(),
         Some(evaluation.plan.revision),
+        Some(evaluation.plan.policy_version),
         &assignments,
     )
     .expect("apply the week");
@@ -309,8 +315,13 @@ fn maya_iris_lifecycle_produces_hours_and_a_verification_record() {
     )
     .expect("cancel Maya");
 
-    let checked_in =
-        check_in(database.connection(), "sh-tue-pantry", "vol-055", None).expect("Iris checks in");
+    let checked_in = manual_check_in(
+        database.connection(),
+        "sh-tue-pantry",
+        "vol-055",
+        "Recorded at the door",
+    )
+    .expect("Iris checks in");
     let row = checked_in.attendance["sh-tue-pantry"]
         .iter()
         .find(|row| row.volunteer_id == "vol-055")
@@ -385,4 +396,68 @@ fn maya_iris_lifecycle_produces_hours_and_a_verification_record() {
         .verifications
         .iter()
         .any(|row| row.code == entry_code));
+}
+
+#[test]
+fn changing_the_matching_policy_invalidates_a_plan_built_on_the_old_rules() {
+    let database = seeded();
+    let connection = database.connection();
+    let options = RosterOptions {
+        prefer_spanish: false,
+        block_conflicts: true,
+        cap_weekly: false,
+        include_waitlist: false,
+    };
+    let plan =
+        plan_roster(connection, &["sh-sat-food".to_string()], &options).expect("plan the shift");
+    let assignments: Vec<WeeklyAssignment> = plan
+        .assignments
+        .iter()
+        .map(|assignment| WeeklyAssignment {
+            shift_id: assignment.shift_id.clone(),
+            candidate_id: assignment.candidate_id.clone(),
+            role: assignment.role.clone(),
+            promote_waitlist: assignment.promote_waitlist,
+        })
+        .collect();
+
+    // A coordinator tightens the weekly cap after the plan was reviewed. The
+    // workspace revision does not move, so only the policy version can reveal
+    // that this plan followed rules nobody approved any more.
+    let organization = civicflow_core::roster::workspace_organization_id(connection)
+        .unwrap()
+        .expect("the seeded organization");
+    let mut policy = civicflow_core::policy::current_policy(connection, &organization).unwrap();
+    policy.max_shifts_per_week = Some(3);
+    let coordinator_id: String = connection
+        .query_row(
+            "SELECT id FROM users WHERE email = 'praket@feedmorewny.org'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let actor = civicflow_core::auth::Account {
+        id: coordinator_id,
+        name: "Praket Gauri".into(),
+        email: "praket@feedmorewny.org".into(),
+        role: "coordinator".into(),
+        volunteer_id: None,
+    };
+    let saved =
+        civicflow_core::policy::save_policy(connection, &actor, &organization, &policy).unwrap();
+    assert!(saved.version > plan.policy_version);
+    let revision: i64 = workspace_revision(connection).unwrap();
+    assert_eq!(revision, plan.revision, "only the rules changed");
+
+    let error = apply_roster_week(
+        connection,
+        Some(plan.revision),
+        Some(plan.policy_version),
+        &assignments,
+    )
+    .expect_err("the plan followed an older policy");
+    match error {
+        civicflow_core::CoreError::Rule { code, .. } => assert_eq!(code, "POLICY_STALE"),
+        other => panic!("expected a rule error, got {other:?}"),
+    }
 }

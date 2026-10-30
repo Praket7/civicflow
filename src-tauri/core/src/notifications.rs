@@ -57,8 +57,16 @@ pub struct ReminderRun {
 }
 
 fn organization_id(conn: &Connection) -> Result<String> {
-    conn.query_row("SELECT id FROM organizations LIMIT 1", [], |row| row.get(0))
-        .optional()?
+    // Rules belong to the organization being worked in. Falling back to the
+    // oldest row keeps a single-organization workspace behaving as before.
+    crate::scope::current(conn)?
+        .or(conn
+            .query_row(
+                "SELECT id FROM organizations ORDER BY created_at, id LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?)
         .ok_or_else(|| CoreError::NotFound("the workspace organization".into()))
 }
 

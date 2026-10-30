@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use civicflow_core::models::{NewOpportunityInput, SettingsPatch};
 use civicflow_core::workflows::{
-    check_in, create_opportunity, set_application_stage, set_saved_opportunity, snapshot,
+    create_opportunity, manual_check_in, set_application_stage, set_saved_opportunity, snapshot,
     update_settings,
 };
 use civicflow_core::{backups, Database};
@@ -69,7 +69,13 @@ fn restore_returns_every_workflow_to_the_snapshot_point_and_is_audited() {
 
     set_saved_opportunity(database.connection(), "opp-garden", false).unwrap();
     set_application_stage(database.connection(), "app-001", "review").unwrap();
-    check_in(database.connection(), "sh-tue-pantry", "vol-maya", None).unwrap();
+    manual_check_in(
+        database.connection(),
+        "sh-tue-pantry",
+        "vol-maya",
+        "Recorded at the door",
+    )
+    .unwrap();
     update_settings(
         database.connection(),
         SettingsPatch {

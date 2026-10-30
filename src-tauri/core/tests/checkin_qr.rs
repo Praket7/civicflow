@@ -3,7 +3,7 @@
 //! after scanning, so a broken payload format fails the suite rather than the
 //! demo.
 
-use civicflow_core::workflows::{check_in, get_checkin_code};
+use civicflow_core::workflows::{check_in, get_checkin_code, volunteer_checkin_credential};
 use civicflow_core::Database;
 
 fn seeded() -> Database {
@@ -23,7 +23,7 @@ fn the_scanned_payload_checks_a_volunteer_in() {
         database.connection(),
         "sh-tue-pantry",
         "vol-maya",
-        Some(&code.payload),
+        &code.payload,
     )
     .expect("QR payload accepted");
 
@@ -37,6 +37,59 @@ fn the_scanned_payload_checks_a_volunteer_in() {
 }
 
 #[test]
+fn a_volunteer_gets_the_token_but_not_the_printed_code() {
+    let database = seeded();
+    let issued = get_checkin_code(database.connection(), "sh-tue-pantry").expect("issued code");
+
+    let credential =
+        volunteer_checkin_credential(database.connection(), "sh-tue-pantry", "vol-maya")
+            .expect("volunteer credential");
+    assert!(credential.code.is_empty());
+    assert_eq!(credential.token, issued.token);
+    assert_eq!(credential.payload, issued.payload);
+
+    check_in(
+        database.connection(),
+        "sh-tue-pantry",
+        "vol-maya",
+        &credential.payload,
+    )
+    .expect("the volunteer's own token checks in");
+}
+
+#[test]
+fn a_volunteer_outside_the_roster_cannot_read_the_credential() {
+    let database = seeded();
+    get_checkin_code(database.connection(), "sh-tue-pantry").expect("issued code");
+
+    let refused = volunteer_checkin_credential(database.connection(), "sh-tue-pantry", "vol-025")
+        .expect_err("an unregistered volunteer must not read the token");
+    assert!(matches!(
+        refused,
+        civicflow_core::CoreError::Rule { ref code, .. } if code == "NOT_REGISTERED"
+    ));
+}
+
+#[test]
+fn a_volunteer_cannot_open_a_code_the_table_has_not_issued() {
+    let database = seeded();
+    let refused = volunteer_checkin_credential(database.connection(), "sh-tue-pantry", "vol-maya")
+        .expect_err("there is no code yet");
+    assert!(matches!(
+        refused,
+        civicflow_core::CoreError::Rule { ref code, .. } if code == "CHECKIN_NOT_OPEN"
+    ));
+    // Asking must not have issued a code behind the coordinator's back.
+    assert!(
+        get_checkin_code(database.connection(), "sh-tue-pantry")
+            .expect("coordinator can issue")
+            .code
+            .len()
+            == 6
+    );
+}
+
+#[test]
 fn a_typed_code_checks_a_volunteer_in() {
     let database = seeded();
     let code = get_checkin_code(database.connection(), "sh-tue-pantry").expect("issued code");
@@ -44,7 +97,7 @@ fn a_typed_code_checks_a_volunteer_in() {
         database.connection(),
         "sh-tue-pantry",
         "vol-maya",
-        Some(&code.code),
+        &code.code,
     )
     .expect("six-digit code accepted");
 }
@@ -57,7 +110,7 @@ fn a_token_from_another_shift_is_refused() {
         database.connection(),
         "sh-tue-pantry",
         "vol-maya",
-        Some(&other.payload),
+        &other.payload,
     )
     .expect_err("a token for a different shift must be refused");
     assert!(matches!(
@@ -69,7 +122,7 @@ fn a_token_from_another_shift_is_refused() {
         database.connection(),
         "sh-tue-pantry",
         "vol-maya",
-        Some("civicflow://checkin/not-a-real-token"),
+        "civicflow://checkin/not-a-real-token",
     );
     assert!(forged.is_err());
 }

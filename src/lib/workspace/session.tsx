@@ -38,31 +38,19 @@ import type {
 } from "../../types/domain";
 import { useOptionalAuth } from "../auth/session";
 import { useOrganizationWorkspace } from "../organizations/useOrganizationWorkspace";
-import type { OrganizationProfile } from "../organizations/store";
 import { demoWorkspace } from "./dataset";
 import {
   DEMO_ORGANIZATION,
-  isDemoOrganization,
   withCreatedShifts,
   withRoster,
   workspaceForOrganization,
 } from "./organizationWorkspace";
 import { workspaceReadKeys } from "./queries";
-import { getWorkspaceRepository, previewRepository } from "./repository";
+import { getWorkspaceRepository } from "./repository";
 import { WorkspaceScopeProvider } from "./scope";
 import { setDisplayTimeZone } from "./selectors";
 
 const localRepository = getWorkspaceRepository();
-
-/**
- * The bundled demo organization reads the app's own store. An organization
- * someone creates or joins gets its own scoped store, so its schedule starts
- * empty and never shows another organization's work.
- */
-function repositoryFor(organization: OrganizationProfile | null) {
-  if (!organization || isDemoOrganization(organization.id)) return localRepository;
-  return previewRepository;
-}
 
 interface WorkspaceSessionValue {
   workspace: DemoWorkspace;
@@ -71,7 +59,9 @@ interface WorkspaceSessionValue {
   actions: {
     setSaved(opportunityId: string, saved: boolean): Promise<void>;
     setApplicationStage(applicationId: string, stage: string): Promise<void>;
-    checkIn(shiftId: string, volunteerId: string, code?: string): Promise<void>;
+    checkIn(shiftId: string, volunteerId: string, code: string): Promise<void>;
+    /** A coordinator override, which carries the reason into the audit trail. */
+    manualCheckIn(shiftId: string, volunteerId: string, reason: string): Promise<void>;
     checkOut(shiftId: string, volunteerId: string): Promise<void>;
     markNoShow(shiftId: string, volunteerId: string): Promise<void>;
     cancelRegistration(shiftId: string, volunteerId: string, reason?: string): Promise<void>;
@@ -83,6 +73,7 @@ interface WorkspaceSessionValue {
     /** Applies a reviewed plan across its shifts in one transaction. */
     applyRosterWeek(
       expectedRevision: number | null,
+      expectedPolicyVersion: number | null,
       assignments: WeeklyAssignment[],
     ): Promise<void>;
     getRosterPolicy(): Promise<RosterPolicyView>;
@@ -178,13 +169,11 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   const organization = account ? organizationWorkspace.current : null;
   const organizationId = organization?.id ?? "";
   const accountId = account?.id ?? "";
-  // The store hands back a fresh object on every change; scope on identity, so
-  // an edited name or a new cover picture reaches the screens immediately.
-  const repository = useMemo(
-    () => (account ? repositoryFor(organization ?? null) : localRepository),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [organization, accountId],
-  );
+  // One repository for every organization. On the desktop it is SQLite, which
+  // now scopes rows by the selected organization; on the web it is the local
+  // preview. A second store for created organizations used to split the data
+  // model in two and leave the native app writing them to localStorage.
+  const repository = localRepository;
   const workspace = useMemo(
     () => (account ? workspaceForOrganization(organization ?? null, account) : demoWorkspace),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -325,6 +314,8 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
         run(() => repository.setApplicationStage(applicationId, stage)),
       checkIn: (shiftId, volunteerId, code) =>
         run(() => repository.checkIn(shiftId, volunteerId, code)),
+      manualCheckIn: (shiftId, volunteerId, reason) =>
+        run(() => repository.manualCheckIn(shiftId, volunteerId, reason)),
       checkOut: (shiftId, volunteerId) => run(() => repository.checkOut(shiftId, volunteerId)),
       markNoShow: (shiftId, volunteerId) => run(() => repository.markNoShow(shiftId, volunteerId)),
       cancelRegistration: (shiftId, volunteerId, reason) =>
@@ -334,8 +325,12 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
       getCheckinCode: (shiftId) => repository.getCheckinCode(shiftId),
       autoRoster: (shiftIds, options) => repository.autoRoster(shiftIds, options),
       evaluateRoster: (shiftIds, options) => repository.evaluateRoster(shiftIds, options),
-      applyRosterWeek: (expectedRevision, assignments) =>
-        enqueue(() => runChecked(() => repository.applyRosterWeek(expectedRevision, assignments))),
+      applyRosterWeek: (expectedRevision, expectedPolicyVersion, assignments) =>
+        enqueue(() =>
+          runChecked(() =>
+            repository.applyRosterWeek(expectedRevision, expectedPolicyVersion, assignments),
+          ),
+        ),
       getRosterPolicy: () => repository.getRosterPolicy(),
       updateRosterPolicy: (policy) => repository.updateRosterPolicy(policy),
       explainRosterChoice: (shiftIds, options, candidateId, slotId) =>

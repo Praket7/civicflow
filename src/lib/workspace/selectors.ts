@@ -319,9 +319,41 @@ export function getRoster(
   });
 }
 
+/**
+ * The roster as the attendance board reads it: everyone who holds a seat, plus
+ * the people who no-showed. A no-show has released their seat, so they are not
+ * part of staffing counts, but the coordinator still has to see that they did
+ * not arrive. Cancellations and waitlist entries are not here.
+ */
+export function getAttendanceRoster(
+  shiftId: string,
+  session: SessionOverrides = {},
+  workspace: DemoWorkspace,
+): RosterRow[] {
+  const active = getRoster(shiftId, session, workspace);
+  const attendance = session.attendance?.[shiftId] ?? [];
+  const absent = attendance.flatMap((row): RosterRow[] => {
+    if (row.status !== "no_show") return [];
+    if (active.some((activeRow) => activeRow.volunteer.id === row.volunteerId)) return [];
+    const volunteer = volunteerById(row.volunteerId, workspace);
+    if (!volunteer) return [];
+    return [
+      {
+        volunteer,
+        role: row.role || "General support",
+        status: "no_show",
+        checkedInAt: null,
+      },
+    ];
+  });
+  return [...active, ...absent];
+}
+
 export function rosterCounts(rows: RosterRow[]) {
   return {
-    confirmed: rows.length,
+    // A no-show has released the seat, so they are on the roster but no longer
+    // counted among the volunteers who hold one.
+    confirmed: rows.filter((row) => row.status !== "no_show").length,
     checkedIn: rows.filter((row) => row.status === "checked_in").length,
     completed: rows.filter((row) => row.status === "completed").length,
     noShow: rows.filter((row) => row.status === "no_show").length,

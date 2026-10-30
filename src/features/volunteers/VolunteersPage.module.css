@@ -295,6 +295,39 @@
   color: var(--text-muted);
 }
 
+.readiness {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.readinessItem,
+.readinessWarn {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.readinessItem svg {
+  flex: none;
+  color: var(--color-green);
+}
+
+.readinessWarn {
+  color: var(--text-primary);
+}
+
+.readinessWarn svg {
+  flex: none;
+  color: var(--color-amber);
+}
+
 .nextShift {
   display: flex;
   flex-direction: column;

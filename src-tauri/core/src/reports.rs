@@ -88,6 +88,17 @@ fn title_for(template: &str) -> &'static str {
 }
 
 fn organization(conn: &Connection) -> Result<String> {
+    // The report names the workspace it was generated for.
+    let scoped: Option<String> = conn
+        .query_row(
+            "SELECT name FROM organizations WHERE id = ?1",
+            rusqlite::params![crate::scope::current(conn)?],
+            |row| row.get(0),
+        )
+        .ok();
+    if let Some(name) = scoped {
+        return Ok(name);
+    }
     Ok(
         conn.query_row("SELECT name FROM organizations LIMIT 1", [], |row| {
             row.get(0)
@@ -195,9 +206,10 @@ fn participation(
          LEFT JOIN registrations reg
            ON reg.shift_id = h.source_shift_id AND reg.volunteer_id = h.volunteer_id
          WHERE h.date >= ?1 AND h.date <= ?2 AND (?3 = '' OR o.cause = ?3)
+           AND (?4 IS NULL OR o.organization_id = ?4)
          ORDER BY h.date DESC, v.name",
     )?;
-    let mut rows = statement.query(params![start, end, cause])?;
+    let mut rows = statement.query(params![start, end, cause, crate::scope::current(conn)?])?;
     let mut output = Vec::new();
     let mut total_minutes = 0_i64;
     let mut verified_minutes = 0_i64;
@@ -296,9 +308,10 @@ fn coverage(conn: &Connection, request: &ReportRequest) -> Result<ReportTable> {
          JOIN shifts s ON s.id = r.shift_id
          JOIN opportunities o ON o.id = s.opportunity_id
          WHERE s.starts_at >= ?1 AND (?2 = '' OR o.cause = ?2)
+           AND (?3 IS NULL OR o.organization_id = ?3)
          ORDER BY s.starts_at, o.title, r.name",
     )?;
-    let mut rows = statement.query(params![now, cause])?;
+    let mut rows = statement.query(params![now, cause, crate::scope::current(conn)?])?;
     let mut output = Vec::new();
     let mut required_total = 0_i64;
     let mut filled_total = 0_i64;
@@ -368,9 +381,10 @@ fn attendance(
          JOIN volunteers v ON v.id = a.volunteer_id
          WHERE substr(s.starts_at, 1, 10) >= ?1 AND substr(s.starts_at, 1, 10) <= ?2
            AND (?3 = '' OR o.cause = ?3)
+           AND (?4 IS NULL OR o.organization_id = ?4)
          ORDER BY s.starts_at DESC, v.name",
     )?;
-    let mut rows = statement.query(params![start, end, cause])?;
+    let mut rows = statement.query(params![start, end, cause, crate::scope::current(conn)?])?;
     let mut output = Vec::new();
     let mut checked_in = 0_i64;
     let mut completed = 0_i64;
@@ -479,9 +493,10 @@ fn skills(conn: &Connection) -> Result<ReportTable> {
          JOIN volunteers v ON v.id = vs.volunteer_id
          LEFT JOIN volunteer_credentials vc ON vc.volunteer_id = v.id
          LEFT JOIN credential_types ct ON ct.id = vc.credential_type_id
+         WHERE (?1 IS NULL OR v.organization_id = ?1)
          ORDER BY v.name, vs.skill",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut output = Vec::new();
     let mut expiring = 0_i64;
     while let Some(row) = rows.next()? {
@@ -525,9 +540,10 @@ fn impact(conn: &Connection) -> Result<ReportTable> {
          FROM impact_results r
          JOIN impact_metric_definitions d ON d.id = r.definition_id
          JOIN opportunities o ON o.id = d.opportunity_id
+         WHERE (?1 IS NULL OR o.organization_id = ?1)
          ORDER BY o.title, d.name, r.recorded_at",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![crate::scope::current(conn)?])?;
     let mut output = Vec::new();
     while let Some(row) = rows.next()? {
         let value: f64 = row.get(3)?;

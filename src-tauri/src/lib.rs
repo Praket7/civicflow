@@ -5,23 +5,22 @@ use civicflow_core::auth::{Account, AuthSession};
 use civicflow_core::error::{AppError, CoreError};
 use civicflow_core::explain::CandidateAnswer;
 use civicflow_core::imports::{self, ImportPreview, ImportSummary};
-use civicflow_core::matching::{RosterOptions, RosterPlan};
-use civicflow_core::models::{
-    AvailabilitySlot, BackupRestoreResult, BackupSnapshot, CheckinCode, CreateOpportunityResult,
-    MissionControlSummary, NewOpportunityInput, NotificationItem, SettingsPatch,
-    WorkspaceSnapshot,
-};
 use civicflow_core::insights::{
     self, CredentialReadiness, EngagementMetrics, RetentionSignal, VolunteerInsight,
 };
+use civicflow_core::matching::{RosterOptions, RosterPlan};
+use civicflow_core::models::{
+    AvailabilitySlot, BackupRestoreResult, BackupSnapshot, CheckinCode, CreateOpportunityResult,
+    MissionControlSummary, NewOpportunityInput, NotificationItem, SettingsPatch, WorkspaceSnapshot,
+};
 use civicflow_core::notifications::{self, NotificationRule, RulePatch};
-use civicflow_core::policy::{self, PriorityLevel, RosterPolicy};
-use civicflow_core::recovery::{self, DisruptionReport, RecoveryChangeRequest, RecoveryPlan};
-use civicflow_core::recurrence::{self, RecurrenceRule, SeriesResult, ShiftSeriesRecord};
 use civicflow_core::organizations::{
     self, IssuedInvite, NewOrganization, OrganizationAccess, OrganizationDetailsPatch,
     OrganizationMember, OrganizationRecord, PendingInvite,
 };
+use civicflow_core::policy::{self, PriorityLevel, RosterPolicy};
+use civicflow_core::recovery::{self, DisruptionReport, RecoveryChangeRequest, RecoveryPlan};
+use civicflow_core::recurrence::{self, RecurrenceRule, SeriesResult, ShiftSeriesRecord};
 use civicflow_core::reports::{self, ExportFormat, ReportDocument, ReportRequest};
 use civicflow_core::Database;
 use civicflow_core::{auth, backups, roster, services, workflows};
@@ -48,11 +47,54 @@ fn lock_error() -> AppError {
 /// touches workspace data calls this first, so hiding a screen is never the
 /// only thing standing between a role and a record.
 fn require_account(database: &Database, token: &str) -> Result<Account, AppError> {
-    auth::require_user(database.connection(), token).map_err(AppError::from)
+    // A signed-in identity with no membership is not a workspace reader. Without
+    // this gate the unscoped query fallback would show the installation's own
+    // organization to somebody who has not joined one.
+    auth::require_member(database.connection(), token).map_err(AppError::from)
+}
+
+/// Remembers the organization an account is working in. The role and the data
+/// scope are both derived from this one row, so selecting, joining, redeeming,
+/// and creating an organization all go through here.
+fn remember_active_organization(
+    database: &Database,
+    user_id: &str,
+    organization_id: &str,
+) -> Result<(), AppError> {
+    database
+        .connection()
+        .execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+            [
+                format!("active_organization:{user_id}"),
+                organization_id.to_string(),
+            ],
+        )
+        .map_err(|error| AppError::from(CoreError::from(error)))?;
+    civicflow_core::scope::select(database.connection(), Some(organization_id))
+        .map_err(AppError::from)
 }
 
 fn require_coordinator(database: &Database, token: &str) -> Result<Account, AppError> {
     auth::require_coordinator(database.connection(), token).map_err(AppError::from)
+}
+
+/// Restoring a snapshot replaces the whole installation database, so it is the
+/// workspace owner's decision. Taking a snapshot is harmless and stays
+/// available to any coordinator.
+fn require_workspace_steward(database: &Database, token: &str) -> Result<Account, AppError> {
+    let account = require_coordinator(database, token)?;
+    if !organizations::is_workspace_steward(database.connection(), &account.id)
+        .map_err(AppError::from)?
+    {
+        return Err(AppError::from(CoreError::rule(
+            "FORBIDDEN",
+            "Only the workspace owner can restore an installation backup.",
+            None,
+            Some("ASK_WORKSPACE_OWNER".into()),
+        )));
+    }
+    Ok(account)
 }
 
 /// A volunteer may only act on their own volunteer record; a coordinator may
@@ -183,8 +225,7 @@ fn create_account(
     password: String,
 ) -> Result<AuthSession, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
-    auth::create_account(database.connection(), &name, &email, &password)
-        .map_err(AppError::from)
+    auth::create_account(database.connection(), &name, &email, &password).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -216,6 +257,9 @@ fn create_organization(
     let account = auth::require_user(database.connection(), &token)?;
     let organization = organizations::create_organization(database.connection(), &account, &input)
         .map_err(AppError::from)?;
+    // The creator is the owner of what they just made, so it becomes their
+    // workspace. Otherwise the next screen would open the previous organization.
+    remember_active_organization(&database, &account.id, &organization.id)?;
     organizations::organization_access(database.connection(), &organization.id, &account.id)
         .map_err(AppError::from)
 }
@@ -241,16 +285,10 @@ fn select_organization(
 ) -> Result<OrganizationAccess, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = auth::require_user(database.connection(), &token)?;
-    let access = organizations::organization_access(database.connection(), &organization_id, &account.id)
-        .map_err(AppError::from)?;
-    let key = format!("active_organization:{}", account.id);
-    database
-        .connection()
-        .execute(
-            "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
-            [&key, &organization_id],
-        )
-        .map_err(|error| AppError::from(CoreError::from(error)))?;
+    let access =
+        organizations::organization_access(database.connection(), &organization_id, &account.id)
+            .map_err(AppError::from)?;
+    remember_active_organization(&database, &account.id, &organization_id)?;
     Ok(access)
 }
 
@@ -307,8 +345,13 @@ fn revoke_organization_invite(
 ) -> Result<(), AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = auth::require_user(database.connection(), &token)?;
-    organizations::revoke_invite(database.connection(), &account, &organization_id, &invite_id)
-        .map_err(AppError::from)
+    organizations::revoke_invite(
+        database.connection(),
+        &account,
+        &organization_id,
+        &invite_id,
+    )
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -321,6 +364,7 @@ fn redeem_organization_invite(
     let account = auth::require_user(database.connection(), &token)?;
     let membership = organizations::redeem_invite(database.connection(), &account.id, &code)
         .map_err(AppError::from)?;
+    remember_active_organization(&database, &account.id, &membership.organization_id)?;
     organizations::organization_access(
         database.connection(),
         &membership.organization_id,
@@ -337,8 +381,11 @@ fn join_public_organization(
 ) -> Result<OrganizationAccess, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = auth::require_user(database.connection(), &token)?;
-    let membership = organizations::join_as_volunteer(database.connection(), &account.id, &organization_id)
-        .map_err(AppError::from)?;
+    let membership =
+        organizations::join_as_volunteer(database.connection(), &account.id, &organization_id)
+            .map_err(AppError::from)?;
+    // Joining a second organization means working in it now; the role follows.
+    remember_active_organization(&database, &account.id, &membership.organization_id)?;
     organizations::organization_access(
         database.connection(),
         &membership.organization_id,
@@ -575,7 +622,15 @@ struct RosterPolicyView {
 
 /// The organization this workspace's data belongs to. Commands that act on an
 /// organization ask for it by id rather than assuming the first row.
+/// The organization the session is working in. Imports, exports, and the
+/// policy screen belong to that organization, not to whichever row happens to
+/// be oldest.
 fn workspace_organization(database: &Database) -> Result<String, AppError> {
+    if let Some(organization) =
+        civicflow_core::scope::current(database.connection()).map_err(AppError::from)?
+    {
+        return Ok(organization);
+    }
     roster::workspace_organization_id(database.connection())
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::from(CoreError::NotFound("the workspace organization".into())))
@@ -659,12 +714,18 @@ fn apply_roster_week(
     state: State<'_, AppState>,
     token: String,
     expected_revision: Option<i64>,
+    expected_policy_version: Option<i64>,
     assignments: Vec<roster::WeeklyAssignment>,
 ) -> Result<WorkspaceSnapshot, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_coordinator(&database, &token)?;
-    roster::apply_roster_week(database.connection(), expected_revision, &assignments)
-        .map_err(AppError::from)?;
+    roster::apply_roster_week(
+        database.connection(),
+        expected_revision,
+        expected_policy_version,
+        &assignments,
+    )
+    .map_err(AppError::from)?;
     snapshot_for(&database, &account)
 }
 
@@ -712,8 +773,14 @@ fn set_assignment_lock(
 ) -> Result<WorkspaceSnapshot, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_coordinator(&database, &token)?;
-    recovery::set_lock(database.connection(), &account, &shift_id, &volunteer_id, locked)
-        .map_err(AppError::from)
+    recovery::set_lock(
+        database.connection(),
+        &account,
+        &shift_id,
+        &volunteer_id,
+        locked,
+    )
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -726,8 +793,14 @@ fn create_shift_series(
 ) -> Result<SeriesResult, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_coordinator(&database, &token)?;
-    recurrence::create_series(database.connection(), &account, &opportunity_id, &rule, &roles)
-        .map_err(AppError::from)
+    recurrence::create_series(
+        database.connection(),
+        &account,
+        &opportunity_id,
+        &rule,
+        &roles,
+    )
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -738,7 +811,8 @@ fn list_shift_series(
 ) -> Result<Vec<ShiftSeriesRecord>, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     require_coordinator(&database, &token)?;
-    recurrence::list_series(database.connection(), opportunity_id.as_deref()).map_err(AppError::from)
+    recurrence::list_series(database.connection(), opportunity_id.as_deref())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -749,7 +823,8 @@ fn generate_series_instances(
 ) -> Result<SeriesResult, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_coordinator(&database, &token)?;
-    recurrence::generate_instances(database.connection(), &account, &series_id).map_err(AppError::from)
+    recurrence::generate_instances(database.connection(), &account, &series_id)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -921,7 +996,26 @@ fn get_checkin_code(
     shift_id: String,
 ) -> Result<CheckinCode, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
-    require_account(&database, &token)?;
+    let account = require_account(&database, &token)?;
+    // A coordinator reads the printed code that is the door gate. A volunteer
+    // gets only the opaque token for the code already on the board, so the
+    // six-digit secret never reaches a volunteer's session.
+    if account.role != "coordinator" {
+        let volunteer_id = account.volunteer_id.ok_or_else(|| {
+            AppError::from(CoreError::rule(
+                "FORBIDDEN",
+                "Only a volunteer can show a check-in code.",
+                None,
+                Some("RETURN_TO_VOLUNTEER_HOME".into()),
+            ))
+        })?;
+        return workflows::volunteer_checkin_credential(
+            database.connection(),
+            &shift_id,
+            &volunteer_id,
+        )
+        .map_err(AppError::from);
+    }
     workflows::get_checkin_code(database.connection(), &shift_id).map_err(AppError::from)
 }
 
@@ -931,18 +1025,38 @@ fn check_in_volunteer(
     token: String,
     shift_id: String,
     volunteer_id: String,
-    code: Option<String>,
+    code: String,
 ) -> Result<WorkspaceSnapshot, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
     let account = require_account(&database, &token)?;
     require_self_or_coordinator(&account, &volunteer_id)?;
-    workflows::check_in(
-        database.connection(),
-        &shift_id,
-        &volunteer_id,
-        code.as_deref(),
-    )
-    .map_err(AppError::from)?;
+    if code.trim().is_empty() {
+        return Err(AppError::from(CoreError::rule(
+            "CHECKIN_CODE_REQUIRED",
+            "Enter the code posted at the check-in table.",
+            Some("code".into()),
+            Some("ASK_SHIFT_LEAD".into()),
+        )));
+    }
+    workflows::check_in(database.connection(), &shift_id, &volunteer_id, &code)
+        .map_err(AppError::from)?;
+    snapshot_for(&database, &account)
+}
+
+/// A coordinator recording an arrival themselves. Separate from self check-in
+/// so it carries its own permission, its own reason, and its own audit event.
+#[tauri::command]
+fn manual_check_in(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: String,
+    volunteer_id: String,
+    reason: String,
+) -> Result<WorkspaceSnapshot, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_coordinator(&database, &token)?;
+    workflows::manual_check_in(database.connection(), &shift_id, &volunteer_id, &reason)
+        .map_err(AppError::from)?;
     snapshot_for(&database, &account)
 }
 
@@ -1328,7 +1442,7 @@ fn restore_backup(
     id: String,
 ) -> Result<BackupRestoreResult, AppError> {
     let mut database = state.database.lock().map_err(|_| lock_error())?;
-    require_coordinator(&database, &token)?;
+    require_workspace_steward(&database, &token)?;
     backups::restore(database.connection_mut(), &state.backup_dir, &id).map_err(AppError::from)
 }
 
@@ -1406,6 +1520,7 @@ pub fn run() {
             evaluate_roster_candidates,
             apply_roster_plan,
             apply_roster_week,
+            manual_check_in,
             get_roster_policy,
             update_roster_policy,
             explain_roster_choice,

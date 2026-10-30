@@ -2,9 +2,9 @@ use civicflow_core::models::{
     AvailabilitySlot, NewOpportunityInput, SettingsPatch, VolunteerProfilePatch,
 };
 use civicflow_core::workflows::{
-    check_in, check_out, create_opportunity, mark_no_show, promote_waitlist, register_for_shift,
-    review_hours, save_volunteer_profile, set_application_stage, set_saved_opportunity, snapshot,
-    update_settings,
+    check_in, check_out, create_opportunity, get_checkin_code, join_waitlist, manual_check_in,
+    mark_no_show, promote_waitlist, register_for_shift, review_hours, save_volunteer_profile,
+    set_application_stage, set_saved_opportunity, snapshot, update_settings,
 };
 use civicflow_core::Database;
 
@@ -85,7 +85,13 @@ fn applicants_move_stage_and_audit_their_name() {
 #[test]
 fn attendance_check_in_check_out_and_no_show_share_one_ledger() {
     let database = seeded();
-    let state = check_in(database.connection(), "sh-tue-pantry", "vol-maya", None).unwrap();
+    let state = manual_check_in(
+        database.connection(),
+        "sh-tue-pantry",
+        "vol-maya",
+        "Recorded at the door",
+    )
+    .unwrap();
     let row = state.attendance["sh-tue-pantry"]
         .iter()
         .find(|row| row.volunteer_id == "vol-maya")
@@ -105,15 +111,70 @@ fn attendance_check_in_check_out_and_no_show_share_one_ledger() {
     assert_eq!(row.status, "completed");
     assert!(row.checked_out_at.is_some());
     assert_eq!(audit_count(&database, "shift.checkout"), 1);
+}
 
-    let state = mark_no_show(database.connection(), "sh-tue-pantry", "vol-054").unwrap();
+#[test]
+fn marking_a_no_show_reopens_the_seat_exactly_once() {
+    let database = seeded();
+    let connection = database.connection();
+    let counters = |role: &str| -> (i64, i64) {
+        let confirmed = connection
+            .query_row(
+                "SELECT confirmed FROM shifts WHERE id = 'sh-tue-pantry'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let filled = connection
+            .query_row(
+                "SELECT filled FROM shift_roles WHERE shift_id = 'sh-tue-pantry' AND name = ?1",
+                [role],
+                |row| row.get(0),
+            )
+            .unwrap();
+        (confirmed, filled)
+    };
+
+    let (confirmed_before, filled_before) = counters("Shelf stocker");
+    let state = mark_no_show(connection, "sh-tue-pantry", "vol-maya").unwrap();
     let row = state.attendance["sh-tue-pantry"]
         .iter()
-        .find(|row| row.volunteer_id == "vol-054")
+        .find(|row| row.volunteer_id == "vol-maya")
         .unwrap();
     assert_eq!(row.status, "no_show");
     assert_eq!(row.checked_in_at, None);
+    let seat = state
+        .registrations
+        .iter()
+        .find(|row| row.shift_id == "sh-tue-pantry" && row.volunteer_id == "vol-maya")
+        .unwrap();
+    assert_eq!(seat.status, "no_show");
+    assert_eq!(
+        counters("Shelf stocker"),
+        (confirmed_before - 1, filled_before - 1),
+        "the seat returns to coverage"
+    );
     assert_eq!(audit_count(&database, "shift.no_show"), 1);
+
+    // The same transition twice must not return the seat twice.
+    let repeated = mark_no_show(connection, "sh-tue-pantry", "vol-maya").unwrap();
+    assert_eq!(
+        counters("Shelf stocker"),
+        (confirmed_before - 1, filled_before - 1)
+    );
+    assert_eq!(
+        repeated
+            .registrations
+            .iter()
+            .find(|row| row.shift_id == "sh-tue-pantry" && row.volunteer_id == "vol-maya")
+            .unwrap()
+            .status,
+        "no_show"
+    );
+    assert_eq!(audit_count(&database, "shift.no_show"), 1);
+
+    // Somebody who did arrive is a correction, not a no-show.
+    assert!(mark_no_show(connection, "sh-tue-pantry", "vol-015").is_err());
 }
 
 #[test]
@@ -216,7 +277,7 @@ fn settings_are_validated_persisted_and_audited() {
     let stored: String = database
         .connection()
         .query_row(
-            "SELECT value FROM app_settings WHERE key = 'setting.default_shift_length'",
+            "SELECT value FROM app_settings WHERE key = 'setting.default_shift_length@org-feedmore-wny'",
             [],
             |row| row.get(0),
         )
@@ -341,7 +402,13 @@ fn every_workflow_write_survives_reopen() {
         database.seed_demo_if_empty().unwrap();
         set_saved_opportunity(database.connection(), "opp-garden", false).unwrap();
         set_application_stage(database.connection(), "app-001", "review").unwrap();
-        check_in(database.connection(), "sh-tue-pantry", "vol-maya", None).unwrap();
+        manual_check_in(
+            database.connection(),
+            "sh-tue-pantry",
+            "vol-maya",
+            "Recorded at the door",
+        )
+        .unwrap();
         promote_waitlist(database.connection(), "sh-sat-food", "vol-014").unwrap();
         review_hours(
             database.connection(),
@@ -438,7 +505,13 @@ fn every_workflow_write_survives_reopen() {
 #[test]
 fn reset_restores_the_seed_and_drops_user_writes() {
     let mut database = seeded();
-    check_in(database.connection(), "sh-tue-pantry", "vol-maya", None).unwrap();
+    manual_check_in(
+        database.connection(),
+        "sh-tue-pantry",
+        "vol-maya",
+        "Recorded at the door",
+    )
+    .unwrap();
     update_settings(
         database.connection(),
         SettingsPatch {
@@ -461,4 +534,148 @@ fn reset_restores_the_seed_and_drops_user_writes() {
         .audit
         .iter()
         .any(|event| event.action == "shift.checkin" && event.entity_id == "sh-tue-pantry"));
+}
+
+fn rule_code(error: civicflow_core::CoreError) -> String {
+    match error {
+        civicflow_core::CoreError::Rule { code, .. } => code,
+        other => panic!("expected a rule error, got {other:?}"),
+    }
+}
+
+#[test]
+fn self_checkin_needs_the_code_that_is_active_for_the_shift() {
+    let database = seeded();
+    let connection = database.connection();
+    let code = get_checkin_code(connection, "sh-tue-pantry").expect("issue a code");
+    assert_eq!(code.code.len(), 6);
+    assert!(code.token.len() > 10);
+
+    // No code, and a code from somewhere else, are both refused.
+    assert_eq!(
+        rule_code(check_in(connection, "sh-tue-pantry", "vol-maya", "").unwrap_err()),
+        "INVALID_CHECKIN_CODE"
+    );
+    assert_eq!(
+        rule_code(check_in(connection, "sh-tue-pantry", "vol-maya", "000000x").unwrap_err()),
+        "INVALID_CHECKIN_CODE"
+    );
+    let still_expected: String = connection
+        .query_row(
+            "SELECT status FROM attendance_events
+             WHERE shift_id = 'sh-tue-pantry' AND volunteer_id = 'vol-maya'",
+            [],
+            |row| row.get(0),
+        )
+        .map(|status: String| status)
+        .unwrap_or_else(|_| "expected".into());
+    assert_eq!(still_expected, "expected");
+
+    let state = check_in(connection, "sh-tue-pantry", "vol-maya", &code.code).unwrap();
+    let row = state.attendance["sh-tue-pantry"]
+        .iter()
+        .find(|row| row.volunteer_id == "vol-maya")
+        .unwrap();
+    assert_eq!(row.status, "checked_in");
+    assert_eq!(audit_count(&database, "shift.checkin"), 2);
+
+    // The QR payload is the same gate in another shape.
+    let scanned = format!("civicflow://checkin/{}", code.token);
+    let repeated = check_in(connection, "sh-tue-pantry", "vol-maya", &scanned).unwrap();
+    assert_eq!(
+        repeated.attendance["sh-tue-pantry"]
+            .iter()
+            .find(|row| row.volunteer_id == "vol-maya")
+            .unwrap()
+            .status,
+        "checked_in"
+    );
+    assert_eq!(audit_count(&database, "shift.checkin"), 2);
+}
+
+#[test]
+fn an_expired_checkin_code_is_refused() {
+    let database = seeded();
+    let connection = database.connection();
+    let code = get_checkin_code(connection, "sh-tue-pantry").unwrap();
+    connection
+        .execute(
+            "UPDATE checkin_codes SET expires_at = '2026-10-13T07:00:00-04:00'
+             WHERE shift_id = 'sh-tue-pantry' AND active = 1",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(
+        rule_code(check_in(connection, "sh-tue-pantry", "vol-maya", &code.code).unwrap_err()),
+        "INVALID_CHECKIN_CODE"
+    );
+}
+
+#[test]
+fn manual_checkin_needs_a_reason_and_records_it() {
+    let database = seeded();
+    let connection = database.connection();
+
+    assert_eq!(
+        rule_code(manual_check_in(connection, "sh-tue-pantry", "vol-maya", "ok").unwrap_err()),
+        "MANUAL_REASON_REQUIRED"
+    );
+
+    manual_check_in(
+        connection,
+        "sh-tue-pantry",
+        "vol-maya",
+        "Phone battery died at the door",
+    )
+    .unwrap();
+    let note: String = connection
+        .query_row(
+            "SELECT COALESCE(note, '') FROM attendance_ledger
+             WHERE shift_id = 'sh-tue-pantry' AND volunteer_id = 'vol-maya'
+               AND event_type = 'manual_check_in'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(note, "Phone battery died at the door");
+    assert_eq!(audit_count(&database, "shift.manual_checkin"), 1);
+}
+
+#[test]
+fn joining_the_same_waitlist_twice_keeps_the_place_in_line() {
+    let database = seeded();
+    let connection = database.connection();
+    let (shift_id, volunteer_id, position, role): (String, String, i64, String) = connection
+        .query_row(
+            "SELECT shift_id, volunteer_id, position, eligible_role
+             FROM waitlist_entries WHERE status = 'waiting'
+             ORDER BY shift_id, position LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+
+    let first = join_waitlist(connection, &shift_id, &volunteer_id, &role).unwrap();
+    let joined = first
+        .waitlist
+        .iter()
+        .find(|row| row.shift_id == shift_id && row.volunteer_id == volunteer_id)
+        .unwrap();
+    assert_eq!(
+        joined.position, position,
+        "a refresh does not demote anyone"
+    );
+
+    let again = join_waitlist(connection, &shift_id, &volunteer_id, &role).unwrap();
+    assert_eq!(again.waitlist.len(), first.waitlist.len());
+    assert_eq!(
+        again
+            .waitlist
+            .iter()
+            .find(|row| row.shift_id == shift_id && row.volunteer_id == volunteer_id)
+            .unwrap()
+            .position,
+        position
+    );
 }

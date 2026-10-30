@@ -54,8 +54,21 @@ pub fn unpin(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// The organization timezone, or UTC when the workspace has none yet.
+/// The timezone of the organization being worked in, or UTC when the
+/// workspace has none yet.
 pub fn timezone(conn: &Connection) -> String {
+    let scoped: Option<String> = conn
+        .query_row(
+            "SELECT timezone FROM organizations WHERE id = ?1",
+            params![crate::scope::current(conn).ok().flatten()],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    if let Some(timezone) = scoped {
+        return timezone;
+    }
     conn.query_row("SELECT timezone FROM organizations LIMIT 1", [], |row| {
         row.get::<_, String>(0)
     })

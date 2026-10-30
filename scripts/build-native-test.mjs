@@ -12,7 +12,7 @@ const result = spawnSync(
   ["exec", "tauri", "build", "--debug", "--no-bundle"],
   {
     stdio: "inherit",
-    env: { ...process.env, VITE_SUPABASE_URL: "", VITE_SUPABASE_ANON_KEY: "" },
+    env: { ...process.env, VITE_SUPABASE_ANON_KEY: "" },
   },
 );
 

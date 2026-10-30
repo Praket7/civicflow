@@ -117,7 +117,10 @@ export interface WorkspaceRepository {
   getSnapshot(): Promise<SessionSnapshot>;
   setSaved(opportunityId: string, saved: boolean): Promise<SessionSnapshot>;
   setApplicationStage(applicationId: string, stage: string): Promise<SessionSnapshot>;
-  checkIn(shiftId: string, volunteerId: string, code?: string): Promise<SessionSnapshot>;
+  /** Self check-in; the rotating code is what proves the volunteer is present. */
+  checkIn(shiftId: string, volunteerId: string, code: string): Promise<SessionSnapshot>;
+  /** A coordinator recording an arrival by hand, with a reason on the record. */
+  manualCheckIn(shiftId: string, volunteerId: string, reason: string): Promise<SessionSnapshot>;
   checkOut(shiftId: string, volunteerId: string): Promise<SessionSnapshot>;
   markNoShow(shiftId: string, volunteerId: string): Promise<SessionSnapshot>;
   cancelRegistration(
@@ -136,6 +139,7 @@ export interface WorkspaceRepository {
   /** Applies a reviewed plan across every shift in one transaction. */
   applyRosterWeek(
     expectedRevision: number | null,
+    expectedPolicyVersion: number | null,
     assignments: WeeklyAssignment[],
   ): Promise<SessionSnapshot>;
   /** The matching policy in force, with the priority levels the screen offers. */
@@ -316,10 +320,9 @@ const desktopRepository: WorkspaceRepository = {
   setApplicationStage: (applicationId, stage) =>
     invoke<SessionSnapshot>("set_application_stage", withToken({ applicationId, stage })),
   checkIn: (shiftId, volunteerId, code) =>
-    invoke<SessionSnapshot>(
-      "check_in_volunteer",
-      withToken({ shiftId, volunteerId, code: code ?? null }),
-    ),
+    invoke<SessionSnapshot>("check_in_volunteer", withToken({ shiftId, volunteerId, code })),
+  manualCheckIn: (shiftId, volunteerId, reason) =>
+    invoke<SessionSnapshot>("manual_check_in", withToken({ shiftId, volunteerId, reason })),
   checkOut: (shiftId, volunteerId) =>
     invoke<SessionSnapshot>("check_out_volunteer", withToken({ shiftId, volunteerId })),
   markNoShow: (shiftId, volunteerId) =>
@@ -340,8 +343,11 @@ const desktopRepository: WorkspaceRepository = {
     invoke<RosterPlan>("auto_roster", withToken({ shiftIds, options })),
   evaluateRoster: (shiftIds, options) =>
     invoke<RosterEvaluation>("evaluate_roster_candidates", withToken({ shiftIds, options })),
-  applyRosterWeek: (expectedRevision, assignments) =>
-    invoke<SessionSnapshot>("apply_roster_week", withToken({ expectedRevision, assignments })),
+  applyRosterWeek: (expectedRevision, expectedPolicyVersion, assignments) =>
+    invoke<SessionSnapshot>(
+      "apply_roster_week",
+      withToken({ expectedRevision, expectedPolicyVersion, assignments }),
+    ),
   getRosterPolicy: () => invoke<RosterPolicyView>("get_roster_policy", withToken()),
   updateRosterPolicy: (policy) =>
     invoke<RosterPolicyView>("update_roster_policy", withToken({ policy })),

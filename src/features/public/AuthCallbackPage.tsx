@@ -3,8 +3,7 @@ import { AlertCircle, ArrowLeft, Check, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { accountHome, useAuth } from "../../lib/auth/session";
 import { t } from "../../lib/i18n";
-import { markSetupPending } from "../../lib/onboarding/store";
-import { organizationsFor } from "../../lib/organizations/store";
+
 import {
   exchangeHostedCode,
   finishHostedHandoff,
@@ -161,17 +160,17 @@ export function AuthCallbackPage() {
             : await exchangeHostedCode(answer.code as string);
         const identity = identityFromUser(hostedSession.user);
         if (!identity) throw new Error(t("That account has no email address."));
-        // A provider account with no organization yet is a new account: its
-        // first stop is setup. An account that already belongs somewhere, or
-        // that has finished setup, is left alone.
-        if (organizationsFor(identity.email).length === 0) {
-          markSetupPending(identity.email);
-        }
+        // Adopt first: the identity exchange is what makes this device able to
+        // read the memberships. Deciding from the cache before that point sent
+        // a returning member through setup whenever the cache was cold.
         const session = await adoptHostedIdentity(identity, true);
         stripAnswerFromAddress();
         await finishHostedHandoff();
         if (!live) return;
         setDone(true);
+        // The role in this session already names the organization the account is
+        // working in. An identity with no membership lands on the start screens,
+        // where it gains one; a member goes straight to their own home.
         navigate(accountHome(session.user), { replace: true });
       } catch (caught) {
         if (!live) return;

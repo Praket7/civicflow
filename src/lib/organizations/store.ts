@@ -9,19 +9,11 @@ import type {
   OrganizationUpdate,
   PendingInvite,
 } from "./types";
-import { ORGANIZATION_COVERS, isCoordinatorRole } from "./types";
+import { ORGANIZATION_COVERS } from "./types";
 
 /**
- * A cache of the organization membership rows the workspace repository owns.
- *
- * This module used to be the authority: memberships, invitations, and reusable
- * join codes lived in localStorage. They no longer do. The provider hydrates
- * this cache from `WorkspaceRepository.listOrganizations()`, every mutation
- * goes back through that repository, and a failed or stale cache can only hide
- * a screen — it can never grant access.
- *
- * The activity feed entries below are presentation data, not authorization
- * state. They stay local to the device that wrote them.
+ * Cache of the membership rows the repository owns. Hydrated from
+ * `listOrganizations()`; a stale cache can hide a screen but never grant access.
  */
 
 export type { OrganizationUpdate } from "./types";
@@ -63,9 +55,7 @@ let updates: OrganizationUpdate[] = [];
 let readAt: Record<string, string> = {};
 let current: Record<string, string> = {};
 let activeOverride: string | null = null;
-let loaded = false;
 const listeners = new Set<() => void>();
-const errorListeners = new Set<(message: string) => void>();
 
 function emit(): void {
   listeners.forEach((listener) => listener());
@@ -86,11 +76,6 @@ function writeJson(key: string, value: unknown): void {
   } catch {
     // The in-memory copy still serves this session.
   }
-}
-
-function report(caught: unknown): void {
-  const message = caught instanceof Error ? caught.message : String(caught);
-  errorListeners.forEach((listener) => listener(message));
 }
 
 function profileOf(record: RecordProfile): OrganizationProfile {
@@ -126,29 +111,15 @@ export function hydrateOrganizations(
     membership: row.membership,
     members: row.members,
   }));
-  loaded = true;
   if (activeOrganizationId && access.some((row) => row.organization.id === activeOrganizationId)) {
     activeOverride = activeOrganizationId;
   }
   emit();
 }
 
-export function markOrganizationsUnloaded(): void {
-  loaded = false;
-}
-
-export function organizationsLoaded(): boolean {
-  return loaded;
-}
-
 export function subscribeToOrganizations(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
-}
-
-export function subscribeToOrganizationErrors(listener: (message: string) => void): () => void {
-  errorListeners.add(listener);
-  return () => errorListeners.delete(listener);
 }
 
 export function listOrganizations(): OrganizationProfile[] {
@@ -223,10 +194,6 @@ function toRecord(profile: OrganizationProfile): RecordProfile {
     isDemo: profile.isDemo,
     syncMode: profile.syncMode,
   };
-}
-
-export function canCoordinate(role: OrganizationAccess["membership"]["role"]): boolean {
-  return isCoordinatorRole(role);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -322,12 +289,6 @@ export async function updateOrganizationCover(
   await updateOrganizationDetails(account, organizationId, { image, imageAlt });
 }
 
-export function organizationMembership(
-  organizationId: string,
-): OrganizationAccess["membership"] | null {
-  return organizations.find((row) => row.organization.id === organizationId)?.membership ?? null;
-}
-
 /* Invitations are issued and listed through the repository; these helpers only
  * keep the call sites honest about what an invitation is. */
 export type { IssuedInvite, PendingInvite, OrganizationMember };
@@ -369,23 +330,13 @@ export function markUpdatesRead(email: string): void {
   emit();
 }
 
-export function organizationErrorListener(listener: (message: string) => void): () => void {
-  return subscribeToOrganizationErrors(listener);
-}
-
-export function reportOrganizationError(caught: unknown): void {
-  report(caught);
-}
-
 export function resetOrganizationsForTests(): void {
   organizations = [];
   updates = [];
   readAt = {};
   current = {};
   activeOverride = null;
-  loaded = false;
   listeners.clear();
-  errorListeners.clear();
   commands = null;
 }
 

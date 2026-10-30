@@ -32,12 +32,9 @@ use crate::roster;
 use crate::services::now;
 use crate::workflows::{append_actor_audit, snapshot};
 
-/// What it costs to pull a volunteer off the seat they hold so they can cover a
-/// required one. The number is deliberately larger than any score component: one
-/// coordinated move beats two better-scoring switches.
+/// Larger than any score component: one move beats two better-scoring switches.
 pub const MOVE_COST: i32 = 50;
 
-/// A role on a disrupted shift, counted the way the shift screen counts it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DisruptedRole {
@@ -258,9 +255,7 @@ fn shift_reasons(conn: &Connection, shift_id: &str) -> Result<Vec<String>> {
     Ok(reasons)
 }
 
-/// Assignments that will fail a credential requirement before the shift starts.
-/// These are not opened seats: the volunteer is still registered, so the
-/// coordinator decides whether to clear the credential or move the person.
+/// Still registered, so these are not open seats; a coordinator decides.
 fn at_risk_assignments(
     conn: &Connection,
     now: chrono::DateTime<chrono::FixedOffset>,
@@ -328,9 +323,8 @@ struct SeatOption {
     explanation: MatchExplanation,
 }
 
-/// The same person, without the commitment this shift already represents. A move
-/// inside one shift is not a conflict, and the "already on this shift" gate is
-/// about double-booking, not about changing roles.
+/// The same person without this shift's commitment; a role change is not a
+/// double booking.
 fn as_mover(candidate: &Candidate, slot: &Slot) -> Candidate {
     let mut mover = candidate.clone();
     mover.assigned_shift_ids.remove(&slot.shift_id);
@@ -646,9 +640,7 @@ pub struct RecoveryChangeRequest {
     pub promote_waitlist: bool,
 }
 
-/// Applies the approved changes in one transaction. A change that would break a
-/// rule — an overfilled role, a locked seat, a volunteer who is no longer
-/// eligible — refuses the whole batch rather than leaving a half-applied roster.
+/// One transaction; any broken rule refuses the whole batch.
 pub fn apply(
     conn: &Connection,
     actor: &Account,

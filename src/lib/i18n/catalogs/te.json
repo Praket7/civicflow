@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "ప్రతి షిఫ్ట్ ఏమి అడుగుతుంది మరియు ఇప్పటికే కవర్ చేయబడింది.",
   "Written to the live roster and the audit log in one transaction.": "ఒక లావాదేవీలో ప్రత్యక్ష జాబితా మరియు ఆడిట్ లాగ్‌కు వ్రాయబడింది.",
   "You": "You",
-  "You are": "మీరు ఉన్నారు"
+  "You are": "మీరు ఉన్నారు",
+  "Installation backups": "ఇన్‌స్టాలేషన్ బ్యాకప్‌లు",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "ఇన్‌స్టాలేషన్ బ్యాకప్‌లు ఈ పరికరంలో నిల్వ చేయబడిన ప్రతి CivicFlow వర్క్‌స్పేస్‌ని కలిగి ఉంటాయి. ఇన్‌స్టాలేషన్ స్టీవార్డ్ మాత్రమే వాటిని సృష్టించగలరు, పునరుద్ధరించగలరు లేదా నిర్వహించగలరు.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "ఇంకా స్నాప్‌షాట్‌లు లేవు. ఈ పరికరంలోని ప్రతి కార్యస్థలాన్ని రక్షించడానికి ఒకదాన్ని సృష్టించండి."
 }

@@ -65,9 +65,7 @@ impl RecurrenceKind {
     }
 }
 
-/// The rule a coordinator filled in. `ends_on` and `occurrence_count` are
-/// mutually exclusive; providing neither is a validation error, not an
-/// invitation to generate forever.
+/// `ends_on` and `occurrence_count` are mutually exclusive; one is required.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecurrenceRule {

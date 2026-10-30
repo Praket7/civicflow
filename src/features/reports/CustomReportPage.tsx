@@ -43,9 +43,7 @@ const FIELD_OPTIONS = [
 type Row = HourRow & { id: string };
 
 export function buildTrendPoints(rows: HourRow[]): { label: string; value: number }[] {
-  // Group by ISO date, not the display label: a Map keeps insertion order, and
-  // the ledger is not guaranteed to arrive chronologically. Sorting the ISO keys
-  // first keeps the trend line and its axis in time order.
+  // ISO keys sort chronologically; display labels do not.
   const points = new Map<string, number>();
   for (const row of rows) {
     points.set(

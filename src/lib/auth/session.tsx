@@ -188,14 +188,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (caught) {
           hostedError = caught;
         }
-        // Local accounts remain the fallback when the provider is unreachable
-        // or the address only exists in this device's database.
+        // Local accounts are the fallback when the provider cannot help.
         try {
           return await localSignIn(email, password, remember);
         } catch (localError) {
-          // A local account that has been throttled or disabled knows more than
-          // the provider's generic "no such hosted account", and that is the
-          // message the person has to act on.
+          // A throttled or disabled account has the more useful message.
           const code = (localError as { code?: string } | null)?.code;
           if (code && code !== "INVALID_CREDENTIALS") throw localError;
           throw hostedError ?? localError;
@@ -267,9 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const current = await getCurrent();
         if (current?.length) await receive(current);
         else {
-          // The window may have been reloaded after the operating system handed
-          // the URL over. The native side kept the address for exactly this
-          // page load, and taking it here spends it once.
+          // A reload after the OS handed the URL over; taking it spends it.
           const stored = await takeStoredHostedLink();
           if (stored) await receive([stored]);
         }

@@ -45,9 +45,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
     user?.role === "coordinator" ? "coordinator" : "volunteer";
 
   const results = useMemo(() => {
-    // The palette is part of a signed-in shell. It should offer the screens this
-    // account can actually open, and never a parameterised path, which has no
-    // record behind it until a real id is chosen.
+    // Only screens this account can open, never parameterised paths.
     const visible = (route: RouteMeta) =>
       !route.path.includes(":") &&
       (route.role === role || route.id === "settings" || route.id === "accessibility");

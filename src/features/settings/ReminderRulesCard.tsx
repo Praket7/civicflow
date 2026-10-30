@@ -33,9 +33,8 @@ function offsetLabel(minutes: number): string {
 }
 
 /**
- * The reminder rules behind the notification feed. Each rule is a trigger, an
- * audience and a switch, and every notification it writes records the rule that
- * produced it, so the feed can always be explained.
+ * Each rule has a trigger, audience and switch; every notification records the
+ * rule that produced it.
  */
 export function ReminderRulesCard() {
   const { actions } = useWorkspace();

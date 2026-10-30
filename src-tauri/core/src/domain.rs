@@ -21,9 +21,7 @@ pub struct ShiftView {
     pub roles: Vec<RoleView>,
 }
 
-/// Coverage health = filled required role slots / required role slots across
-/// shifts that have not started yet. Seat fill is charted separately so the two
-/// measures are never conflated.
+/// Filled required role slots over required slots in shifts that have not started.
 pub fn role_coverage_percent(shifts: &[ShiftView], now: DateTime<FixedOffset>) -> u8 {
     let (filled, required) = shifts.iter().filter(|shift| shift.starts_at > now).fold(
         (0_i64, 0_i64),

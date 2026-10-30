@@ -33,10 +33,8 @@ pub fn select(conn: &Connection, organization_id: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Records that the caller is signed in but does not belong to any
-/// organization. That is different from "no session": access must be empty
-/// rather than falling back to the installation's own organization, or a new
-/// account could read a workspace it never joined.
+/// Signed in with no organization; access must be empty, not the installation's
+/// own workspace.
 pub fn select_none(conn: &Connection) -> Result<()> {
     select(conn, None)?;
     conn.execute(
@@ -46,12 +44,8 @@ pub fn select_none(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// The organization this connection is working in.
-///
-/// A caller that has not selected one — a test, a backup, or a freshly seeded
-/// demo — works in the installation's own organization, which is the oldest
-/// row. That keeps the single-organization behaviour unchanged while a second
-/// organization can never be read through it.
+/// Falls back to the installation's own (oldest) organization when nothing was
+/// selected.
 pub fn current(conn: &Connection) -> Result<Option<String>> {
     let exists: bool = conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_temp_master
@@ -83,10 +77,8 @@ pub fn current(conn: &Connection) -> Result<Option<String>> {
         .optional()?)
 }
 
-/// The organization an operational record belongs to, derived from the record
-/// itself. An audit entry names an entity; that entity is the authority on which
-/// organization the entry concerns, so an invite issued for another organization
-/// is never filed under the one that happens to be open.
+/// Derived from the record itself, so an invite is never filed under whichever
+/// organization happens to be open.
 pub fn for_entity(conn: &Connection, entity_type: &str, entity_id: &str) -> Result<Option<String>> {
     let query = match entity_type {
         "shift" => {

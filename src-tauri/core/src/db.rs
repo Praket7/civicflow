@@ -9,9 +9,7 @@ use crate::models::{SeedWorkflow, SeedWorkspace, WorkspaceHealth};
 /// The demo seed is authored once and embedded at build time. The Rust seeder and
 /// the browser preview therefore read the exact same records.
 pub const DEMO_SEED: &str = include_str!("../../../shared/demo-workspace.json");
-/// Workflow defaults (saved opportunities, waitlist, applicants, audit history,
-/// settings) live beside the workspace seed so the browser fallback and SQLite
-/// start from the same state.
+/// Workflow defaults, beside the workspace seed so both stores start equal.
 pub const WORKFLOW_SEED: &str = include_str!("../../../shared/session-seed.json");
 /// Bumped with every migration so backups can check they match this build.
 pub const SCHEMA_VERSION: i64 = 14;
@@ -60,9 +58,8 @@ pub(crate) fn slug_id(prefix: &str, value: &str) -> String {
     format!("{prefix}-{}", slug.trim_matches('-'))
 }
 
-/// Role requirements are derived from the authored role names so the demo and
-/// the matching engine cannot drift apart. A role with no mapping is open to any
-/// eligible volunteer.
+/// Derived from the authored role names so the seed and engine cannot drift; an
+/// unmapped role is open to any eligible volunteer.
 fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>) {
     let role = role.to_lowercase();
     if role.contains("spanish") {
@@ -99,9 +96,7 @@ fn role_requirement(role: &str) -> (Option<String>, Option<String>, Option<i64>)
     (None, None, None)
 }
 
-/// Every schema step, in order. Kept as a free function as well as a method
-/// because restoring an older snapshot replaces the live database in place and
-/// the restored copy then has to catch up to this build.
+/// A restore replaces the live database, so the copy must catch up to this build.
 const MIGRATIONS: [(i64, &str); 14] = [
     (1, INITIAL_SCHEMA),
     (2, WORKFLOW_SCHEMA),
@@ -195,9 +190,7 @@ impl Database {
         )?)
     }
 
-    /// Creates the demo workspace on request. A workspace that already holds an
-    /// organization is never overwritten, so "explore the demo" cannot destroy
-    /// real records.
+    /// Never overwrites a workspace that already holds an organization.
     pub fn seed_demo(&mut self) -> Result<bool> {
         let organizations: i64 =
             self.conn

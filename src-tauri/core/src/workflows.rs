@@ -14,13 +14,17 @@ use crate::db::WORKFLOW_SEED;
 use crate::error::{CoreError, Result};
 use crate::matching::{age_on, day_key};
 use crate::models::{
-    Applicant, AttendanceEntry, AuditEvent, AvailabilitySlot, CheckinCode, CreateOpportunityResult,
-    CredentialRecord, HoursDecision, ImpactMetric, NewOpportunityInput, OpportunityRecord,
-    Registration, RetentionCohort, SavedView, SeedWorkflow, ServiceVerification, SettingsPatch,
-    WaitlistEntry, WorkspaceSettings, WorkspaceSnapshot,
+    Applicant, AttendanceEntry, AuditEvent, AvailabilitySlot, CheckinCode, CheckinStatus,
+    CheckinWindow, CreateOpportunityResult, CredentialRecord, HoursDecision, ImpactMetric,
+    NewOpportunityInput, OpportunityRecord, Registration, RetentionCohort, SavedView, SeedWorkflow,
+    ServiceVerification, SettingsPatch, WaitlistEntry, WorkspaceSettings, WorkspaceSnapshot,
 };
 
-const COORDINATOR_ACTOR: &str = "Praket Gauri";
+pub const SELF_CHECKIN_OPEN_BEFORE_MINUTES: i64 = 30;
+pub const SELF_CHECKIN_CLOSE_AFTER_MINUTES: i64 = 15;
+
+/// Audit rows fall back to the role, never to a person's name.
+const FALLBACK_ACTOR: &str = "Coordinator";
 const APPLICATION_STAGES: [&str; 4] = ["applied", "review", "onboarding", "active"];
 const CAUSES: [&str; 6] = [
     "food",
@@ -71,7 +75,7 @@ fn current_volunteer_id(conn: &Connection) -> Result<String> {
 }
 
 fn coordinator_name(conn: &Connection) -> Result<String> {
-    Ok(setting(conn, "coordinator_name")?.unwrap_or_else(|| COORDINATOR_ACTOR.to_string()))
+    Ok(setting(conn, "coordinator_name")?.unwrap_or_else(|| FALLBACK_ACTOR.to_string()))
 }
 
 pub(crate) fn append_audit(
@@ -1559,11 +1563,70 @@ fn code_matches(conn: &Connection, shift_id: &str, code: &str) -> Result<bool> {
     Ok(expires >= now_datetime(conn)?)
 }
 
-fn validate_checkin_window(conn: &Connection, shift: &ShiftRules) -> Result<()> {
-    let now = now_datetime(conn)?;
-    if now < shift.starts_at - chrono::Duration::minutes(30) {
+/// The close boundary itself is still open.
+fn self_checkin_window(
+    now: chrono::DateTime<chrono::FixedOffset>,
+    shift_id: &str,
+    starts_at: chrono::DateTime<chrono::FixedOffset>,
+) -> CheckinWindow {
+    let opens_at = starts_at - chrono::Duration::minutes(SELF_CHECKIN_OPEN_BEFORE_MINUTES);
+    let closes_at = starts_at + chrono::Duration::minutes(SELF_CHECKIN_CLOSE_AFTER_MINUTES);
+    let status = if now < opens_at {
+        CheckinStatus::NotOpen
+    } else if now > closes_at {
+        CheckinStatus::Closed
+    } else {
+        CheckinStatus::Open
+    };
+    CheckinWindow {
+        shift_id: shift_id.into(),
+        opens_at: opens_at.to_rfc3339(),
+        closes_at: closes_at.to_rfc3339(),
+        status,
+        can_self_check_in: status == CheckinStatus::Open,
+    }
+}
+
+/// The window as of the workspace clock, for the screens to render.
+pub fn checkin_window(conn: &Connection, shift_id: &str) -> Result<CheckinWindow> {
+    let shift = shift_rules(conn, shift_id)?;
+    Ok(self_checkin_window(
+        now_datetime(conn)?,
+        shift_id,
+        shift.starts_at,
+    ))
+}
+
+fn validate_self_checkin_window(
+    conn: &Connection,
+    shift_id: &str,
+    shift: &ShiftRules,
+) -> Result<()> {
+    match self_checkin_window(now_datetime(conn)?, shift_id, shift.starts_at).status {
+        CheckinStatus::Open => Ok(()),
+        CheckinStatus::NotOpen => Err(CoreError::rule(
+            "CHECKIN_NOT_OPEN",
+            "Check-in opens 30 minutes before the shift starts.",
+            Some("shiftId".into()),
+            Some("WAIT_FOR_WINDOW".into()),
+        )),
+        CheckinStatus::Closed => Err(CoreError::rule(
+            "CHECKIN_CLOSED",
+            "Self check-in closed 15 minutes after the shift started. Ask a coordinator to record your arrival.",
+            Some("shiftId".into()),
+            Some("MANUAL_CORRECTION".into()),
+        )),
+    }
+}
+
+/// A manual arrival is allowed from the early opening until the shift ends.
+fn validate_manual_checkin_window(
+    shift: &ShiftRules,
+    now: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<()> {
+    if now < shift.starts_at - chrono::Duration::minutes(SELF_CHECKIN_OPEN_BEFORE_MINUTES) {
         return Err(CoreError::rule(
-            "CHECKIN_TOO_EARLY",
+            "CHECKIN_NOT_OPEN",
             "Check-in opens 30 minutes before the shift starts.",
             Some("shiftId".into()),
             Some("WAIT_FOR_WINDOW".into()),
@@ -1580,9 +1643,8 @@ fn validate_checkin_window(conn: &Connection, shift: &ShiftRules) -> Result<()> 
     Ok(())
 }
 
-/// Self check-in. The volunteer proves they are at the shift with the rotating
-/// code or QR token; the code is never optional here, because the gate is what
-/// separates a volunteer check-in from a coordinator correction.
+/// Self check-in; the code is required so a volunteer call cannot stand in for
+/// a coordinator correction.
 pub fn check_in(
     conn: &Connection,
     shift_id: &str,
@@ -1592,9 +1654,8 @@ pub fn check_in(
     record_check_in(conn, shift_id, volunteer_id, CheckinMethod::Code(code))
 }
 
-/// A coordinator recording an arrival themselves. This is a separate action
-/// with its own permission, its own ledger event, and its own reason, so a
-/// direct call cannot pass for self check-in.
+/// A coordinator recording an arrival by hand, with its own permission, audit
+/// event and reason.
 pub fn manual_check_in(
     conn: &Connection,
     shift_id: &str,
@@ -1626,7 +1687,10 @@ fn record_check_in(
 ) -> Result<WorkspaceSnapshot> {
     let name = volunteer_name(conn, volunteer_id)?;
     let shift = shift_rules(conn, shift_id)?;
-    validate_checkin_window(conn, &shift)?;
+    match &method {
+        CheckinMethod::Code(_) => validate_self_checkin_window(conn, shift_id, &shift)?,
+        CheckinMethod::Manual(_) => validate_manual_checkin_window(&shift, now_datetime(conn)?)?,
+    }
     if let CheckinMethod::Code(code) = &method {
         if code.trim().is_empty() || !code_matches(conn, shift_id, code)? {
             return Err(CoreError::rule(

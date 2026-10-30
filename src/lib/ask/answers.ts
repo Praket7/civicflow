@@ -20,13 +20,8 @@ import {
 } from "../workspace/selectors";
 
 /**
- * Ask CivicFlow: a question box over the workspace snapshot.
- *
- * Every answer is computed from the records already on the device. There is no
- * model and no network call, so an answer can never be invented. Each intent
- * declares the keywords that select it, renders citations that name the rows it
- * read, and links to the screen where the coordinator can act. A question the
- * registry does not recognize returns a plain refusal rather than a guess.
+ * Ask CivicFlow reads the local snapshot only: no model, no network. Each intent
+ * cites the rows it read; an unrecognized question gets a plain refusal.
  */
 
 export type AskRole = "coordinator" | "volunteer";
@@ -157,10 +152,7 @@ function skillWords(skill: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * Whole-word skill matching with a five-letter stem, so "Gardening" answers a
- * "Gardener" role but "Leadership" never answers a "Tool lead" one.
- */
+/// Five-letter stem, as a light guard against unrelated words.
 function sameWord(a: string, b: string): boolean {
   if (a === b) return true;
   return a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5);

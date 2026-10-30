@@ -1,10 +1,7 @@
 /**
- * Browser fallback for the workflow store.
- *
- * The desktop shell reads and writes SQLite through `civicflow-core`. The Vite
- * preview has no native host, so this module mirrors the same snapshot contract
- * over the shared seed and localStorage. It is selected in exactly one place:
- * `getWorkspaceRepository()` when `isTauri()` is false.
+ * Browser fallback for the workflow store: mirrors the snapshot contract over
+ * the shared seed and localStorage. Chosen by `getWorkspaceRepository()` when
+ * there is no native host.
  */
 
 import rawSessionSeed from "../../../shared/session-seed.json";
@@ -20,6 +17,8 @@ import type {
   CandidateAnswer,
   Cause,
   CheckinCode,
+  CheckinStatus,
+  CheckinWindow,
   ConstraintCheck,
   Credential,
   AuthSession,
@@ -31,6 +30,7 @@ import type {
   ForcedComparison,
   HoursDecision,
   ImpactMetric,
+  InstallationAccess,
   MatchExplanation,
   NewOpportunityInput,
   Opportunity,
@@ -87,9 +87,8 @@ const READ_KEY = "civicflow.notifications.read";
 const BACKUP_KEY = "civicflow.backups.v1";
 
 /**
- * Every organization keeps its own workflow overlay. The bundled demo
- * organization keeps the original keys, and an account that has not joined or
- * created an organization yet reads an empty, namespaced store.
+ * Each organization has its own workflow overlay; the demo keeps the original
+ * keys and an account with no organization reads an empty store.
  */
 const DEMO_ORGANIZATION_ID = demoWorkspace.organization.id;
 const NO_ORGANIZATION_ID = "no-organization";
@@ -157,10 +156,8 @@ function requirePreviewAccount(): Account {
 }
 
 /**
- * The role belongs to the membership the selected organization grants, not to
- * the identity row. The desktop core recomputes it on every read; the preview
- * kept whatever was stored at sign-up, so a new owner stayed "none" and the
- * router sent it back to the start screen instead of opening its own workspace.
+ * The role comes from the selected membership, not the identity row stored at
+ * sign-up.
  */
 function withLiveRole(account: Account): Account {
   const access = previewOrganizations.active(account);
@@ -646,6 +643,30 @@ function previewCheckinCode(shiftId: string): string {
   return String(hash % 1_000_000).padStart(6, "0");
 }
 
+// Browser preview mirrors the Rust self check-in window.
+const SELF_CHECKIN_OPEN_BEFORE_MINUTES = 30;
+const SELF_CHECKIN_CLOSE_AFTER_MINUTES = 15;
+
+function previewCheckinWindow(shiftId: string): CheckinWindow {
+  const shift =
+    workspace.shifts.find((row) => row.id === shiftId) ??
+    (state.createdShifts ?? []).find((row) => row.id === shiftId);
+  if (!shift) throw new Error("That shift is no longer available.");
+  const startsAt = new Date(shift.startsAt).getTime();
+  const opensAt = new Date(startsAt - SELF_CHECKIN_OPEN_BEFORE_MINUTES * 60_000);
+  const closesAt = new Date(startsAt + SELF_CHECKIN_CLOSE_AFTER_MINUTES * 60_000);
+  const now = new Date(workspace.now).getTime();
+  const status: CheckinStatus =
+    now < opensAt.getTime() ? "not_open" : now > closesAt.getTime() ? "closed" : "open";
+  return {
+    shiftId,
+    opensAt: opensAt.toISOString(),
+    closesAt: closesAt.toISOString(),
+    status,
+    canSelfCheckIn: status === "open",
+  };
+}
+
 function volunteerName(id: string): string {
   return workspace.volunteers.find((volunteer) => volunteer.id === id)?.name ?? "Volunteer";
 }
@@ -667,10 +688,8 @@ function registeredRole(shiftId: string, volunteerId: string): string {
 }
 
 /**
- * The seed's seat and role totals describe the moment it was authored. Every
- * write after that lives in the registration rows, so a read model that reports
- * staffing has to count those rows. The session screen derives the same totals
- * for Schedule; Mission Control reads through here, and the two must agree.
+ * Counts the registration rows, which the seed's own totals predate. Mission
+ * Control and Schedule must agree on these numbers.
  */
 function countedWorkspace(): DemoWorkspace {
   return {
@@ -694,10 +713,7 @@ function countedWorkspace(): DemoWorkspace {
   };
 }
 
-/**
- * Records an arrival the same way the desktop core does: the attendance row,
- * the audit entry, and (for a manual override) the reason travel together.
- */
+/// Matches the desktop core: attendance row, audit entry, and the reason together.
 function recordArrival(
   snapshot: SessionSnapshot,
   shiftId: string,
@@ -1415,9 +1431,7 @@ export const previewRepository: WorkspaceRepository = {
   async listAccounts(token) {
     const account = previewAccountFromToken(token);
     if (account?.role !== "coordinator") throw new Error("Only a coordinator can list accounts.");
-    // Accounts are identities for the whole installation, but this list answers
-    // "who is on this team". Reading every identity here put another
-    // organization's people on a new organization's settings screen.
+    // This list answers "who is on this team", not "who exists on the device".
     const self = previewOrganizations.active(account);
     if (!self) return [];
     const roster = previewOrganizations.members(account, self.organization.id);
@@ -1490,6 +1504,14 @@ export const previewRepository: WorkspaceRepository = {
     });
   },
   async checkIn(shiftId, volunteerId, code) {
+    const window = previewCheckinWindow(shiftId);
+    if (!window.canSelfCheckIn) {
+      throw new Error(
+        window.status === "not_open"
+          ? "Check-in opens 30 minutes before the shift starts."
+          : "Self check-in closed 15 minutes after the shift started. Ask a coordinator to record your arrival.",
+      );
+    }
     const supplied = code.trim().replace(/^civicflow:\/\/checkin\//, "");
     const expected = previewCheckinCode(shiftId);
     // The door kiosk sends the QR payload; the volunteer page sends the digits.
@@ -1614,6 +1636,12 @@ export const previewRepository: WorkspaceRepository = {
         ...state.audit,
       ],
     });
+  },
+  async checkinWindow(shiftId): Promise<CheckinWindow> {
+    return previewCheckinWindow(shiftId);
+  },
+  async installationAccess(): Promise<InstallationAccess> {
+    return { steward: previewOrganizations.isWorkspaceSteward(requirePreviewAccount()) };
   },
   async getCheckinCode(shiftId): Promise<CheckinCode> {
     const issuedAt = workspace.now;
@@ -2455,15 +2483,8 @@ export const previewRepository: WorkspaceRepository = {
 };
 
 /* ---------------------------------------------------------------------------
- * The preview's own matching rules.
- *
- * The desktop app solves the assignment in Rust. The browser preview has no
- * native host, so it mirrors the same contract in miniature: it reads the same
- * policy document, applies the same shape of hard checks, scores with the same
- * weights, and can answer "why not that one?" by forcing a decision and
- * comparing the two plans. It is deliberately smaller than the optimizer — one
- * seat at a time, taking the best scoring eligible volunteer — but it never
- * invents a policy value the coordinator did not set.
+ * The preview's matching rules: the same policy, checks and weights in
+ * miniature. One seat at a time, best scoring eligible volunteer.
  * ------------------------------------------------------------------------- */
 
 const PREVIEW_PRIORITY_LEVELS: PriorityLevel[] = [
@@ -3407,9 +3428,7 @@ function previewReason(choice: PreviewChoice): string {
 }
 
 /**
- * One pass over the open seats. `forced` pins one volunteer into one seat, the
- * same way the Rust planner treats a decided assignment: the seat leaves the
- * pool and the volunteer takes nothing else.
+ * One pass over open seats. `forced` pins a volunteer, as the Rust planner does.
  */
 function previewPlanShape(
   shiftIds: string[],
@@ -3651,11 +3670,7 @@ function previewAvailabilityState(
     : "unavailable";
 }
 
-/**
- * The preview backend's answer to the same read model the Rust engine returns.
- * The screen reads it the same way in both modes, so no scoring lives in a
- * component.
- */
+/** The read model Rust returns; the screen parses it the same in both modes. */
 function previewEvaluation(shiftIds: string[], options: RosterOptions): RosterEvaluation {
   const policy = readRosterPolicy();
   const plan = previewRosterPlan(shiftIds, options, policy);

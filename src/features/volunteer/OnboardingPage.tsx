@@ -193,9 +193,7 @@ export function OnboardingPage() {
     });
     if (user) completeSetup(user.email);
     setSaving(false);
-    // Setup gives the account a profile, not a team. A volunteer who already
-    // belongs somewhere goes straight home; everyone else joins an organization
-    // first, the same way a sign-in would route them.
+    // Setup gives a profile, not a team; joiners pick an organization first.
     const hasOrganization = user ? organizationsFor(user.email).length > 0 : false;
     navigate(hasOrganization ? "/volunteer/home" : "/volunteer/start", { replace: true });
   }
@@ -528,9 +526,7 @@ export function OnboardingPage() {
               ) : null}
 
               {step < STEPS.length ? (
-                // A distinct key remounts the control. React would otherwise
-                // flip this node to type="submit" inside the click, and the
-                // browser's default action would finish setup a step early.
+                // Keyed so the form cannot submit itself a step early.
                 <Button
                   key="continue"
                   type="button"

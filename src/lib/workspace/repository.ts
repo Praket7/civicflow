@@ -8,6 +8,7 @@ import type {
   BackupSnapshot,
   CandidateAnswer,
   CheckinCode,
+  CheckinWindow,
   CreateOpportunityResult,
   CredentialReadiness,
   DisruptionReport,
@@ -15,6 +16,7 @@ import type {
   ExportFormat,
   ExportReceipt,
   HoursDecision,
+  InstallationAccess,
   MissionControlSummary,
   NewOpportunityInput,
   NotificationItem,
@@ -58,10 +60,8 @@ import { isTauri } from "../platform";
 import { previewRepository } from "./previewRepository";
 
 /**
- * The single data boundary used by screens and the session provider.
- *
- * Desktop: every method invokes a Rust command that owns SQLite and appends its
- * audit event. Preview: `previewRepository` mirrors the same contract.
+ * The single data boundary: desktop invokes Rust commands that own SQLite and
+ * the audit log; the preview repository mirrors the same contract.
  */
 export interface WorkspaceRepository {
   readonly source: "desktop" | "preview";
@@ -76,11 +76,7 @@ export interface WorkspaceRepository {
   listAccounts(token: string): Promise<Account[]>;
   resetPassword(token: string, userId: string, newPassword: string): Promise<void>;
 
-  /**
-   * Organization access is decided by membership rows in the workspace
-   * database. These methods are the only organization boundary the screens
-   * use; the browser preview mirrors the same contract over fixture storage.
-   */
+  /** Organization access comes from membership rows, never from the screen. */
   listOrganizations(): Promise<OrganizationAccess[]>;
   listPublicOrganizations(): Promise<OrganizationProfile[]>;
   /** `null` parks the workspace while an identity has no membership yet. */
@@ -130,11 +126,10 @@ export interface WorkspaceRepository {
   ): Promise<SessionSnapshot>;
   joinWaitlist(shiftId: string, volunteerId: string, role: string): Promise<SessionSnapshot>;
   getCheckinCode(shiftId: string): Promise<CheckinCode>;
+  checkinWindow(shiftId: string): Promise<CheckinWindow>;
+  installationAccess(): Promise<InstallationAccess>;
   autoRoster(shiftIds: string[], options: RosterOptions): Promise<RosterPlan>;
-  /**
-   * The plan plus the evaluation behind it. Every score, eligibility verdict and
-   * reason the screen shows comes from here; the screen formats, never derives.
-   */
+  /** The plan plus the evaluation; screens format these values, never derive them. */
   evaluateRoster(shiftIds: string[], options: RosterOptions): Promise<RosterEvaluation>;
   /** Applies a reviewed plan across every shift in one transaction. */
   applyRosterWeek(
@@ -145,11 +140,7 @@ export interface WorkspaceRepository {
   /** The matching policy in force, with the priority levels the screen offers. */
   getRosterPolicy(): Promise<RosterPolicyView>;
   updateRosterPolicy(policy: RosterPolicy): Promise<RosterPolicyView>;
-  /**
-   * Why this person, or why not that one. The answer is computed from the same
-   * rules the planner used; a forced comparison is included when the seat was
-   * within reach but went to someone else.
-   */
+  /** Why this person, or why not that one, from the planner's own rules. */
   explainRosterChoice(
     shiftIds: string[],
     options: RosterOptions,
@@ -226,23 +217,15 @@ export interface WorkspaceRepository {
   saveReportView(name: string, scope: string, filtersJson: string): Promise<SessionSnapshot>;
   generateReport(request: ReportRequest): Promise<ReportDocument>;
   exportReport(request: ReportRequest, format: ExportFormat): Promise<ExportReceipt | null>;
-  /**
-   * Checks a volunteer spreadsheet row by row without writing anything, so a
-   * coordinator can fix a file before it changes the roster.
-   */
+  /** Row-by-row check that writes nothing. */
   previewVolunteerImport(text: string): Promise<VolunteerImportPreview>;
-  /**
-   * Adds the file's rows in one transaction. A file with any problem is refused
-   * whole, so a half-imported roster cannot happen.
-   */
+  /** One transaction; any bad row refuses the whole file. */
   applyVolunteerImport(text: string): Promise<VolunteerImportSummary>;
   /** Writes the roster in the shape the import reads, for editing and return. */
   exportVolunteerRoster(): Promise<ExportReceipt | null>;
 }
 
-// The signed-in session is the only credential the IPC bridge accepts. Keeping
-// it here means no screen can call a workspace command without the token the
-// AuthProvider resolved.
+// The only credential the IPC bridge accepts.
 let activeToken: string | null = null;
 
 export function setRepositoryToken(token: string | null): void {
@@ -273,9 +256,6 @@ const desktopRepository: WorkspaceRepository = {
   resetPassword: async (token, userId, newPassword) => {
     await invoke<null>("reset_password", { token, userId, newPassword });
   },
-  // The desktop core keeps one local workspace behind SQLite; the session picks
-  // the seeded preview store for organizations created in the app, so this call
-  // has nothing to swap.
   listOrganizations: () => invoke<OrganizationAccess[]>("list_my_organizations", withToken()),
   listPublicOrganizations: () => invoke<OrganizationProfile[]>("list_public_organizations"),
   selectOrganization: async (organizationId) => {
@@ -339,6 +319,8 @@ const desktopRepository: WorkspaceRepository = {
   joinWaitlist: (shiftId, volunteerId, role) =>
     invoke<SessionSnapshot>("join_waitlist", withToken({ shiftId, volunteerId, role })),
   getCheckinCode: (shiftId) => invoke<CheckinCode>("get_checkin_code", withToken({ shiftId })),
+  checkinWindow: (shiftId) => invoke<CheckinWindow>("checkin_window", withToken({ shiftId })),
+  installationAccess: () => invoke<InstallationAccess>("installation_access", withToken()),
   autoRoster: (shiftIds, options) =>
     invoke<RosterPlan>("auto_roster", withToken({ shiftIds, options })),
   evaluateRoster: (shiftIds, options) =>

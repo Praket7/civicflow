@@ -7,7 +7,6 @@ import {
   hydrateOrganizations,
   membershipsFor,
   organizationsFor,
-  reportOrganizationError,
   subscribeToOrganizations,
   unreadUpdatesFor,
   updatesFor,
@@ -52,10 +51,8 @@ function read(account: Account | null): OrganizationWorkspace {
 let bound = false;
 
 /**
- * One organization read per signed-in identity. The repository is the
- * authority; this hook only mirrors its answer into the synchronous cache the
- * shell renders from. A failed read leaves the previous cache visible and
- * surfaces the message instead of inventing a membership.
+ * One organization read per identity; the repository is the authority and this
+ * hook mirrors its answer into the shell's cache.
  */
 export function useOrganizationWorkspace(account: Account | null): OrganizationWorkspace {
   const repository = getWorkspaceRepository();
@@ -96,9 +93,8 @@ export function useOrganizationWorkspace(account: Account | null): OrganizationW
         hydrateOrganizations(access);
         sync();
       })
-      .catch((caught: unknown) => {
+      .catch(() => {
         if (!active) return;
-        reportOrganizationError(caught);
         setValue((current) => ({ ...current, loading: false }));
       });
 

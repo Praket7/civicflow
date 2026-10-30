@@ -16,9 +16,8 @@ interface ReadoutGroup {
 }
 
 /**
- * The report a coordinator can hand to a board. Each number answers a decision
- * — is coverage holding, who came back, can the next shift be staffed — and
- * carries the definition it was computed with instead of a bare figure.
+ * Each number answers a decision and carries the definition it was computed
+ * with.
  */
 export function DecisionReadoutCard() {
   const { data: engagement, error: engagementError } = useEngagementMetrics();

@@ -18,9 +18,7 @@ use std::sync::OnceLock;
 
 use crate::error::{CoreError, Result};
 
-/// The demo workspace ships with one coordinator account so a judge can open it
-/// without inventing credentials. These values are only valid inside the demo
-/// seed and are never used to authorize a real organization.
+/// Only the demo seed uses these; they never authorize a real organization.
 pub const DEMO_EMAIL: &str = "praket@feedmorewny.org";
 pub const DEMO_PASSWORD: &str = "civicflow-demo";
 const REMEMBER_DAYS: i64 = 30;
@@ -216,18 +214,10 @@ fn validate_password(password: &str) -> Result<()> {
     Ok(())
 }
 
-/// The role a workspace sees for an account is derived from its active
-/// membership in the **selected** organization, never from a global
-/// `users.role` column and never from the strongest membership anywhere. A
-/// person who owns one organization and volunteers in another is a volunteer
-/// when that second organization is open. An account with no membership has no
-/// workspace role at all. Owners and coordinators share the coordinator
-/// capabilities; only an owner may change the membership.
-///
-/// The selected organization is stored per account in `app_settings`. A stale
-/// selection (the membership ended, or the organization was removed) falls back
-/// to the strongest remaining membership, which is also what a brand-new
-/// session uses.
+/// The role comes from the active membership in the **selected** organization,
+/// never from a global column or the strongest membership anywhere. A stale
+/// selection falls back to the strongest remaining one. Owners and coordinators
+/// share coordinator capabilities; only an owner may change the membership.
 const ROLE_SQL: &str = "COALESCE((
     SELECT CASE WHEN m.role IN ('owner', 'coordinator') THEN 'coordinator' ELSE 'volunteer' END
     FROM organization_memberships m
@@ -245,13 +235,7 @@ const ROLE_SQL: &str = "COALESCE((
            LIMIT 1))
     LIMIT 1), 'none')";
 
-/// The organization an account is currently working in.
-///
-/// Mirrors [`ROLE_SQL`]: the stored selection when it still names an active
-/// membership, otherwise the strongest remaining membership. Returning the
-/// organization here keeps the role and the data scope from disagreeing, which
-/// is exactly how an owner of one organization used to receive coordinator
-/// treatment inside another one.
+/// Mirrors [`ROLE_SQL`], so the role and the data scope cannot disagree.
 pub fn active_organization(conn: &Connection, user_id: &str) -> Result<Option<String>> {
     let selected: Option<String> = conn
         .query_row(
@@ -277,12 +261,8 @@ pub fn active_organization(conn: &Connection, user_id: &str) -> Result<Option<St
     Ok(memberships.into_iter().next())
 }
 
-/// The roster profile the account holds in the organization it is working in.
-///
-/// The profile is a membership column, not a user column: one person can
-/// volunteer at two organizations and has a separate record in each roster.
-/// `users.volunteer_id` remains as the fallback for a database upgraded from
-/// before memberships carried one.
+/// A membership column, not a user column; `users.volunteer_id` is the legacy
+/// fallback.
 pub fn active_volunteer(
     conn: &Connection,
     user_id: &str,

@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "각 교대조에서 요구하는 사항과 이미 다룬 내용입니다.",
   "Written to the live roster and the audit log in one transaction.": "하나의 트랜잭션으로 실시간 명단과 감사 로그에 기록됩니다.",
   "You": "You",
-  "You are": "당신은"
+  "You are": "당신은",
+  "Installation backups": "설치 백업",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "설치 백업에는 이 장치에 저장된 모든 CivicFlow 작업 공간이 포함됩니다. 설치 관리자만이 이를 생성, 복원 또는 관리할 수 있습니다.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "아직 스냅샷이 없습니다. 이 장치의 모든 작업 공간을 보호하려면 하나를 만드십시오."
 }

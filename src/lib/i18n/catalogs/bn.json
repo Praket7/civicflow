@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "প্রতিটি শিফট কি জন্য জিজ্ঞাসা, এবং ইতিমধ্যে আচ্ছাদিত করা হয়.",
   "Written to the live roster and the audit log in one transaction.": "লাইভ রোস্টারে লিখিত এবং একটি লেনদেনের অডিট লগ।",
   "You": "You",
-  "You are": "আপনি"
+  "You are": "আপনি",
+  "Installation backups": "ইনস্টলেশন ব্যাকআপ",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "ইনস্টলেশন ব্যাকআপে এই ডিভাইসে সংরক্ষিত প্রতিটি CivicFlow ওয়ার্কস্পেস থাকে। শুধুমাত্র ইনস্টলেশন স্টুয়ার্ড তাদের তৈরি, পুনরুদ্ধার বা পরিচালনা করতে পারেন।",
+  "No snapshots yet. Create one to protect every workspace on this device.": "এখনও কোন স্ন্যাপশট. এই ডিভাইসে প্রতিটি ওয়ার্কস্পেস সুরক্ষিত করার জন্য একটি তৈরি করুন।"
 }

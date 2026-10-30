@@ -4,11 +4,7 @@ import { t } from "../../lib/i18n";
 import { useVolunteerInsight } from "../../lib/workspace/queries";
 import styles from "./MilestoneCard.module.css";
 
-/**
- * Recognition, at the size a volunteer program uses it: a few reachable
- * milestones, the one that is next, and what is still missing. No leaderboard,
- * and nothing that turns service into a game.
- */
+/** A few milestones and the next one; no leaderboard. */
 export function MilestoneCard({
   volunteerId,
   organization,

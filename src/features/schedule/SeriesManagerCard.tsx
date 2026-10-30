@@ -39,9 +39,8 @@ function ruleSentence(record: ShiftSeriesRecord): string {
 }
 
 /**
- * The series a workspace is actually running. Each one owns the shifts it
- * generated, so a rule change reaches exactly those shifts and a top-up adds
- * the occurrences the calendar is missing rather than a second copy of them.
+ * Each series owns the shifts it generated, so edits and top-ups reach exactly
+ * those instances.
  */
 export function SeriesManagerCard() {
   const { actions } = useWorkspace();

@@ -1,13 +1,8 @@
 import type { Account } from "../../types/domain";
 
 /**
- * Setup is a one-time gate per identity. The flag lives beside the rest of the
- * account state on this device: an account created before setup existed has no
- * record and is treated as finished, so the demo accounts never see the gate.
- *
- * The gate is keyed by email, not by a role. An identity has no workspace role
- * until it belongs to an organization, so a role-keyed gate would both miss the
- * first meaningful step and recreate the global role this app removed.
+ * One-time setup gate per email. An account with no record (created before the
+ * gate existed) is treated as finished.
  */
 const PENDING_KEY = "civicflow.setup.pending";
 const DONE_KEY = "civicflow.setup.done";
@@ -63,9 +58,8 @@ export function completeSetup(email: string): void {
 }
 
 /**
- * Where a new identity finishes setup, before it reaches a workspace. Someone
- * who belongs to no organization chooses whether to create one or redeem an
- * invitation; the role comes from that membership, never from this screen.
+ * Where a new identity finishes setup; its role comes from a membership, never
+ * from this screen.
  */
 export function setupRoute(account: Account, hasOrganization: boolean): string {
   if (!hasOrganization) return "/coordinator/start";

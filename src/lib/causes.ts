@@ -1,7 +1,4 @@
-/**
- * One palette for cause charts, so a cause keeps its color on every screen.
- * The values themselves live in tokens.css next to the rest of the palette.
- */
+/** Cause colors live in tokens.css so a cause keeps its color everywhere. */
 export const CAUSE_COLORS: Record<string, string> = {
   food: "var(--cause-food)",
   education: "var(--cause-education)",

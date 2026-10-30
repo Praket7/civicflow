@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "Her vardiyanın neyi gerektirdiği ve halihazırda nelerin kapsandığı.",
   "Written to the live roster and the audit log in one transaction.": "Tek işlemde canlı listeye ve denetim günlüğüne yazılır.",
   "You": "You",
-  "You are": "sen"
+  "You are": "sen",
+  "Installation backups": "Kurulum yedekleri",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "Kurulum yedekleri, bu cihazda depolanan her CivicFlow çalışma alanını içerir. Yalnızca kurulum sorumlusu bunları oluşturabilir, geri yükleyebilir veya yönetebilir.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Henüz anlık görüntü yok. Bu cihazdaki her çalışma alanını korumak için bir tane oluşturun."
 }

@@ -84,12 +84,7 @@ pub struct RosterPolicy {
 }
 
 impl Default for RosterPolicy {
-    /// The shipped behavior: no cap of its own on any of the four limits, no
-    /// required rest between shifts, unknown age and credential block, and the
-    /// weights the scoring table documents. Leaving the limits unset keeps the
-    /// planner's behavior identical to the engine before this policy existed —
-    /// time conflicts, not a count, are what stop a second shift on one day — so
-    /// an organization opts in to a cap rather than discovering one.
+    /// No caps or required rest by default; an organization opts in.
     fn default() -> Self {
         Self {
             version: 1,

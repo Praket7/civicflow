@@ -287,6 +287,21 @@ export interface CheckinCode {
   payload: string;
 }
 
+export type CheckinStatus = "not_open" | "open" | "closed";
+
+export interface CheckinWindow {
+  shiftId: string;
+  opensAt: string;
+  closesAt: string;
+  status: CheckinStatus;
+  canSelfCheckIn: boolean;
+}
+
+/// Installation-wide, unlike a role inside whichever organization is open.
+export interface InstallationAccess {
+  steward: boolean;
+}
+
 interface ScoreBreakdown {
   skill: number;
   availability: number;
@@ -692,10 +707,8 @@ export interface CreateOpportunityResult {
 }
 
 /**
- * A roster record as the database holds it — identity, contact, status, and the
- * lists the matching engine reads. The bundled seed authors its own display
- * fields, so the screens turn this into a `Volunteer` and keep the seed's richer
- * detail where the two describe the same person.
+ * As the database holds it; screens turn this into a `Volunteer`, keeping the
+ * seed's richer display fields.
  */
 export interface RosterVolunteer {
   id: string;

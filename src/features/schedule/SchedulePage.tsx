@@ -54,13 +54,8 @@ import { SeriesManagerCard } from "./SeriesManagerCard";
 import styles from "./Schedule.module.css";
 
 /**
- * Coordinator week planner.
- *
- * The calendar is a fixed two-hour grid rather than a free-position canvas:
- * every shift has a real start time, and snapping to a band keeps the same
- * height for a 30-minute and a four-hour shift. Cause and role-gap filters are
- * applied once to `filtered`; the list view, calendar, selected-shift rail and
- * weekly summary all read that one array so their totals cannot disagree.
+ * The calendar snaps shifts to fixed two-hour bands so short and long shifts
+ * share a height. Every view reads the same filtered array.
  */
 const CAUSE_LIST = Object.keys(CAUSE_LABELS) as (keyof typeof CAUSE_LABELS)[];
 
@@ -76,10 +71,7 @@ function countLabel(count: number, one: string, other: string): string {
   return `${count} ${t(count === 1 ? one : other)}`;
 }
 
-/**
- * Count unfilled role slots, not empty seats. A shift can have open seats and
- * still be fully covered by role if every required role has its people.
- */
+/// Unfilled role slots, not empty seats.
 function openRoleCount(row: ShiftRow): number {
   return row.shift.roles.reduce((sum, role) => sum + Math.max(0, role.required - role.filled), 0);
 }
@@ -108,9 +100,7 @@ export function SchedulePage() {
     const start = parseISO(row.shift.startsAt);
     return start >= weekStart && start < weekEnd;
   });
-  // Selection belongs to the visible week. If the coordinator pages to a
-  // month with no service, the rail should say so rather than keep showing the
-  // last shift from the previous week.
+  // Selection belongs to the visible week, so the rail never shows a stale one.
   const selected =
     weekRows.find((row) => row.shift.id === selectedId) ??
     weekRows.find((row) => row.shift.startsAt >= workspace.now) ??

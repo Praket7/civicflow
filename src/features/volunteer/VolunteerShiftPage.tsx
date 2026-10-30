@@ -39,6 +39,7 @@ import {
 import { t } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth/session";
 import { currentOrganizationFor } from "../../lib/organizations/store";
+import { useCheckinWindow } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
 import type { Cause, Shift } from "../../types/domain";
 import styles from "./VolunteerShiftPage.module.css";
@@ -150,6 +151,7 @@ export function VolunteerShiftPage() {
   const [copyMessage, setCopyMessage] = useState("");
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelError, setCancelError] = useState("");
+  const { data: checkinWindow } = useCheckinWindow(shift?.id ?? "");
 
   if (!shift || !opportunity) {
     return (
@@ -168,10 +170,7 @@ export function VolunteerShiftPage() {
   const status = myRosterRow?.status ?? "confirmed";
   const checkedCount = CHECKLIST.filter((item) => checks[item.id]).length;
   const startsAt = parseISO(shift.startsAt);
-  const checkInOpens = new Date(startsAt.getTime() - 30 * 60_000);
-  const now = new Date(workspace.now);
-  const checkInOpen =
-    now.getTime() >= checkInOpens.getTime() && now.getTime() <= parseISO(shift.endsAt).getTime();
+  const checkInOpen = checkinWindow?.canSelfCheckIn ?? false;
   const tasks = TASKS[opportunity.cause];
   const organization = user ? currentOrganizationFor(user.email) : null;
   const orgName = organization?.name ?? workspace.organization.name;
@@ -276,7 +275,7 @@ export function VolunteerShiftPage() {
           <Button variant="lime" icon={<CalendarPlus size={14} />} onClick={downloadCalendar}>
             Add to calendar
           </Button>
-          {checkInOpen ? (
+          {!checkinWindow ? null : checkInOpen ? (
             <ButtonLink to="/volunteer/check-in" variant="primary" icon={<FileCheck2 size={14} />}>
               Check in
             </ButtonLink>
@@ -286,9 +285,15 @@ export function VolunteerShiftPage() {
               className={styles.heroNote}
               icon={<Clock3 size={14} />}
               disabled
-              title={`Check-in opens at ${formatTime(checkInOpens.toISOString())}`}
+              title={
+                checkinWindow.status === "not_open"
+                  ? `${t("Check-in opens")} ${formatTime(checkinWindow.opensAt)}`
+                  : t("Check-in closed")
+              }
             >
-              Check-in opens {formatTime(checkInOpens.toISOString())}
+              {checkinWindow.status === "not_open"
+                ? `${t("Check-in opens")} ${formatTime(checkinWindow.opensAt)}`
+                : t("Check-in closed")}
             </Button>
           )}
         </div>

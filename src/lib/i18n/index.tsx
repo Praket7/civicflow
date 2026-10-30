@@ -80,11 +80,7 @@ let activeLocale = "en";
 let activeCatalog: Catalog = {};
 const VERBATIM = new Set(["⌘ K", "⌘K", "Esc", "Tab", "Shift D", "Shift+D", "↵", "↑", "↓"]);
 
-/**
- * Translate one interface string. The JSX transform calls this during render,
- * and the provider remounts the app once a catalog has loaded so every call
- * reads the new locale. English returns the source string unchanged.
- */
+/** English returns the source string unchanged. */
 export function t(text: string, values?: Record<string, string | number>): string {
   let translated = text;
   if (activeLocale !== "en" && !VERBATIM.has(text)) {
@@ -131,12 +127,9 @@ async function loadCatalog(code: string): Promise<Catalog> {
   }
 }
 
-/*
- * date-fns ships hand-written locales for about forty of the sixty interface
- * languages. For the rest, build the small surface `format` needs from Intl so
- * weekdays, months, and AM/PM still follow the selected language instead of
- * quietly falling back to English.
- */
+// date-fns lacks about a third of the interface languages; Intl fills in the
+// small surface `format` needs.
+
 const monthCache = new Map<string, string[]>();
 const dayCache = new Map<string, string[]>();
 
@@ -319,10 +312,8 @@ export function useLocale(): LocaleContextValue {
 }
 
 /**
- * Remounts pages that call `t()` without subscribing to the locale context.
- * Standalone screens (launch, welcome, sign-in, onboarding, setup) sit outside
- * AppShell, so without this frame an asynchronously loaded catalog would leave
- * their first English render in place.
+ * Remounts standalone screens (which sit outside AppShell) after a catalog
+ * loads, so their first English render is replaced.
  */
 export function LocaleFrame({ children }: { children: ReactNode }) {
   const { version } = useLocale();

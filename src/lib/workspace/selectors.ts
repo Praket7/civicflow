@@ -19,10 +19,8 @@ import { activeLocaleCode, t } from "../i18n";
 import { demoWorkspace } from "./dataset";
 
 /**
- * Read model shared by every screen. Screens never invent their own demo
- * arrays: they call these selectors so totals, names, and statuses agree
- * across surfaces. Writes go through WorkspaceSession; these functions apply
- * those overrides when a session is supplied.
+ * Read model shared by every screen, so totals, names and statuses agree. A
+ * session's overrides are applied on top of the demo data.
  */
 
 type SessionOverrides = Partial<SessionSnapshot>;
@@ -81,19 +79,13 @@ export function formatHours(hours: number): string {
   return Number.isInteger(hours) ? `${hours} h` : `${hours.toFixed(1)} h`;
 }
 
-/*
- * Display dates go through Intl rather than a fixed date-fns pattern. Intl
- * already knows whether a language writes 08:00 or 8:00 AM, and it covers the
- * languages that do not ship a date-fns locale.
- */
+// Intl knows each language's date and time conventions; date-fns does not.
+
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /*
- * Shift and audit timestamps are absolute instants. They must read the same on
- * a laptop in Buffalo and a build runner in UTC, so they are formatted in the
- * organization's timezone. Plain dates and Date objects built
- * for calendar grids are civil values and stay in the local calendar, where
- * converting them could move a day or an hour.
+ * Timestamps are absolute instants, formatted in the organization's timezone so
+ * they read the same everywhere. Calendar dates stay local.
  */
 let activeTimeZone = demoWorkspace.organization.timezone;
 
@@ -320,10 +312,8 @@ export function getRoster(
 }
 
 /**
- * The roster as the attendance board reads it: everyone who holds a seat, plus
- * the people who no-showed. A no-show has released their seat, so they are not
- * part of staffing counts, but the coordinator still has to see that they did
- * not arrive. Cancellations and waitlist entries are not here.
+ * Seated volunteers plus no-shows, who are not counted as staffed but must stay
+ * visible.
  */
 export function getAttendanceRoster(
   shiftId: string,
@@ -391,14 +381,13 @@ export function getLiveEvent(session: SessionOverrides = {}, workspace: DemoWork
   const shift = shiftById(DEMO_EVENT_SHIFT_ID, workspace) ?? workspace.shifts[1];
   if (!shift) return null;
   const opportunity = opportunityById(shift.opportunityId, workspace);
+  // Whether self check-in is open is not this selector's to decide. The
+  // domain answers `checkinWindow`; screens read that answer.
   return {
     shift,
     opportunity,
     roster: getRoster(shift.id, session, workspace),
     waitlist: getWaitlist(shift.id, session, workspace),
-    checkInOpen:
-      new Date(workspace.now) >= new Date(parseISO(shift.startsAt).getTime() - 30 * 60_000) &&
-      new Date(workspace.now) <= parseISO(shift.endsAt),
   };
 }
 

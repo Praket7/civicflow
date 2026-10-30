@@ -28,9 +28,7 @@ pub const TRIGGERS: [&str; 4] = [
     "credential_expiring",
 ];
 
-/// The rules a new organization starts with: the two a volunteer needs, the
-/// follow-up a coordinator needs, and the credential warning that keeps a
-/// schedule honest.
+/// The rules a new organization starts with.
 pub const DEFAULT_RULES: [(&str, i64, &str); 4] = [
     ("shift_reminder", 1440, "volunteer"),
     ("checkin_soon", 120, "volunteer"),
@@ -383,9 +381,7 @@ fn expiring_credentials(
     Ok(rows)
 }
 
-/// Writes one notification unless the same rule already produced one for the
-/// same subject. The notification id carries the rule and the subject, so a
-/// second pass finds the first row and writes nothing.
+/// The id carries the rule and subject, so a second pass writes nothing.
 fn insert_once(
     conn: &Connection,
     rule_id: &str,

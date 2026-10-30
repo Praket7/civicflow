@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "What each shift asks for, and what is already covered.",
   "Written to the live roster and the audit log in one transaction.": "Written to the live roster and the audit log in one transaction.",
   "You": "You",
-  "You are": "You are"
+  "You are": "You are",
+  "Installation backups": "Sandaran pemasangan",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "Sandaran pemasangan mengandungi setiap CivicFlow ruang kerja yang disimpan pada peranti ini. Hanya steward pemasangan boleh membuat, memulihkan atau mengurusnya.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Tiada gambar lagi. Buat satu untuk melindungi setiap ruang kerja pada peranti ini."
 }

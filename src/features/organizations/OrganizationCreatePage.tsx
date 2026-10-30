@@ -71,9 +71,8 @@ export function OrganizationCreatePage() {
     );
   }
   if (user.role === "volunteer") return <Navigate to="/volunteer/start" replace />;
-  // Before the first organization exists this page is the setup gate, so
-  // "back to onboarding" would bounce straight back here. Offer the only real
-  // way out of the wizard instead: signing out.
+  // Before the first organization this page is the setup gate, so the only way
+  // out is signing out.
   const hasOrganization = organizationsFor(user.email).length > 0;
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {

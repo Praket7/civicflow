@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "What each shift asks for, and what is already covered.",
   "Written to the live roster and the audit log in one transaction.": "Written to the live roster and the audit log in one transaction.",
   "You": "You",
-  "You are": "You are"
+  "You are": "You are",
+  "Installation backups": "Piştgirên sazkirinê",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "Piştgiriya sazkirinê her cîhê xebatê CivicFlow ku li ser vê cîhazê hatî hilanîn dihewîne. Tenê rêvebirê sazkirinê dikare wan biafirîne, sererast bike, an jî rêve bibe.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Hîn wêneyek tune. Ji bo parastina her cîhê xebatê li ser vê cîhazê yek biafirînin."
 }

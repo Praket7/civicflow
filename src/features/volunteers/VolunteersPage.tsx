@@ -122,9 +122,7 @@ export function VolunteersPage() {
     ? getUpcomingForVolunteer(selected.id, session, workspace)[0]
     : undefined;
 
-  // One short list of what is already known about this person, so a coordinator
-  // does not have to open three screens to learn whether they are ready to
-  // schedule. Every line is read from a record; nothing is inferred.
+  // A short readiness list, all read from records.
   const readiness = useMemo(() => {
     if (!selected) return [];
     const credentials = getCredentials(session, workspace).filter(

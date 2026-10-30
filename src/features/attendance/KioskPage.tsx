@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Avatar } from "../../components/ui";
 import { t } from "../../lib/i18n";
 import { QrScanner } from "../../components/checkin/QrScanner";
+import { useCheckinWindow } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
   formatDate,
@@ -22,10 +23,7 @@ function publicName(name: string): string {
 
 type LiveEvent = NonNullable<ReturnType<typeof getLiveEvent>>;
 
-/**
- * The kiosk shows one shift. A workspace with nothing scheduled has nothing to
- * check anyone into, so it says so instead of borrowing the sample shift.
- */
+/** Shows one shift, or says there is nothing to check into. */
 export function KioskPage() {
   const { workspace, session } = useWorkspace();
   const event = getLiveEvent(session, workspace);
@@ -69,6 +67,7 @@ function KioskBody({ event }: { event: LiveEvent }) {
   const [eventCode, setEventCode] = useState<string | null>(null);
   const [scannedToken, setScannedToken] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const { data: checkinWindow } = useCheckinWindow(event.shift.id);
   const codeInput = useRef<HTMLInputElement>(null);
   const title = event.opportunity?.title ?? "Pantry Setup";
   const roster = event.roster;
@@ -101,8 +100,12 @@ function KioskBody({ event }: { event: LiveEvent }) {
   function submit(event_: FormEvent) {
     event_.preventDefault();
     setSuccess("");
-    if (!event.checkInOpen) {
-      setError("Check-in is not open yet. It opens 30 minutes before the shift starts.");
+    if (checkinWindow && !checkinWindow.canSelfCheckIn) {
+      setError(
+        checkinWindow.status === "not_open"
+          ? "Check-in is not open yet. It opens 30 minutes before the shift starts."
+          : "Arrival check-in has closed. Ask the shift lead for a manual check-in so your hours stay accurate.",
+      );
       return;
     }
     if (!scannedToken && (!eventCode || code !== eventCode)) {

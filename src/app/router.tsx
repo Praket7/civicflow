@@ -115,11 +115,7 @@ export const pages: Record<string, ReactNode> = {
   ask: <AskPage />,
 };
 
-/**
- * The index and unknown paths used to hard-code Mission Control, which sent
- * volunteers and signed-out visitors through a coordinator route first. Send
- * each account to its own home instead.
- */
+/** Each account goes to its own home, not a fixed coordinator route. */
 function HomeRedirect() {
   const { user } = useAuth();
   return <Navigate to={user ? accountHome(user) : "/welcome"} replace />;
@@ -134,9 +130,7 @@ function guarded(route: (typeof routes)[number]) {
     route.id === "settings" || route.id === "accessibility" || route.id === "ask"
       ? (["coordinator", "volunteer"] as const)
       : undefined;
-  // Choosing or creating the first organization happens before a workspace
-  // exists. Wrapping it in the workspace provider left a new account on
-  // "Opening workspace…" because there is no workspace snapshot to read yet.
+  // Choosing the first organization happens before a workspace exists.
   const needsWorkspace = ![
     "/coordinator/start",
     "/coordinator/organization/new",
@@ -192,7 +186,6 @@ const routeConfig = [
   },
 ];
 
-// Tauri's bundled asset protocol cannot be relied on to rewrite deep links to
-// index.html, so the desktop build uses hash history. The browser preview keeps
-// clean URLs for review.
+// The Tauri asset protocol does not rewrite deep links to index.html, so the
+// desktop build uses hash history.
 export const router = isTauri() ? createHashRouter(routeConfig) : createBrowserRouter(routeConfig);

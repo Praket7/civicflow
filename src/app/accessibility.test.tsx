@@ -7,6 +7,7 @@ import { AuthProvider } from "../lib/auth/session";
 import { DisplayPreferencesProvider } from "../lib/display";
 import { LocaleProvider } from "../lib/i18n";
 import { WorkspaceSessionProvider } from "../lib/workspace/session";
+import { settleQueries } from "../test/queries";
 import { pages } from "./router";
 import { routes } from "./routes";
 import type { RouteMeta } from "./routes";
@@ -32,7 +33,7 @@ function renderRoute(route: RouteMeta) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const page = pages[route.id];
   if (!page) throw new Error(`Route ${route.id} has no registered page`);
-  return render(
+  const rendered = render(
     <DisplayPreferencesProvider>
       <LocaleProvider>
         <QueryClientProvider client={queryClient}>
@@ -49,6 +50,7 @@ function renderRoute(route: RouteMeta) {
       </LocaleProvider>
     </DisplayPreferencesProvider>,
   );
+  return { ...rendered, queryClient };
 }
 
 describe("route accessibility", () => {
@@ -56,13 +58,14 @@ describe("route accessibility", () => {
     it(
       `${route.number}. ${route.title} has no serious ARIA or landmark violations`,
       async () => {
-        const { container } = renderRoute(route);
+        const { container, queryClient } = renderRoute(route);
         await waitFor(
           () => {
             expect((container.textContent ?? "").trim().length).toBeGreaterThan(40);
           },
           { timeout: 5000 },
         );
+        await settleQueries(queryClient);
 
         const results = await axe(container);
         const blocking = results.violations.filter(

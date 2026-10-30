@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "What each shift asks for, and what is already covered.",
   "Written to the live roster and the audit log in one transaction.": "Written to the live roster and the audit log in one transaction.",
   "You": "You",
-  "You are": "You are"
+  "You are": "You are",
+  "Installation backups": "တပ်ဆင်ခြင်း အရန်များ",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "တပ်ဆင်ခြင်း အရန်ကူးများတွင် ဤစက်တွင် သိမ်းဆည်းထားသော CivicFlow အလုပ်နေရာတိုင်း ပါဝင်သည်။ တပ်ဆင်ရေးမှူးကသာ ၎င်းတို့ကို ဖန်တီးခြင်း၊ ပြန်လည်ရယူခြင်း သို့မဟုတ် စီမံခန့်ခွဲနိုင်သည်။",
+  "No snapshots yet. Create one to protect every workspace on this device.": "လျှပ်တစ်ပြက်ရိုက်ချက်များ မရှိသေးပါ။ ဤစက်ပစ္စည်းပေါ်ရှိ အလုပ်နေရာတိုင်းကို ကာကွယ်ရန် တစ်ခုဖန်တီးပါ။"
 }

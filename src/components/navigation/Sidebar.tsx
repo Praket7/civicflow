@@ -109,14 +109,14 @@ export function Sidebar({
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { workspace, session } = useWorkspace();
+  const { workspace, session, installationSteward } = useWorkspace();
   const organizationWorkspace = useOrganizationWorkspace(user);
   const currentOrganization = organizationWorkspace.current;
   const organizationName = currentOrganization?.name ?? "No workspace yet";
   const organizationInitials = initialsOf(organizationName);
   const volunteer = workspace.volunteers.find((row) => row.id === user?.volunteerId);
   const personName =
-    user?.name ?? (isCoordinator ? "Praket Gauri" : (volunteer?.name ?? "Volunteer"));
+    user?.name ?? (isCoordinator ? t("Coordinator") : (volunteer?.name ?? t("Volunteer")));
   const person = {
     name: personName,
     initials: initialsOf(personName),
@@ -325,14 +325,16 @@ export function Sidebar({
                   >
                     Audit log
                   </Link>
-                  <Link
-                    to="/coordinator/backup"
-                    className={styles.menuItem}
-                    role="menuitem"
-                    onClick={dismissOnNavigate}
-                  >
-                    Backups &amp; recovery
-                  </Link>
+                  {installationSteward ? (
+                    <Link
+                      to="/coordinator/backup"
+                      className={styles.menuItem}
+                      role="menuitem"
+                      onClick={dismissOnNavigate}
+                    >
+                      Installation backups
+                    </Link>
+                  ) : null}
                 </>
               ) : null}
               <Link

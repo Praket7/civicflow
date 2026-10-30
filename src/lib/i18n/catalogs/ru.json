@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "Что требует каждая смена и что уже предусмотрено.",
   "Written to the live roster and the audit log in one transaction.": "Записывается в действующий реестр и журнал аудита за одну транзакцию.",
   "You": "You",
-  "You are": "Ты"
+  "You are": "Ты",
+  "Installation backups": "Резервные копии установки",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "Резервные копии установки содержат все рабочие области CivicFlow, хранящиеся на этом устройстве. Только администратор установки может создавать, восстанавливать или управлять ими.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Снимков пока нет. Создайте его, чтобы защитить каждое рабочее пространство на этом устройстве."
 }

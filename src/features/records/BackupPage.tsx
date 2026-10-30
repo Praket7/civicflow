@@ -26,13 +26,26 @@ function describeError(error: unknown): string {
 }
 
 export function BackupPage() {
-  const { backups, actions } = useWorkspace();
+  const { backups, actions, installationSteward } = useWorkspace();
   const native = isTauri();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingRestore, setPendingRestore] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // UI only; the backup commands check the same rule themselves.
+  if (installationSteward !== true) {
+    return (
+      <Page>
+        <PageHeader
+          eyebrow="Organize"
+          title="Installation backups"
+          description="Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them."
+        />
+      </Page>
+    );
+  }
 
   const latest = backups[0];
   const selected = backups.find((snapshot) => snapshot.id === selectedId) ?? latest;
@@ -81,8 +94,8 @@ export function BackupPage() {
     <Page>
       <PageHeader
         eyebrow="Organize"
-        title="Backup & recovery"
-        description="Snapshots are consistent copies of this workspace. Restoring is deliberate, verified before it runs, and recorded in the audit log."
+        title="Installation backups"
+        description="Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them."
         actions={
           <Button
             variant="primary"
@@ -166,7 +179,7 @@ export function BackupPage() {
           />
           {backups.length === 0 ? (
             <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              No snapshots yet. Create one to protect the current workspace.
+              No snapshots yet. Create one to protect every workspace on this device.
             </p>
           ) : (
             <div className={styles.snapshotList}>

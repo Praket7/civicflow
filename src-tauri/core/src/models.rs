@@ -534,6 +534,24 @@ pub struct CheckinCode {
     pub payload: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckinStatus {
+    NotOpen,
+    Open,
+    Closed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckinWindow {
+    pub shift_id: String,
+    pub opens_at: String,
+    pub closes_at: String,
+    pub status: CheckinStatus,
+    pub can_self_check_in: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailabilitySlot {

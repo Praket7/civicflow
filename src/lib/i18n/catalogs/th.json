@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "แต่ละกะขออะไร และมีอะไรครอบคลุมไปแล้วบ้าง",
   "Written to the live roster and the audit log in one transaction.": "เขียนไปยังบัญชีรายชื่อสดและบันทึกการตรวจสอบในธุรกรรมเดียว",
   "You": "You",
-  "You are": "คุณเป็น"
+  "You are": "คุณเป็น",
+  "Installation backups": "การสำรองข้อมูลการติดตั้ง",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "การสำรองข้อมูลการติดตั้งประกอบด้วยทุกเวิร์กสเปซ CivicFlow ที่จัดเก็บไว้ในอุปกรณ์นี้ มีเพียงผู้ดูแลการติดตั้งเท่านั้นที่สามารถสร้าง กู้คืน หรือจัดการได้",
+  "No snapshots yet. Create one to protect every workspace on this device.": "ยังไม่มีสแนปชอต สร้างหนึ่งรายการเพื่อปกป้องทุกพื้นที่ทำงานบนอุปกรณ์นี้"
 }

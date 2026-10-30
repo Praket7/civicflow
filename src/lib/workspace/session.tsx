@@ -6,6 +6,7 @@ import type {
   BackupSnapshot,
   CandidateAnswer,
   CheckinCode,
+  CheckinWindow,
   CredentialReadiness,
   DemoWorkspace,
   DisruptionReport,
@@ -56,6 +57,8 @@ interface WorkspaceSessionValue {
   workspace: DemoWorkspace;
   session: SessionSnapshot;
   backups: BackupSnapshot[];
+  /** Null while the capability is being read. */
+  installationSteward: boolean | null;
   actions: {
     setSaved(opportunityId: string, saved: boolean): Promise<void>;
     setApplicationStage(applicationId: string, stage: string): Promise<void>;
@@ -67,6 +70,7 @@ interface WorkspaceSessionValue {
     cancelRegistration(shiftId: string, volunteerId: string, reason?: string): Promise<void>;
     joinWaitlist(shiftId: string, volunteerId: string, role: string): Promise<void>;
     getCheckinCode(shiftId: string): Promise<CheckinCode>;
+    checkinWindow(shiftId: string): Promise<CheckinWindow>;
     autoRoster(shiftIds: string[], options: RosterOptions): Promise<RosterPlan>;
     /** The plan and the authoritative evaluation behind every displayed value. */
     evaluateRoster(shiftIds: string[], options: RosterOptions): Promise<RosterEvaluation>;
@@ -148,8 +152,7 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Writes run in order. AutoRoster can queue several registrations at once, and
-// out-of-order responses would apply an older snapshot last.
+// Writes run in order so an older snapshot never lands last.
 let pendingWrites: Promise<unknown> = Promise.resolve();
 
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -163,16 +166,12 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   const auth = useOptionalAuth();
   const account = auth?.user ?? null;
   const organizationWorkspace = useOrganizationWorkspace(account);
-  // Signed out, nothing narrows the workspace, so the signed-out preview keeps
-  // the sample organization. A signed-in account with no organization yet reads
-  // an empty workspace instead.
+  // Signed out shows the sample organization; signed in without one shows an
+  // empty workspace.
   const organization = account ? organizationWorkspace.current : null;
   const organizationId = organization?.id ?? "";
   const accountId = account?.id ?? "";
-  // One repository for every organization. On the desktop it is SQLite, which
-  // now scopes rows by the selected organization; on the web it is the local
-  // preview. A second store for created organizations used to split the data
-  // model in two and leave the native app writing them to localStorage.
+  // One repository, scoped by the selected organization.
   const repository = localRepository;
   const workspace = useMemo(
     () => (account ? workspaceForOrganization(organization ?? null, account) : demoWorkspace),
@@ -181,23 +180,29 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
   );
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [backups, setBackups] = useState<BackupSnapshot[]>([]);
+  // Keyed by account so a previous session's answer cannot unlock the next one.
+  const [installation, setInstallation] = useState<{
+    accountId: string;
+    steward: boolean;
+  } | null>(null);
+  const installationSteward = !account
+    ? false
+    : installation?.accountId === account.id
+      ? installation.steward
+      : null;
   const [error, setError] = useState("");
 
-  // The saved profile is the source of truth for the signed-in volunteer, so
-  // what setup stores is what the roster and the profile screen read back.
+  // What setup saves is what the roster and profile screens read back.
   const visibleWorkspace = useMemo(() => {
-    // The seed authored the bundled roster; the database owns everyone a
-    // coordinator added or imported since, so both reach the same screen.
+    // The seed's roster plus everyone added or imported since.
     const base = withCreatedShifts(
       withRoster(workspace, session?.roster ?? []),
       session?.createdSeries ?? [],
       session?.createdShifts ?? [],
     );
     if (!session) return base;
-    // Shift totals are a projection of the registration rows. The desktop
-    // database maintains them in SQLite; the browser preview keeps only the
-    // rows, so derive the same totals here instead of letting Schedule and
-    // Coverage show counts from before the last write.
+    // Shift totals are a projection of the registration rows; the preview keeps
+    // only the rows, so derive them here.
     const registrations = session.registrations;
     const waitlist = session.waitlist;
     const counted = {
@@ -264,12 +269,25 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
       .catch((caught: unknown) => {
         if (active) setError(describeError(caught));
       });
-    repository
-      .listBackups()
-      .then((snapshots) => {
+    // Only the steward reads installation snapshots.
+    (account ? repository.installationAccess() : Promise.resolve({ steward: false }))
+      .then(async (access) => {
+        if (!active) return;
+        if (!account) {
+          setBackups([]);
+          return;
+        }
+        setInstallation({ accountId: account.id, steward: access.steward });
+        if (!access.steward) {
+          setBackups([]);
+          return;
+        }
+        const snapshots = await repository.listBackups();
         if (active) setBackups(snapshots);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active && account) setInstallation({ accountId: account.id, steward: false });
+      });
     return () => {
       active = false;
     };
@@ -323,6 +341,7 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
       joinWaitlist: (shiftId, volunteerId, role) =>
         run(() => repository.joinWaitlist(shiftId, volunteerId, role)),
       getCheckinCode: (shiftId) => repository.getCheckinCode(shiftId),
+      checkinWindow: (shiftId) => repository.checkinWindow(shiftId),
       autoRoster: (shiftIds, options) => repository.autoRoster(shiftIds, options),
       evaluateRoster: (shiftIds, options) => repository.evaluateRoster(shiftIds, options),
       applyRosterWeek: (expectedRevision, expectedPolicyVersion, assignments) =>
@@ -414,8 +433,8 @@ export function WorkspaceSessionProvider({ children }: { children: ReactNode }) 
     // Apply the timezone before children format their first timestamp, so a
     // settings change never leaves a stale clock in the tree.
     setDisplayTimeZone(session.settings.timezone);
-    return { workspace: visibleWorkspace, session, backups, actions };
-  }, [visibleWorkspace, session, backups, actions]);
+    return { workspace: visibleWorkspace, session, backups, installationSteward, actions };
+  }, [visibleWorkspace, session, backups, installationSteward, actions]);
 
   if (!value) {
     return (

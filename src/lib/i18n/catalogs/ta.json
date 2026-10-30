@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "ஒவ்வொரு ஷிப்டும் என்ன கேட்கிறது, மற்றும் ஏற்கனவே மூடப்பட்டவை.",
   "Written to the live roster and the audit log in one transaction.": "ஒரு பரிவர்த்தனையின் நேரடி பட்டியல் மற்றும் தணிக்கை பதிவுக்கு எழுதப்பட்டது.",
   "You": "You",
-  "You are": "நீங்கள்"
+  "You are": "நீங்கள்",
+  "Installation backups": "நிறுவல் காப்புப்பிரதிகள்",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "இந்தச் சாதனத்தில் சேமிக்கப்பட்டுள்ள ஒவ்வொரு CivicFlow பணியிடத்தையும் நிறுவல் காப்புப்பிரதிகள் கொண்டிருக்கும். நிறுவல் பொறுப்பாளர் மட்டுமே அவற்றை உருவாக்க, மீட்டெடுக்க அல்லது நிர்வகிக்க முடியும்.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "இன்னும் ஸ்னாப்ஷாட்கள் இல்லை. இந்தச் சாதனத்தில் உள்ள ஒவ்வொரு பணியிடத்தையும் பாதுகாக்க ஒன்றை உருவாக்கவும்."
 }

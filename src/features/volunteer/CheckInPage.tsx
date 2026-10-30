@@ -19,22 +19,20 @@ import {
   getLiveEvent,
   timeRange,
 } from "../../lib/workspace/selectors";
+import { useCheckinWindow } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
+import type { CheckinStatus } from "../../types/domain";
 import styles from "./CheckInPage.module.css";
 
 const CODE_LENGTH = 6;
-const CHECK_IN_OPENS_MINUTES = 30;
-const CHECK_IN_CLOSES_MINUTES = 15;
-
-type WindowState = "open" | "early" | "closed";
 
 function emptyDigits(): string[] {
   return Array.from({ length: CODE_LENGTH }, () => "");
 }
 
-const WINDOW_COPY: Record<WindowState, string> = {
+const WINDOW_COPY: Record<CheckinStatus, string> = {
   open: "Check-in is open. Enter the code posted at the check-in table.",
-  early: "Check-in is not open yet. The door code activates 30 minutes before the shift starts.",
+  not_open: "Check-in is not open yet. The door code activates 30 minutes before the shift starts.",
   closed:
     "Arrival check-in has closed. Ask the shift lead for a manual check-in so your hours stay accurate.",
 };
@@ -74,11 +72,10 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
   const [error, setError] = useState("");
   const [codeAccepted, setCodeAccepted] = useState(false);
   const [qrPayload, setQrPayload] = useState<string | null>(null);
+  const { data: checkinWindow } = useCheckinWindow(shift.id);
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
 
-  // The QR carries only the token for a code the check-in table already
-  // opened. It never exposes the printed six-digit secret, and a failure here
-  // simply leaves the typed code as the path.
+  // The QR carries a token, never the printed six-digit code.
   useEffect(() => {
     let active = true;
     actions
@@ -95,19 +92,11 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
   if (!opportunity) return <NoEventPanel />;
 
   const now = parseISO(workspace.now);
-  const startsAt = parseISO(shift.startsAt);
-  const opensAt = new Date(startsAt.getTime() - CHECK_IN_OPENS_MINUTES * 60_000);
-  const closesAt = new Date(startsAt.getTime() + CHECK_IN_CLOSES_MINUTES * 60_000);
-  const windowState: WindowState =
-    now.getTime() < opensAt.getTime()
-      ? "early"
-      : now.getTime() > closesAt.getTime()
-        ? "closed"
-        : "open";
+  const windowState = checkinWindow?.status ?? null;
+  const isOpen = windowState === "open";
 
-  // A roster row can carry a derived "checked in" status whose timestamp is in
-  // the future. Count an arrival only once the recorded time has actually
-  // happened (or when this session explicitly recorded it).
+  // A derived "checked in" status can carry a future timestamp; count it only
+  // once that time has passed.
   const sessionAttendance = session.attendance[shift.id] ?? [];
   const roster = liveEvent.roster.map((row) => {
     const saved = sessionAttendance.find((entry) => entry.volunteerId === row.volunteer.id);
@@ -128,7 +117,6 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
   const checkedInCount = arrivals.length;
   const capacity = shift.capacity;
   const percent = capacity === 0 ? 0 : Math.round((checkedInCount / capacity) * 100);
-  const isOpen = windowState === "open";
   const canSubmit =
     isOpen && Boolean(myRow) && !alreadyCheckedIn && digits.every((digit) => digit.length === 1);
 
@@ -215,8 +203,9 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
       );
       return;
     }
+    if (!checkinWindow) return;
     if (!isOpen) {
-      setError(t(WINDOW_COPY[windowState]));
+      setError(t(WINDOW_COPY[checkinWindow.status]));
       return;
     }
     // The workspace, not this screen, decides whether the code is live. Sending
@@ -344,10 +333,12 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
                   </p>
                 ) : null}
 
-                <p className={styles.windowNote} data-state={windowState}>
-                  <ShieldCheck size={14} aria-hidden="true" />
-                  {t(WINDOW_COPY[windowState])}
-                </p>
+                {checkinWindow ? (
+                  <p className={styles.windowNote} data-state={checkinWindow.status}>
+                    <ShieldCheck size={14} aria-hidden="true" />
+                    {t(WINDOW_COPY[checkinWindow.status])}
+                  </p>
+                ) : null}
 
                 <Button
                   type="submit"
@@ -366,14 +357,16 @@ function CheckInBody({ liveEvent }: { liveEvent: LiveEvent }) {
               </form>
             )}
 
-            <p className={styles.windowStatus} data-state={windowState}>
-              <Clock3 size={13} aria-hidden="true" />
-              {isOpen
-                ? t("Check-in closes {time}", { time: formatTime(closesAt.toISOString()) })
-                : windowState === "early"
-                  ? t("Opens {time}", { time: formatTime(opensAt.toISOString()) })
-                  : t("Check-in closed")}
-            </p>
+            {checkinWindow ? (
+              <p className={styles.windowStatus} data-state={checkinWindow.status}>
+                <Clock3 size={13} aria-hidden="true" />
+                {isOpen
+                  ? t("Check-in closes {time}", { time: formatTime(checkinWindow.closesAt) })
+                  : checkinWindow.status === "not_open"
+                    ? t("Opens {time}", { time: formatTime(checkinWindow.opensAt) })
+                    : t("Check-in closed")}
+              </p>
+            ) : null}
           </div>
         </section>
       </div>

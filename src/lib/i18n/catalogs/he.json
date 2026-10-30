@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "What each shift asks for, and what is already covered.",
   "Written to the live roster and the audit log in one transaction.": "Written to the live roster and the audit log in one transaction.",
   "You": "You",
-  "You are": "You are"
+  "You are": "You are",
+  "Installation backups": "גיבויי התקנה",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "גיבויי התקנה מכילים כל סביבת עבודה CivicFlow המאוחסנת במכשיר זה. רק מנהל ההתקנה יכול ליצור, לשחזר או לנהל אותם.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "עדיין אין צילומי מצב. צור אחד כדי להגן על כל סביבת עבודה במכשיר זה."
 }

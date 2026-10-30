@@ -45,9 +45,7 @@ const CAUSES: [&str; 6] = [
 const DAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const PERIODS: [&str; 3] = ["morning", "afternoon", "evening"];
 const STATUSES: [&str; 3] = ["active", "onboarding", "inactive"];
-/// A spreadsheet says who exists, not who has been screened. Arriving as
-/// `onboarding` keeps a new name out of the roster the planner may fill from
-/// until a coordinator activates the profile.
+/// Keeps an imported name out of the planner's pool until it is activated.
 const DEFAULT_STATUS: &str = "onboarding";
 const EXAMPLE_ROW: [&str; 8] = [
     "Maya Chen",
@@ -69,9 +67,7 @@ pub enum RowOutcome {
     Invalid,
 }
 
-/// One line of the file, with what was understood and what needs a decision.
-/// The field list is the profile the row would create, so the screen can show a
-/// file's effect without the rows having been inserted yet.
+/// The profile the row would create, shown before anything is inserted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportRow {
@@ -119,9 +115,8 @@ pub struct ImportSummary {
     pub preview: ImportPreview,
 }
 
-/// Splits a cell that holds several values. A comma is accepted for causes and
-/// interests because that is how people type them; skills and availability use
-/// the semicolon form the export writes.
+/// Comma is accepted for causes and interests; skills and availability use the
+/// semicolon form the export writes.
 fn split_list(value: &str, comma: bool) -> Vec<String> {
     value
         .split(|character: char| {
@@ -133,9 +128,7 @@ fn split_list(value: &str, comma: bool) -> Vec<String> {
         .collect()
 }
 
-/// A minimal RFC 4180 reader: a quoted cell may contain commas, newlines and a
-/// doubled quote. It returns raw cells; deciding what they mean happens later so
-/// the parser stays the one place that knows about quoting.
+/// Minimal RFC 4180 reader; returns raw cells.
 fn parse_rows(text: &str) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut row: Vec<String> = Vec::new();
@@ -534,9 +527,7 @@ pub fn apply(
     })
 }
 
-/// The roster in the exact shape `preview` reads, so an export can be edited and
-/// imported back. Skills, availability and causes travel as the same
-/// semicolon-separated cells the importer accepts.
+/// The shape `preview` reads, so an export can be edited and imported back.
 pub fn export_roster(conn: &Connection, organization_id: &str) -> Result<String> {
     let mut statement = conn.prepare(
         "SELECT id, name, email, phone, status, interests, causes_json, availability_json

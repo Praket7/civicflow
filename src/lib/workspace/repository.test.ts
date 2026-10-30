@@ -230,6 +230,21 @@ describe("workspace repository", () => {
     await previewRepository.resetDemo();
   });
 
+  it("reads the self check-in window from the domain", async () => {
+    await previewRepository.resetDemo();
+    const open = await previewRepository.checkinWindow("sh-tue-pantry");
+    expect(open).toMatchObject({ status: "open", canSelfCheckIn: true });
+    expect(open.opensAt).toBe("2026-10-13T11:30:00.000Z");
+    expect(open.closesAt).toBe("2026-10-13T12:15:00.000Z");
+
+    const early = await previewRepository.checkinWindow("sh-sat-food");
+    expect(early).toMatchObject({ status: "not_open", canSelfCheckIn: false });
+    await expect(previewRepository.checkIn("sh-sat-food", "vol-maya", "000000")).rejects.toThrow(
+      /opens 30 minutes/,
+    );
+    await previewRepository.resetDemo();
+  });
+
   it("restores a preview snapshot and audits the restore", async () => {
     await previewRepository.resetDemo();
     const [backup] = await previewRepository.createBackup("Contract backup");

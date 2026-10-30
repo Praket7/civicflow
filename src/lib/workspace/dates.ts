@@ -1,9 +1,8 @@
 import { parseISO } from "date-fns";
 
 /**
- * One place that turns the workspace clock into the periods screens compare
- * against. A screen may format a date however it likes; it may not decide for
- * itself where "this month" or "last week" begins.
+ * Where "this month" and "last week" begin. Screens format dates but never
+ * decide the period.
  */
 
 export type ReportPeriod = "week" | "month" | "year" | "all";
@@ -15,11 +14,7 @@ export interface DateRange {
   end: string;
 }
 
-/**
- * A UTC date carrying the calendar day named by the string. The workspace clock
- * is written with its own offset, so reading the day through the system clock
- * would move a late-evening shift into tomorrow on a UTC machine.
- */
+/** The clock's own calendar day, independent of the system timezone. */
 function calendar(now: string): Date {
   const match = now.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return parseISO(now);
@@ -75,12 +70,8 @@ export function lastNDays(now: string, dayCount: number): DateRange {
 }
 
 /**
- * The range a report period selects. `all` has no bound of its own; callers
- * treat it as "every stored row".
- *
- * `week` is the control labeled "Last 7 days", so it is a trailing window
- * ending today. The calendar week (which can start before today and end in
- * the future) is a different range and is not what that control says.
+ * `week` is the "Last 7 days" control: a trailing window ending today, not the
+ * calendar week. `all` has no bound.
  */
 export function reportRange(now: string, period: ReportPeriod): DateRange | null {
   if (period === "week") return lastNDays(now, 7);

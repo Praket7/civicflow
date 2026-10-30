@@ -19,9 +19,8 @@ const SIGNAL_TONE: Record<RetentionSignalKind, "amber" | "red" | "green" | "coba
 };
 
 /**
- * The people a coordinator should act on this week. Each one is a rule with its
- * threshold written into the reason, plus the history that produced it and the
- * step being suggested — no score, and nothing called a prediction.
+ * Each row is a rule with its threshold, history and suggested step; no score
+ * and no prediction.
  */
 export function RetentionSignalsCard() {
   const { data, error } = useRetentionSignals();

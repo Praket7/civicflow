@@ -1,24 +1,14 @@
 //! Deterministic, explainable assignment planning.
 //!
-//! Eligibility is a hard gate; only eligible candidate/day pairs get a graph
-//! edge. Scoring is a separate, named soft objective. The assignment itself is a
-//! min-cost max-flow problem:
+//! Eligibility is a hard gate. Assignment is min-cost max-flow:
 //!
 //! ```text
 //! source -> candidate-day (capacity 1) -> role slot (capacity 1) -> sink
 //! ```
 //!
-//! Edge cost is `MAX_SCORE - score`, so minimum cost is maximum match quality,
-//! and a required role carries one priority bonus so scarce candidates fill
-//! mandatory gaps before optional ones.
-//!
-//! A volunteer is never offered two shifts whose times overlap: eligibility
-//! compares the shift's actual start and end with every assignment the candidate
-//! already holds. The flow model itself allows one slot per calendar day, which
-//! is safe but conservative, so a second pass offers the remaining same-day
-//! slots to candidates whose time does not overlap them. Arbitrary interval
-//! conflicts cannot be represented in a single-commodity flow; the second pass
-//! keeps the one rule that matters exact: no volunteer is double-booked.
+//! Edge cost is `MAX_SCORE - score`; a required role carries a priority bonus.
+//! The flow allows one slot per calendar day, so a second pass offers remaining
+//! same-day slots to candidates with no time overlap.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -29,21 +19,16 @@ use crate::policy::RosterPolicy;
 
 pub const MAX_SCORE: i32 = 100;
 
-/// Availability is a gate rather than a preference: every eligible candidate is
-/// available, so the points are constant and only the policy weights separate
-/// candidates. The default weights plus this constant reach `MAX_SCORE`.
+/// Availability is a gate, so the points are constant; the policy weights
+/// separate candidates. Default weights plus this constant reach `MAX_SCORE`.
 pub const AVAILABILITY_POINTS: i32 = 25;
 
-/// A mandatory slot is worth more than any difference in match quality, so the
-/// planner fills required roles before optional ones when candidates are scarce.
-/// Applied once, on the edge that fills the slot.
+/// Applied once, so required roles fill before optional ones.
 pub const MANDATORY_SLOT_BONUS: i32 = 20_000;
 
-/// One score point in flow cost. The deterministic tiebreak stays below it so
-/// ordering preference can never outweigh match quality.
+/// One score point in flow cost; tiebreaks stay below it.
 const SCORE_UNIT: i32 = 100;
 
-/// The span of time a volunteer has already committed to.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeBlock {
     pub starts_at: DateTime<FixedOffset>,
@@ -74,9 +59,7 @@ pub struct RosterOptions {
     pub include_waitlist: bool,
 }
 
-/// Respecting conflicts is the safe default, and the deserialized default has to
-/// agree with the constructed one so a caller that omits the field and a caller
-/// that builds the struct get the same plan.
+/// The omitted and constructed defaults must agree.
 impl Default for RosterOptions {
     fn default() -> Self {
         Self {
@@ -139,7 +122,6 @@ pub struct ScoreComponent {
     pub maximum: i32,
 }
 
-/// Why one candidate does or does not fit one slot, in full.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchExplanation {
@@ -157,7 +139,6 @@ pub struct MatchExplanation {
     pub selection_reason: String,
 }
 
-/// The outcome of the hard gates for one candidate and slot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Evaluation {
     pub eligible: bool,
@@ -165,7 +146,7 @@ pub struct Evaluation {
 }
 
 impl Evaluation {
-    /// The first failed requirement, which is the sentence to show a person.
+    /// The first failed requirement, for a person to read.
     pub fn rejection(&self) -> Option<String> {
         self.checks
             .iter()
@@ -174,8 +155,7 @@ impl Evaluation {
     }
 }
 
-/// What this run has already given a candidate inside the next seven days, on
-/// top of the load the database already knows about.
+/// Load this run added on top of the database's own seven-day window.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RunLoad {
     pub shifts: i64,
@@ -227,7 +207,6 @@ pub struct PlannedAssignment {
     pub reasons: Vec<String>,
     pub promote_waitlist: bool,
     pub eligible_roles: Vec<String>,
-    /// The full record of why this person was chosen for this seat.
     pub explanation: MatchExplanation,
 }
 
@@ -250,20 +229,14 @@ pub struct RosterPlan {
     pub slots_considered: usize,
     pub candidates_considered: usize,
     pub deterministic_seed: u64,
-    /// Which version of the organization's policy produced this plan.
     pub policy_version: i64,
-    /// When the plan was generated, from the workspace clock.
     #[serde(default)]
     pub generated_at: String,
-    /// The workspace revision the plan was built from. Applying a plan whose
-    /// revision has moved would overwrite somebody else's decision.
+    /// Applying a plan against a moved revision would overwrite a newer decision.
     #[serde(default)]
     pub revision: i64,
 }
 
-/// One seat as this candidate sees it: eligible or not, what the solver scored,
-/// and the checks behind both answers. The screen formats these values; it never
-/// derives its own.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluatedSlot {
@@ -281,9 +254,6 @@ pub struct EvaluatedSlot {
     pub selection_reason: String,
 }
 
-/// Everything the AutoRoster screen may show about a volunteer. Weekly load,
-/// waitlist state, availability and conflict text all come from the same rules
-/// the solver used, so the browser cannot disagree with the plan.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CandidateEvaluation {
@@ -300,8 +270,6 @@ pub struct CandidateEvaluation {
     pub slots: Vec<EvaluatedSlot>,
 }
 
-/// The plan plus the full evaluation it was drawn from, generated together so a
-/// displayed score is the score the solver optimized.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterEvaluation {
@@ -312,9 +280,7 @@ pub struct RosterEvaluation {
     pub candidates: Vec<CandidateEvaluation>,
 }
 
-/// How the candidate's stated availability relates to this seat. `unknown`
-/// means they have not told us yet; `partial` means they are free that day but
-/// not in this half of it.
+/// `unknown`: not stated; `partial`: free that day, not in this half of it.
 pub fn availability_state(candidate: &Candidate, slot: &Slot) -> String {
     let key = format!("{}:{}", slot.day_key, period_for(slot.starts_at));
     if candidate.availability.is_empty() {
@@ -334,9 +300,7 @@ pub fn availability_state(candidate: &Candidate, slot: &Slot) -> String {
     "unavailable".into()
 }
 
-/// Evaluates every candidate against every open seat and returns the plan those
-/// evaluations produce. This is the single read model behind the AutoRoster
-/// screen: eligibility, scores, components and reasons are all the solver's.
+/// The single read model behind AutoRoster: the plan plus every evaluation.
 pub fn evaluate_roster(
     candidates: &[Candidate],
     slots: &[Slot],
@@ -501,8 +465,7 @@ impl Flow {
         self.graph[to].push(reverse);
     }
 
-    /// Successive shortest augmenting paths with SPFA. The graph is small and
-    /// edge costs may be negative because mandatory roles carry a bonus.
+    /// SPFA handles the negative edge costs a mandatory-role bonus produces.
     fn min_cost_max_flow(&mut self, source: usize, sink: usize) -> (i32, i32) {
         let nodes = self.graph.len();
         let mut total_flow = 0;
@@ -605,8 +568,6 @@ fn has_skill(candidate: &Candidate, skill: &str) -> bool {
         .any(|value| value.eq_ignore_ascii_case(skill))
 }
 
-/// A required credential fails closed: a volunteer with no record of it, or one
-/// whose record lapsed, cannot take the role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CredentialState {
     Current,
@@ -652,10 +613,7 @@ fn block_label(block: &TimeBlock) -> String {
     )
 }
 
-/// The hard gates for one candidate and slot, each one reported whether it
-/// passed or not. `committed` is every block the candidate already holds from
-/// the database plus anything this run has given them, so the same function
-/// answers for the first pass and for the second.
+/// `committed` is the database's blocks plus this run's, so both passes share it.
 fn evaluate(
     candidate: &Candidate,
     slot: &Slot,
@@ -715,8 +673,7 @@ fn evaluate(
         ));
     }
 
-    // The workload limits belong to the policy, not to the conflict toggle: an
-    // organization that turns off conflict blocking still means its caps.
+    // Caps apply even when conflict blocking is off.
     if policy.max_shifts_per_day.is_some() || policy.max_minutes_per_day.is_some() {
         let same_day = committed
             .iter()
@@ -893,7 +850,6 @@ fn evaluate(
     Evaluation { eligible, checks }
 }
 
-/// Minutes of rest between a committed block and this slot, in either direction.
 fn gap_minutes(block: &TimeBlock, slot: &Slot) -> i64 {
     if block.ends_at <= slot.starts_at {
         (slot.starts_at - block.ends_at).num_minutes()
@@ -902,8 +858,6 @@ fn gap_minutes(block: &TimeBlock, slot: &Slot) -> i64 {
     }
 }
 
-/// The explanation a caller can build outside a plan, such as when a volunteer
-/// asks about a seat the plan did not give them.
 pub fn explain_selection(
     candidate: &Candidate,
     slot: &Slot,
@@ -941,7 +895,7 @@ pub fn is_eligible_explained(
     .eligible
 }
 
-/// Convenience for callers that only need the verdict.
+/// The verdict alone, with the rejection reason.
 fn is_eligible(
     candidate: &Candidate,
     slot: &Slot,
@@ -969,9 +923,6 @@ fn speaks_spanish(candidate: &Candidate) -> bool {
     candidate.languages.iter().any(|value| value == "Spanish") || has_skill(candidate, "Spanish")
 }
 
-/// Shapes a weight into the fraction of it this candidate earned. The fractions
-/// are the ones the scoring table documents, so the default policy reproduces the
-/// shipped numbers exactly while an organization can move its own priorities.
 fn share(weight: i32, numerator: i32, denominator: i32) -> i32 {
     (weight * numerator) / denominator
 }
@@ -985,8 +936,7 @@ fn score_candidate(
     let skill = match &slot.required_skill {
         Some(required) if has_skill(candidate, required) => policy.skill_weight,
         Some(_) => 0,
-        // A role with no requirement fits anyone who is eligible, a little less
-        // precisely than a matched requirement.
+        // No requirement: a slightly smaller share than a matched skill.
         None => share(policy.skill_weight, 6, 7),
     };
     let availability = AVAILABILITY_POINTS;
@@ -1157,8 +1107,7 @@ fn reasons(candidate: &Candidate, slot: &Slot, score: &ScoreBreakdown) -> Vec<St
     result
 }
 
-/// Builds one assignment. Shared by both passes so a slot filled by either one
-/// reports the same score, reasons, and eligible roles.
+/// Shared by both passes so either source reports the same explanation.
 #[allow(clippy::too_many_arguments)]
 fn assignment_for(
     candidate: &Candidate,
@@ -1193,13 +1142,9 @@ fn assignment_for(
     }
 }
 
+/// Fills slots the flow pass left open with same-day candidates who do not
+/// overlap a decided booking.
 #[allow(clippy::too_many_arguments)]
-/// Offers the slots the flow pass left unfilled to candidates who still have the
-/// time, scarcest slot first and best-scoring candidate first within a slot. The
-/// flow pass allows one slot per candidate per day, so a volunteer who is free
-/// from 2pm can take a 2pm shift even after a 9am one; this is where that
-/// assignment is made. Only runs when conflicts are being respected, so it can
-/// never add an overlapping pair, and it never touches a decided candidate.
 fn fill_same_day_slots(
     candidates: &[&Candidate],
     slots: &[&Slot],
@@ -1282,8 +1227,7 @@ fn fill_same_day_slots(
                 continue;
             }
             let (score, _) = score_candidate(candidate, slot, policy, options);
-            // Candidates arrive ordered by id, so keeping the first on a tie is
-            // deterministic without a second comparison.
+            // Ordered by id, so the first on a tie wins deterministically.
             let better = match &chosen {
                 None => true,
                 Some((_, best, _)) => score.total > *best,
@@ -1318,11 +1262,7 @@ fn fill_same_day_slots(
     }
 }
 
-/// Solve the supplied slots for the supplied candidates.
-///
-/// The returned assignments are deterministic for the same inputs. The solver
-/// maximizes the number of filled slots first, then total match quality, while
-/// required roles carry a priority bonus when candidates are scarce.
+/// Fills slots first, then maximizes match quality. Deterministic for equal input.
 pub fn plan(
     candidates: &[Candidate],
     slots: &[Slot],
@@ -1332,9 +1272,7 @@ pub fn plan(
     plan_inner(candidates, slots, policy, options, &[])
 }
 
-/// The plan a coordinator would get if these assignments were already fixed.
-/// Used to answer "why not that person?" by running the same solver with the
-/// questioned assignment decided, and comparing the two plans.
+/// The plan with these assignments fixed, for "why not that person?" comparisons.
 pub fn plan_with_forced(
     candidates: &[Candidate],
     slots: &[Slot],
@@ -1405,8 +1343,7 @@ fn plan_inner(
     let sink = nodes;
     nodes += 1;
 
-    // A forced assignment is decided before the solver runs: its slot leaves the
-    // pool and its candidate starts out holding that time.
+    // Forced assignments are decided before the solver runs.
     let mut assignments = Vec::new();
     let mut filled_slots: HashSet<usize> = HashSet::new();
     let mut committed: HashMap<String, Vec<TimeBlock>> = HashMap::new();

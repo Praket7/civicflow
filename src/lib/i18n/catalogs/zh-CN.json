@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "每个轮班要求什么，以及已经涵盖什么。",
   "Written to the live roster and the audit log in one transaction.": "在一笔事务中写入实时名册和审核日志。",
   "You": "You",
-  "You are": "你是"
+  "You are": "你是",
+  "Installation backups": "安装备份",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "安装备份包含存储在该设备上的每个 CivicFlow 工作区。只有安装管理员才能创建、恢复或管理它们。",
+  "No snapshots yet. Create one to protect every workspace on this device.": "还没有快照。创建一个来保护该设备上的每个工作区。"
 }

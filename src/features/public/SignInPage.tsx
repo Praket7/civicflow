@@ -30,9 +30,7 @@ export function SignInPage() {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
-  // A successful sign-in sets the account before the route changes. Without
-  // this flag the "already signed in" guard below would race the navigation
-  // and send the person home instead of where they were headed.
+  // Without this, the guard below races the navigation after a sign-in.
   const leaving = useRef(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
@@ -80,9 +78,7 @@ export function SignInPage() {
     }
   }
 
-  // Signing in over an existing session silently swaps accounts and drops the
-  // old one. Send people who already have a session to their own home; they can
-  // sign out first when they mean to switch.
+  // Signing in over an existing session would silently swap accounts.
   if (user && !busy && !leaving.current) return <Navigate to={accountHome(user)} replace />;
 
   return (

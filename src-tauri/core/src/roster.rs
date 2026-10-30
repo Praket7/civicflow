@@ -22,9 +22,7 @@ fn parse_datetime(raw: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(raw).ok()
 }
 
-/// One role on one shift, with how many of its seats are still open. Recovery
-/// needs the role itself — the seat a move would vacate — while AutoRoster only
-/// ever wants the open seats, so both read this one query.
+/// One role on one shift with its open seats, shared by AutoRoster and recovery.
 pub(crate) struct RoleRow {
     pub slot: Slot,
     pub open: i64,
@@ -39,9 +37,7 @@ pub(crate) struct Assignment {
     pub locked: bool,
 }
 
-/// Volunteers who took themselves out of these shifts. Recovery does not offer a
-/// seat back to somebody who has just canceled or not turned up: they are not
-/// available, and re-adding them would only produce another gap.
+/// Volunteers who canceled or did not turn up; recovery must not re-offer them.
 pub(crate) fn declined_on(conn: &Connection, shift_ids: &[String]) -> Result<HashSet<String>> {
     let mut statement = conn.prepare(
         "SELECT DISTINCT volunteer_id, shift_id FROM registrations
@@ -389,9 +385,7 @@ pub fn apply_roster_plan(
     apply_roster_week(conn, None, None, &weekly)
 }
 
-/// Applies a whole reviewed week atomically. Every hard invariant is re-checked
-/// against the database first, then all assignments commit together: a plan
-/// cannot half-apply because one seat filled while the coordinator was reading.
+/// Re-checks every invariant, then commits the whole week in one transaction.
 pub fn apply_roster_week(
     conn: &Connection,
     expected_revision: Option<i64>,
@@ -611,9 +605,7 @@ pub fn apply_roster_week(
     snapshot(conn)
 }
 
-/// Plans the requested shifts (or every future scheduled shift when the list is
-/// empty) against the active volunteer pool, following the organization's
-/// current matching policy.
+/// Plans the requested shifts against the active pool and current policy.
 pub fn plan_roster(
     conn: &Connection,
     shift_ids: &[String],
@@ -634,9 +626,7 @@ pub fn plan_roster(
     Ok(roster)
 }
 
-/// The plan and every candidate evaluation behind it, generated together. The
-/// AutoRoster screen reads this and formats it; it derives no eligibility or
-/// score of its own.
+/// The plan plus every candidate evaluation it was drawn from.
 pub fn evaluate_roster_candidates(
     conn: &Connection,
     shift_ids: &[String],

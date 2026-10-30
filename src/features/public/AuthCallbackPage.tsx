@@ -68,11 +68,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * The answer this window can still sign in with.
- *
- * Three places, in the order they can be trusted: the address bar, the answer a
- * previous page load kept, and the address the native side recorded when the
- * operating system handed the app the return link.
+ * In trust order: the address bar, a kept answer, then the native record of the
+ * return link.
  */
 async function answerFromThisPage(): Promise<HostedAnswer | null> {
   const fromAddress = rememberHostedAnswer(window.location.search, window.location.hash);
@@ -97,10 +94,7 @@ async function waitForAnswer(isLive: () => boolean): Promise<HostedAnswer | null
   return null;
 }
 
-/**
- * Drops the token from the address once it has been kept. The desktop app keeps
- * its route in the fragment, the browser build in the path.
- */
+/** The desktop keeps its route in the fragment, the browser build in the path. */
 function stripAnswerFromAddress(): void {
   if (isTauri()) {
     window.location.hash = "#/auth/callback";
@@ -129,9 +123,7 @@ export function AuthCallbackPage() {
       try {
         let answer = await answerFromThisPage();
         if (!answer) {
-          // A return this device asked for may still be in the browser. Waiting
-          // for it is the whole point of opening this window; claiming the link
-          // expired is what made a working Google sign-in look broken.
+          // The return this device asked for may still be in the browser.
           if (!isTauri() || !(await hostedHandoffPending("callback"))) {
             throw new Error(
               t("This link was not requested on this device. Start again from the sign-in screen."),
@@ -145,9 +137,8 @@ export function AuthCallbackPage() {
           }
         }
         if (!live) return;
-        // The answer is kept in this window, and the address keeps it too until
-        // the sign-in has actually finished: a reload in the middle of the
-        // exchange then retries instead of landing on a bare route.
+        // Kept until the exchange finishes, so a reload retries instead of
+        // landing on a bare route.
         keepHostedAnswer(answer);
         if (isTauri() && !(await hostedHandoffPending("callback"))) {
           throw new Error(
@@ -160,17 +151,13 @@ export function AuthCallbackPage() {
             : await exchangeHostedCode(answer.code as string);
         const identity = identityFromUser(hostedSession.user);
         if (!identity) throw new Error(t("That account has no email address."));
-        // Adopt first: the identity exchange is what makes this device able to
-        // read the memberships. Deciding from the cache before that point sent
-        // a returning member through setup whenever the cache was cold.
+        // Adopt first: only the exchange makes the memberships readable.
         const session = await adoptHostedIdentity(identity, true);
         stripAnswerFromAddress();
         await finishHostedHandoff();
         if (!live) return;
         setDone(true);
-        // The role in this session already names the organization the account is
-        // working in. An identity with no membership lands on the start screens,
-        // where it gains one; a member goes straight to their own home.
+        // A membership lands on its own home; anything else gains one first.
         navigate(accountHome(session.user), { replace: true });
       } catch (caught) {
         if (!live) return;

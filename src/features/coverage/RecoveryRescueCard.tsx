@@ -28,15 +28,11 @@ function toRequest(change: RecoveryChange): RecoveryChangeRequest {
 }
 
 /**
- * Coverage rescue. The detector is a read of the live roster, so the card shows
- * what is actually short before anybody plans a repair; the plan itself comes
- * from the recovery solver in Rust, which freezes locked and unaffected
- * assignments and reports what each change costs.
+ * Shows what is short now; the repair plan comes from the Rust solver and
+ * reports what each change costs.
  */
 export function RecoveryRescueCard() {
   const { actions } = useWorkspace();
-  // The detector is a read of the live roster, and the session provider drops
-  // this read model after every write, so the card never shows a stale gap.
   const { data: report = null } = useDisruptions();
   const [plan, setPlan] = useState<RecoveryPlan | null>(null);
   const [chosen, setChosen] = useState<Record<string, boolean>>({});

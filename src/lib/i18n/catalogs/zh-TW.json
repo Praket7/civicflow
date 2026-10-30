@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "每個輪班要求什麼，以及已經涵蓋什麼。",
   "Written to the live roster and the audit log in one transaction.": "在一筆事務中寫入即時名冊和審核日誌。",
   "You": "You",
-  "You are": "你是"
+  "You are": "你是",
+  "Installation backups": "安裝備份",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "安裝備份包含儲存在該裝置上的每個 CivicFlow 工作區。只有安裝管理員才能建立、復原或管理它們。",
+  "No snapshots yet. Create one to protect every workspace on this device.": "還沒有快照。建立一個來保護該裝置上的每個工作區。"
 }

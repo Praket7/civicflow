@@ -1,9 +1,6 @@
 /**
- * Initials for avatars and workspace badges.
- *
- * Two words give the first and last initial ("FeedMore WNY" → "FW"); one word
- * gives its first two letters ("CivicFlow" → "CI"). Every surface uses this so
- * the same organization never shows two different badges.
+ * Two words give first and last initial; one word gives its first two letters.
+ * Every surface uses this so a badge never differs by screen.
  */
 export function initialsOf(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);

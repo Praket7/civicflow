@@ -7,7 +7,8 @@ use civicflow_core::authorization::{require_coordinator, require_membership};
 use civicflow_core::error::CoreError;
 use civicflow_core::models::{NewOpportunityInput, SettingsPatch};
 use civicflow_core::organizations::{
-    create_organization, join_as_volunteer, organization_access, NewOrganization,
+    create_organization, join_as_volunteer, organization_access, require_installation_steward,
+    NewOrganization,
 };
 use civicflow_core::workflows::{create_opportunity, snapshot, update_settings};
 use civicflow_core::Database;
@@ -366,4 +367,38 @@ fn only_the_founding_owner_manages_installation_wide_records() {
             .role,
         "owner"
     );
+}
+
+#[test]
+fn installation_backups_are_the_stewards_alone() {
+    let database = seeded();
+    let connection = database.connection();
+    let steward: String = connection
+        .query_row(
+            "SELECT id FROM users WHERE email = 'praket@feedmorewny.org'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    require_installation_steward(connection, &steward)
+        .expect("the account that opened the installation manages its snapshots");
+
+    // The owner of a later organization is a coordinator there, and still has
+    // no claim on the installation database.
+    let coordinator = account(connection, "coordinator@example.org", "Dana Whitfield");
+    let created = create_organization(
+        connection,
+        &coordinator,
+        &new_organization("Lakeside Kitchen"),
+    )
+    .expect("a second organization");
+    let refused = require_installation_steward(connection, &coordinator.id)
+        .expect_err("a later owner is not the steward");
+    assert_eq!(rule_code(refused), "FORBIDDEN");
+
+    let volunteer = account(connection, "volunteer@example.org", "Sam Ortiz");
+    join_as_volunteer(connection, &volunteer.id, &created.id).expect("a public roster");
+    let refused = require_installation_steward(connection, &volunteer.id)
+        .expect_err("a volunteer never manages installation backups");
+    assert_eq!(rule_code(refused), "FORBIDDEN");
 }

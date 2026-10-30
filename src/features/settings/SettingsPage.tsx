@@ -71,9 +71,7 @@ export function SettingsPage() {
   const [resetFor, setResetFor] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
-  // A workspace created before these settings existed has no saved copy, so
-  // the form starts from the organization record instead of empty inputs that
-  // block Save behind a required-field error.
+  // A workspace saved before these settings existed starts from its record.
   const [orgName, setOrgName] = useState(
     session.settings.organizationName || workspace.organization.name,
   );

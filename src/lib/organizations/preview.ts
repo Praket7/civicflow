@@ -1,8 +1,6 @@
 /**
- * The browser preview has no native SQLite workspace. This module mirrors the
- * same organization contract over localStorage so screenshots, browser audits,
- * and tests exercise the production shapes. It is fixture-only: the Tauri build
- * never imports it as the organization authority.
+ * Mirrors the organization contract over localStorage for the browser preview.
+ * Fixture-only; the Tauri build never uses it as the authority.
  */
 
 import type { Account } from "../../types/domain";
@@ -56,7 +54,6 @@ interface PendingInviteWithToken extends PendingInvite {
 }
 
 let cached: PreviewState | null = null;
-const listeners = new Set<() => void>();
 
 function demoOrganization(): StoredOrganization {
   return {
@@ -187,12 +184,6 @@ function commit(next: PreviewState): void {
   writeJson(INVITES_KEY, next.invites);
   writeJson(UPDATES_KEY, next.updates);
   writeJson(READ_KEY, next.readAt);
-  listeners.forEach((listener) => listener());
-}
-
-export function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
 }
 
 function memberCount(next: PreviewState, organizationId: string): number {
@@ -250,6 +241,23 @@ export function select(account: Account, organizationId: string): OrganizationAc
 
 export function listPublic(): OrganizationProfile[] {
   return state().organizations.filter((organization) => organization.visibility === "public");
+}
+
+/// The owner of the first organization on this device opened the installation.
+export function isWorkspaceSteward(account: Account): boolean {
+  const next = state();
+  const founding = [...next.organizations].sort(
+    (left, right) =>
+      left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+  )[0];
+  if (!founding) return false;
+  return next.memberships.some(
+    (row) =>
+      row.organizationId === founding.id &&
+      row.userId === account.id &&
+      row.status === "active" &&
+      row.role === "owner",
+  );
 }
 
 function slug(name: string): string {
@@ -588,18 +596,6 @@ export function transferOwnership(
   return members(account, organizationId);
 }
 
-export function recordUpdate(
-  update: Omit<OrganizationUpdate, "id" | "createdAt"> & { createdAt?: string },
-): OrganizationUpdate {
-  const entry: OrganizationUpdate = {
-    ...update,
-    id: `update-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    createdAt: update.createdAt ?? new Date().toISOString(),
-  };
-  commit({ ...state(), updates: [entry, ...state().updates].slice(0, 100) });
-  return entry;
-}
-
 export function updatesFor(account: Account): OrganizationUpdate[] {
   const joined = new Set(list(account).map((row) => row.organization.id));
   return state().updates.filter((update) => joined.has(update.organizationId));
@@ -613,14 +609,4 @@ export function unreadUpdatesFor(account: Account): OrganizationUpdate[] {
 export function markUpdatesRead(account: Account): void {
   const latest = updatesFor(account)[0]?.createdAt ?? new Date().toISOString();
   commit({ ...state(), readAt: { ...state().readAt, [account.email.toLowerCase()]: latest } });
-}
-
-export function resetForTests(): void {
-  cached = null;
-  if (typeof window !== "undefined") {
-    [KEY, MEMBERSHIPS_KEY, CURRENT_KEY, INVITES_KEY, UPDATES_KEY, READ_KEY].forEach((key) =>
-      window.localStorage.removeItem(key),
-    );
-  }
-  listeners.forEach((listener) => listener());
 }

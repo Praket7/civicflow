@@ -1,7 +1,4 @@
-/**
- * Organization addresses are US-only, so the form offers the two-letter codes
- * instead of a free-text field that accepts typos.
- */
+/** Organization addresses are US-only, so the form offers codes, not free text. */
 interface UsState {
   code: string;
   name: string;
@@ -63,9 +60,8 @@ export const US_STATES: UsState[] = [
 ];
 
 /**
- * The two-letter code for a stored state, whether the record holds a code or
- * the full name. An unrecognized value yields "", so a select shows its
- * placeholder instead of landing on whichever option happens to be first.
+ * Accepts a code or a full name; anything unrecognized yields "" so the select
+ * shows its placeholder.
  */
 export function stateCode(value: string): string {
   const clean = value.trim();

@@ -4,9 +4,7 @@ import { OPEN_SOURCE_CREDITS } from "../data/credits";
 import styles from "./CreditsPage.module.css";
 
 export function CreditsPage() {
-  // Several bundled files are crops of one licensed photograph. They are one
-  // photograph for credit purposes, so each source appears once with every
-  // file that derives from it.
+  // Crops of one photograph are credited once, with all their files.
   const groups = OPEN_SOURCE_CREDITS.photos.reduce<
     { photo: (typeof OPEN_SOURCE_CREDITS.photos)[number]; files: string[]; usage: string[] }[]
   >((rows, photo) => {

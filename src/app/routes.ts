@@ -360,11 +360,11 @@ export const routes: RouteMeta[] = [
   {
     id: "backup",
     number: 40,
-    title: "Backup & Recovery",
+    title: "Installation Backups",
     path: "/coordinator/backup",
     role: "coordinator",
-    spec: "Snapshots and restore",
-    keywords: ["backup", "restore", "snapshot"],
+    spec: "Every workspace on this device",
+    keywords: ["backup", "restore", "snapshot", "installation", "steward"],
   },
   {
     id: "settings",

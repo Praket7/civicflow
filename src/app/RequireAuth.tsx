@@ -29,12 +29,8 @@ export function RequireAuth({ children, accountRole, roles }: RequireAuthProps) 
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   }
 
-  // An identity with no membership may only be on the screens that create or
-  // redeem one. Those routes are how it acquires a role in the first place, so
-  // they come before the setup gate: the profile setup has nothing to fill in
-  // until a membership decides what the person is doing here. This used to sit
-  // after the gate, which bounced the create-organization form back to the
-  // start screen and left a new account with no way to open it.
+  // These routes come before the setup gate: they are how an identity acquires
+  // a role in the first place.
   const OPEN_TO_UNASSIGNED = [
     "/coordinator/start",
     "/volunteer/start",
@@ -48,9 +44,7 @@ export function RequireAuth({ children, accountRole, roles }: RequireAuthProps) 
     );
   }
 
-  // Setup runs once, immediately after an identity is created. Until it is
-  // finished every workspace route sends the person back to their setup screen.
-  // The setup route itself has to stay reachable, or the redirect loops.
+  // The setup route itself must stay reachable, or the redirect loops.
   if (isSetupPending(user)) {
     const target = setupRoute(user, organizations.organizations.length > 0);
     if (location.pathname !== target) return <Navigate to={target} replace />;

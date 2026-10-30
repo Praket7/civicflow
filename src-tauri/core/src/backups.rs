@@ -25,9 +25,7 @@ use crate::workflows;
 /// manual and automatic snapshots together so the directory stays bounded.
 pub const RETENTION_LIMIT: usize = 20;
 
-/// The floor a restorable snapshot has to meet. A snapshot taken by an older
-/// build is migrated forward after it is copied in, so this list stays at the
-/// tables every build has ever created rather than every table this build knows.
+/// Every table any build has created; older snapshots are migrated after copying.
 const REQUIRED_TABLES: [&str; 32] = [
     "organizations",
     "app_settings",
@@ -83,9 +81,7 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
         .is_some())
 }
 
-/// Refuses files that are not complete CivicFlow databases. This runs before a
-/// restore and again while listing snapshots, so a damaged artifact is never
-/// offered as a one-click replacement.
+/// Runs before a restore and while listing, so a damaged file is never offered.
 pub fn validate(path: &Path) -> Result<()> {
     let conn = open_read_only(path)?;
     let application_id: i64 = conn
@@ -268,10 +264,7 @@ fn backup_path(dir: &Path, id: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Removes the oldest valid snapshots until at most `RETENTION_LIMIT` remain.
-/// `protect` names files that must survive this pass: the snapshot just written,
-/// and the restore target while it is still being read. The protected files do
-/// not count toward the limit, so a restore may transiently exceed it by one.
+/// Keeps the newest `RETENTION_LIMIT`; `protect` files survive and do not count.
 fn prune(dir: &Path, protect: &[&str]) -> Result<()> {
     let snapshots = list(dir)?;
     let mut kept = 0;

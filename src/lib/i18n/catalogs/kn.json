@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "ಪ್ರತಿ ಶಿಫ್ಟ್ ಏನು ಕೇಳುತ್ತದೆ ಮತ್ತು ಈಗಾಗಲೇ ಏನು ಒಳಗೊಂಡಿದೆ.",
   "Written to the live roster and the audit log in one transaction.": "ಒಂದು ವಹಿವಾಟಿನಲ್ಲಿ ಲೈವ್ ರೋಸ್ಟರ್ ಮತ್ತು ಆಡಿಟ್ ಲಾಗ್‌ಗೆ ಬರೆಯಲಾಗಿದೆ.",
   "You": "You",
-  "You are": "ನೀವು"
+  "You are": "ನೀವು",
+  "Installation backups": "ಅನುಸ್ಥಾಪನ ಬ್ಯಾಕ್ಅಪ್ಗಳು",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "ಈ ಸಾಧನದಲ್ಲಿ ಸಂಗ್ರಹವಾಗಿರುವ ಪ್ರತಿಯೊಂದು CivicFlow ಕಾರ್ಯಸ್ಥಳವನ್ನು ಅನುಸ್ಥಾಪನ ಬ್ಯಾಕಪ್‌ಗಳು ಒಳಗೊಂಡಿರುತ್ತವೆ. ಅನುಸ್ಥಾಪನಾ ಉಸ್ತುವಾರಿ ಮಾತ್ರ ಅವುಗಳನ್ನು ರಚಿಸಬಹುದು, ಮರುಸ್ಥಾಪಿಸಬಹುದು ಅಥವಾ ನಿರ್ವಹಿಸಬಹುದು.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "ಇನ್ನೂ ಯಾವುದೇ ಸ್ನ್ಯಾಪ್‌ಶಾಟ್‌ಗಳಿಲ್ಲ. ಈ ಸಾಧನದಲ್ಲಿ ಪ್ರತಿಯೊಂದು ಕಾರ್ಯಸ್ಥಳವನ್ನು ರಕ್ಷಿಸಲು ಒಂದನ್ನು ರಚಿಸಿ."
 }

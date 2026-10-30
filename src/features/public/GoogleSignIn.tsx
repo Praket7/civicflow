@@ -34,16 +34,13 @@ function GoogleMark() {
 }
 
 /**
- * Hands the browser off to Google. The desktop build opens the system browser
- * because Google blocks its consent screen inside a webview; the answer comes
- * back on the civicflow:// scheme and the auth provider resumes from there.
+ * Google blocks its consent screen inside a webview, so the desktop build uses
+ * the system browser and resumes from the `civicflow://` answer.
  */
 export function GoogleSignIn({ label, disabled, onError }: GoogleSignInProps) {
   const [busy, setBusy] = useState(false);
   const [handedOff, setHandedOff] = useState(false);
-  // The provider hand-off returns on the civicflow:// scheme, which only the
-  // bundled app can register with the operating system. A dev build would open
-  // a browser tab that no app can answer, so it says so instead.
+  // Only the bundled app can receive the `civicflow://` answer.
   const needsBundledApp = isTauri() && import.meta.env.DEV;
 
   async function start() {

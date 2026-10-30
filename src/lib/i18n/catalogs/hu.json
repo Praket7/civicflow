@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "What each shift asks for, and what is already covered.",
   "Written to the live roster and the audit log in one transaction.": "Written to the live roster and the audit log in one transaction.",
   "You": "You",
-  "You are": "You are"
+  "You are": "You are",
+  "Installation backups": "Telepítési biztonsági mentések",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "A telepítési biztonsági másolatok minden, ezen az eszközön tárolt CivicFlow munkaterületet tartalmaznak. Csak a telepítési steward hozhatja létre, állíthatja vissza vagy kezelheti őket.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Még nincsenek pillanatképek. Hozzon létre egyet az eszköz minden munkaterületének védelméhez."
 }

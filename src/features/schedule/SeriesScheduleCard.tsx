@@ -39,8 +39,8 @@ function isoDate(date: Date): string {
 }
 
 /**
- * Scheduling the same shift every week, once. The series owns the rule and the
- * shifts it generates, so a later edit reaches exactly the instances it made.
+ * The series owns its rule and the shifts it generates; a later edit reaches
+ * exactly those instances.
  */
 export function SeriesScheduleCard({ opportunity }: { opportunity: Opportunity }) {
   const { actions } = useWorkspace();

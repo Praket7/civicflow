@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AccountRole,
+  CheckinWindow,
   CredentialReadiness,
   DisruptionReport,
   EngagementMetrics,
@@ -30,6 +31,7 @@ const workspaceKeys = {
   readiness: ["credential-readiness"] as const,
   series: ["shift-series"] as const,
   replacements: ["replacement-recommendations"] as const,
+  checkinWindow: ["checkin-window"] as const,
 };
 
 /**
@@ -47,14 +49,13 @@ export const workspaceReadKeys: readonly (readonly string[])[] = [
   workspaceKeys.readiness,
   workspaceKeys.series,
   workspaceKeys.replacements,
+  workspaceKeys.checkinWindow,
 ];
 
 export function useMissionControl() {
   const scope = useWorkspaceScope();
   return useQuery<MissionControlSummary>({
-    // Attention details and weekday labels are built in the read model, so the
-    // cache is scoped to the language that produced them. The organization is
-    // part of the key so a new workspace never reuses the last one's summary.
+    // Labels are built in the read model, so the language is part of the key.
     queryKey: [...workspaceKeys.missionControl, scope, activeLocaleCode()],
     queryFn: () => repository.getMissionControl(),
     staleTime: 30_000,
@@ -154,6 +155,16 @@ export function useVolunteerInsight(volunteerId: string) {
     queryFn: () => repository.volunteerInsight(volunteerId),
     enabled: volunteerId !== "",
     staleTime: 30_000,
+  });
+}
+
+export function useCheckinWindow(shiftId: string) {
+  const scope = useWorkspaceScope();
+  return useQuery<CheckinWindow>({
+    queryKey: [...workspaceKeys.checkinWindow, scope, shiftId],
+    queryFn: () => repository.checkinWindow(shiftId),
+    enabled: shiftId !== "",
+    staleTime: 60_000,
   });
 }
 

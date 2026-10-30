@@ -19,9 +19,7 @@ export function weeklyCoverage(shifts: Shift[], now: string): CoverageDay[] {
     const capacity = dayShifts.reduce((total, shift) => total + shift.capacity, 0);
     const confirmed = dayShifts.reduce((total, shift) => total + shift.confirmed, 0);
     return {
-      // Keys and labels stay English in the read model. The card turns them
-      // into the active language at render time so a locale switch never
-      // leaves a cached English label behind.
+      // Stays English; the card translates at render time.
       key: format(date, "EEE").toLowerCase() as CoverageDay["key"],
       label: format(date, "EEE d"),
       capacity,

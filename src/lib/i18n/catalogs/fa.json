@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "آنچه که هر شیفت درخواست می کند و آنچه قبلاً پوشش داده شده است.",
   "Written to the live roster and the audit log in one transaction.": "در یک تراکنش در فهرست زنده و ورود حسابرسی نوشته شده است.",
   "You": "You",
-  "You are": "شما هستید"
+  "You are": "شما هستید",
+  "Installation backups": "پشتیبان گیری نصب",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "پشتیبان‌گیری‌های نصب شامل هر فضای کاری CivicFlow ذخیره شده در این دستگاه است. فقط مباشر نصب می تواند آنها را ایجاد، بازیابی یا مدیریت کند.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "هنوز عکس فوری وجود ندارد. یکی برای محافظت از هر فضای کاری در این دستگاه ایجاد کنید."
 }

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use civicflow_core::models::{NewOpportunityInput, SettingsPatch};
+use civicflow_core::organizations::{create_organization, join_as_volunteer, NewOrganization};
 use civicflow_core::workflows::{
     create_opportunity, manual_check_in, set_application_stage, set_saved_opportunity, snapshot,
     update_settings,
@@ -141,6 +142,71 @@ fn restore_returns_every_workflow_to_the_snapshot_point_and_is_audited() {
         .backups
         .iter()
         .any(|snapshot| snapshot.id == backup.id));
+}
+
+#[test]
+fn a_snapshot_covers_every_organization_on_the_installation() {
+    let temp = TempDir::new();
+    let backup_dir = temp.path().join("backups");
+    let database = seeded(&temp.path().join("civicflow.db"));
+    let connection = database.connection();
+
+    let owner = civicflow_core::auth::create_account(
+        connection,
+        "Dana Whitfield",
+        "dana@example.org",
+        "kitchen-table-2026",
+    )
+    .unwrap()
+    .user;
+    let second = create_organization(
+        connection,
+        &owner,
+        &NewOrganization {
+            name: "Lakeside Kitchen".into(),
+            description: String::new(),
+            website: String::new(),
+            address: String::new(),
+            city: "Buffalo".into(),
+            state: "NY".into(),
+            contact_emails: vec!["hello@lakeside.example.org".into()],
+            image: None,
+            image_alt: None,
+            visibility: "public".into(),
+        },
+    )
+    .expect("a second organization");
+    let volunteer = civicflow_core::auth::create_account(
+        connection,
+        "Sam Ortiz",
+        "sam@example.org",
+        "kitchen-table-2026",
+    )
+    .unwrap()
+    .user;
+    join_as_volunteer(connection, &volunteer.id, &second.id).expect("a public roster");
+
+    let installation_volunteers: i64 = connection
+        .query_row("SELECT COUNT(*) FROM volunteers", [], |row| row.get(0))
+        .unwrap();
+    let first_organization_volunteers: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM volunteers WHERE organization_id = (
+               SELECT id FROM organizations ORDER BY created_at, id LIMIT 1)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let backup =
+        backups::create(connection, &backup_dir, "manual", "Two workspaces").expect("a snapshot");
+    assert_eq!(
+        backup.counts.volunteers, installation_volunteers,
+        "the snapshot counts every workspace on the device, not the open one"
+    );
+    assert!(
+        backup.counts.volunteers > first_organization_volunteers,
+        "the second workspace's volunteer is inside the snapshot"
+    );
 }
 
 #[test]

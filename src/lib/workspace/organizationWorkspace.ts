@@ -63,9 +63,8 @@ function emptyImpact(): DemoWorkspace["impact"] {
 }
 
 /**
- * The demo workspace is authored around one volunteer. An account created on
- * this device takes that place, so a new volunteer reads their own name and an
- * empty service history rather than someone else's.
+ * A new volunteer takes the authored volunteer's place, with their own name and
+ * an empty history.
  */
 function workspaceForAccount(account: Account | null): DemoWorkspace {
   if (!account || account.role !== "volunteer" || !account.volunteerId) return demoWorkspace;
@@ -103,10 +102,7 @@ function workspaceForAccount(account: Account | null): DemoWorkspace {
 }
 
 /**
- * An organization created on this device starts with nothing scheduled. The
- * seed data belongs to the bundled demo organization, so any other workspace —
- * and the pre-organization state right after signup — is built from the profile
- * the coordinator entered plus the account that is signed in.
+ * Any workspace other than the demo starts with nothing scheduled.
  */
 function blankWorkspace(org: OrganizationScope | null, account: Account | null): DemoWorkspace {
   const now = new Date().toISOString();
@@ -133,9 +129,8 @@ function blankWorkspace(org: OrganizationScope | null, account: Account | null):
     tone: "amber",
     email: account?.role === "coordinator" ? account.email : organization.email,
   };
-  // The signed-in volunteer is part of this workspace even before a roster row
-  // exists for them. Keying the record on the account keeps the id stable, and
-  // without it the volunteer screens had nobody to render after a join.
+  // The signed-in volunteer is here before a roster row exists; the account id
+  // keeps the record stable.
   const volunteer: Volunteer | null =
     account?.role === "volunteer"
       ? {
@@ -194,11 +189,7 @@ function availabilityFrom(windows: string[]): AvailabilitySlot[] {
   });
 }
 
-/**
- * A database roster record as the volunteer shape the screens render. The seed
- * authors its own display fields, so anything this does not carry reads as
- * "nothing recorded yet" rather than as a borrowed number.
- */
+/** A roster row as the volunteer shape the screens render. */
 function volunteerFromRoster(record: RosterVolunteer): Volunteer {
   return {
     id: record.id,

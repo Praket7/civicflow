@@ -10,8 +10,9 @@ use civicflow_core::insights::{
 };
 use civicflow_core::matching::{RosterOptions, RosterPlan};
 use civicflow_core::models::{
-    AvailabilitySlot, BackupRestoreResult, BackupSnapshot, CheckinCode, CreateOpportunityResult,
-    MissionControlSummary, NewOpportunityInput, NotificationItem, SettingsPatch, WorkspaceSnapshot,
+    AvailabilitySlot, BackupRestoreResult, BackupSnapshot, CheckinCode, CheckinWindow,
+    CreateOpportunityResult, MissionControlSummary, NewOpportunityInput, NotificationItem,
+    SettingsPatch, WorkspaceSnapshot,
 };
 use civicflow_core::notifications::{self, NotificationRule, RulePatch};
 use civicflow_core::organizations::{
@@ -43,19 +44,12 @@ fn lock_error() -> AppError {
     }
 }
 
-/// Resolves the session token that the WebView presented. Every command that
-/// touches workspace data calls this first, so hiding a screen is never the
-/// only thing standing between a role and a record.
+/// Every workspace command resolves its token here; hiding a screen is not the gate.
 fn require_account(database: &Database, token: &str) -> Result<Account, AppError> {
-    // A signed-in identity with no membership is not a workspace reader. Without
-    // this gate the unscoped query fallback would show the installation's own
-    // organization to somebody who has not joined one.
     auth::require_member(database.connection(), token).map_err(AppError::from)
 }
 
-/// Remembers the organization an account is working in. The role and the data
-/// scope are both derived from this one row, so selecting, joining, redeeming,
-/// and creating an organization all go through here.
+/// The row both role and data scope derive from.
 fn remember_active_organization(
     database: &Database,
     user_id: &str,
@@ -79,21 +73,11 @@ fn require_coordinator(database: &Database, token: &str) -> Result<Account, AppE
     auth::require_coordinator(database.connection(), token).map_err(AppError::from)
 }
 
-/// Restoring a snapshot replaces the whole installation database, so it is the
-/// workspace owner's decision. Taking a snapshot is harmless and stays
-/// available to any coordinator.
-fn require_workspace_steward(database: &Database, token: &str) -> Result<Account, AppError> {
-    let account = require_coordinator(database, token)?;
-    if !organizations::is_workspace_steward(database.connection(), &account.id)
-        .map_err(AppError::from)?
-    {
-        return Err(AppError::from(CoreError::rule(
-            "FORBIDDEN",
-            "Only the workspace owner can restore an installation backup.",
-            None,
-            Some("ASK_WORKSPACE_OWNER".into()),
-        )));
-    }
+/// Snapshots cover the whole installation, so every backup command asks here.
+fn require_installation_steward(database: &Database, token: &str) -> Result<Account, AppError> {
+    let account = require_account(database, token)?;
+    organizations::require_installation_steward(database.connection(), &account.id)
+        .map_err(AppError::from)?;
     Ok(account)
 }
 
@@ -149,9 +133,8 @@ fn is_openable_sign_in_url(url: &str) -> bool {
     url.starts_with("https://") && !url.contains(['\n', '\r', '"', '\''])
 }
 
-/// Opens a sign-in page in the system browser. Google refuses to render its
-/// consent screen inside a webview, so provider sign-in is handed off here and
-/// answers on the civicflow:// scheme.
+/// Provider consent pages need the system browser; answers come back on
+/// `civicflow://`.
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), AppError> {
     if !is_openable_sign_in_url(&url) {
@@ -620,11 +603,7 @@ struct RosterPolicyView {
     organization_id: String,
 }
 
-/// The organization this workspace's data belongs to. Commands that act on an
-/// organization ask for it by id rather than assuming the first row.
-/// The organization the session is working in. Imports, exports, and the
-/// policy screen belong to that organization, not to whichever row happens to
-/// be oldest.
+/// The organization the session is working in.
 fn workspace_organization(database: &Database) -> Result<String, AppError> {
     if let Some(organization) =
         civicflow_core::scope::current(database.connection()).map_err(AppError::from)?
@@ -990,6 +969,17 @@ fn set_application_stage(
 }
 
 #[tauri::command]
+fn checkin_window(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: String,
+) -> Result<CheckinWindow, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    require_account(&database, &token)?;
+    workflows::checkin_window(database.connection(), &shift_id).map_err(AppError::from)
+}
+
+#[tauri::command]
 fn get_checkin_code(
     state: State<'_, AppState>,
     token: String,
@@ -1251,10 +1241,7 @@ fn save_volunteer_profile(
     snapshot_for(&database, &account)
 }
 
-/// Opens the bundled demo workspace and signs in as its coordinator. This is
-/// the only path that produces fixture records, so a real installation can
-/// never be mistaken for a demo. The session is short-lived on purpose: the
-/// demo is a look around, not the account someone lives in.
+/// The only path that seeds fixture records. The session is short-lived.
 #[tauri::command]
 fn open_demo_workspace(state: State<'_, AppState>) -> Result<AuthSession, AppError> {
     let mut database = state.database.lock().map_err(|_| lock_error())?;
@@ -1407,13 +1394,33 @@ fn export_volunteer_roster(
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallationAccess {
+    steward: bool,
+}
+
+/// Installation-level capability; the screens hide the backup section without it.
+#[tauri::command]
+fn installation_access(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<InstallationAccess, AppError> {
+    let database = state.database.lock().map_err(|_| lock_error())?;
+    let account = require_account(&database, &token)?;
+    Ok(InstallationAccess {
+        steward: organizations::is_workspace_steward(database.connection(), &account.id)
+            .map_err(AppError::from)?,
+    })
+}
+
 #[tauri::command]
 fn list_backups(
     state: State<'_, AppState>,
     token: String,
 ) -> Result<Vec<BackupSnapshot>, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
-    require_coordinator(&database, &token)?;
+    require_installation_steward(&database, &token)?;
     backups::list(&state.backup_dir).map_err(AppError::from)
 }
 
@@ -1424,7 +1431,7 @@ fn create_backup(
     note: Option<String>,
 ) -> Result<Vec<BackupSnapshot>, AppError> {
     let database = state.database.lock().map_err(|_| lock_error())?;
-    require_coordinator(&database, &token)?;
+    require_installation_steward(&database, &token)?;
     backups::create(
         database.connection(),
         &state.backup_dir,
@@ -1442,7 +1449,7 @@ fn restore_backup(
     id: String,
 ) -> Result<BackupRestoreResult, AppError> {
     let mut database = state.database.lock().map_err(|_| lock_error())?;
-    require_workspace_steward(&database, &token)?;
+    require_installation_steward(&database, &token)?;
     backups::restore(database.connection_mut(), &state.backup_dir, &id).map_err(AppError::from)
 }
 
@@ -1544,6 +1551,7 @@ pub fn run() {
             save_report_view,
             set_saved_opportunity,
             set_application_stage,
+            checkin_window,
             get_checkin_code,
             check_in_volunteer,
             check_out_volunteer,
@@ -1562,6 +1570,7 @@ pub fn run() {
             preview_volunteer_import,
             apply_volunteer_import,
             export_volunteer_roster,
+            installation_access,
             list_backups,
             create_backup,
             restore_backup

@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "What each shift asks for, and what is already covered.",
   "Written to the live roster and the audit log in one transaction.": "Written to the live roster and the audit log in one transaction.",
   "You": "You",
-  "You are": "You are"
+  "You are": "You are",
+  "Installation backups": "Ububiko bwububiko",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "Ububiko bwububiko burimo buri CivicFlow ikibanza cyabitswe kuri iki gikoresho. Gusa igisonga cyo kwishyiriraho gishobora gukora, kugarura, cyangwa kubicunga.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Nta mashusho. Kora imwe kugirango urinde umwanya wose wakazi kuri iki gikoresho."
 }

@@ -16,6 +16,7 @@ import {
 } from "../../components/ui";
 import type { Column } from "../../components/ui";
 import { t } from "../../lib/i18n";
+import { useCheckinWindow } from "../../lib/workspace/queries";
 import { useWorkspace } from "../../lib/workspace/session";
 import {
   formatDate,
@@ -33,6 +34,7 @@ import styles from "./Attendance.module.css";
 export function AttendancePage() {
   const { workspace, session, actions } = useWorkspace();
   const event = getLiveEvent(session, workspace);
+  const { data: checkinWindow } = useCheckinWindow(event?.shift.id ?? "");
   const [message, setMessage] = useState("");
   if (!event) {
     return (
@@ -49,9 +51,7 @@ export function AttendancePage() {
       </Page>
     );
   }
-  // The live event's roster is the staffing view; the attendance board also
-  // keeps the people who no-showed, so a coordinator can see the absence and
-  // the open seat in one place.
+  // Also keeps no-shows, so the absence and the open seat read together.
   const roster = getAttendanceRoster(event.shift.id, session, workspace);
   const counts = rosterCounts(roster);
   const capacity = event.shift.capacity;
@@ -184,7 +184,11 @@ export function AttendancePage() {
         <div className={styles.eventCopy}>
           <p className={styles.eyebrow}>
             <span className={styles.liveDot} aria-hidden="true" />
-            {event.checkInOpen ? "Check-in is open" : "Check-in closed"}
+            {checkinWindow
+              ? checkinWindow.canSelfCheckIn
+                ? t("Check-in is open")
+                : t("Check-in closed")
+              : null}
           </p>
           <h2 className={styles.eventTitle}>{event.opportunity?.title ?? "Pantry Setup"}</h2>
           <div className={styles.eventMeta}>

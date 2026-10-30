@@ -384,10 +384,7 @@ pub fn organization_access(
     })
 }
 
-/// The account that opened this installation, and still owns its first
-/// organization. Installation-wide work — the live database file and the
-/// snapshots of it — belongs to that person, not to a coordinator of some
-/// organization added later.
+/// The account that opened this installation and still owns its first organization.
 pub fn is_workspace_steward(conn: &Connection, user_id: &str) -> Result<bool> {
     let founding: Option<String> = conn
         .query_row(
@@ -401,6 +398,20 @@ pub fn is_workspace_steward(conn: &Connection, user_id: &str) -> Result<bool> {
     };
     Ok(membership(conn, &founding, user_id)?
         .is_some_and(|current| current.is_active() && current.is_owner()))
+}
+
+/// The installation's own records belong to the person who opened it, not to
+/// the coordinator of whichever organization is open.
+pub fn require_installation_steward(conn: &Connection, user_id: &str) -> Result<()> {
+    if is_workspace_steward(conn, user_id)? {
+        return Ok(());
+    }
+    Err(CoreError::rule(
+        "FORBIDDEN",
+        "Only the installation steward can manage installation backups.",
+        None,
+        Some("ASK_INSTALLATION_STEWARD".into()),
+    ))
 }
 
 pub fn membership(
@@ -428,9 +439,8 @@ pub fn membership(
         .optional()?)
 }
 
-/// Creates an organization and makes its creator the first coordinator. Anyone
-/// may start a new organization; what an account cannot do is award itself a
-/// coordinator role inside an organization that already exists.
+/// The creator becomes the first coordinator; nobody can grant themselves a role
+/// in an organization that already exists.
 pub fn create_organization(
     conn: &Connection,
     creator: &Account,
@@ -597,9 +607,8 @@ pub fn list_members(
     Ok(members)
 }
 
-/// Issues a one-time invitation. A coordinator may invite volunteers; only an
-/// owner may invite another coordinator. The invitation names the address it is
-/// for, so a forwarded link cannot quietly grant access to somebody else.
+/// Coordinators invite volunteers, owners invite coordinators; the address is
+/// part of the invitation.
 pub fn create_invite(
     conn: &Connection,
     actor: &Account,
@@ -752,9 +761,7 @@ fn append_invite_audit(
     Ok(())
 }
 
-/// Redeems an invitation for the signed-in account. An invitation is single-use,
-/// expires, is addressed to one email address, and cannot revive a membership a
-/// coordinator disabled.
+/// Single-use, expiring, addressed, and it cannot revive a disabled membership.
 pub fn redeem_invite(conn: &Connection, user_id: &str, token: &str) -> Result<Membership> {
     let clean = token.trim();
     if clean.is_empty() {

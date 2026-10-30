@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use civicflow_core::db::DEMO_SEED;
 use civicflow_core::models::SeedWorkspace;
 use civicflow_core::services::{get_mission_control, list_notifications, mark_notification_read};
+use civicflow_core::workflows::set_saved_opportunity;
 use civicflow_core::Database;
 
 fn seeded() -> Database {
@@ -91,6 +92,31 @@ fn attention_items_explain_real_gaps_in_date_order() {
         ]
     );
     assert_eq!(summary.attention[0].severity, "critical");
+}
+
+#[test]
+fn an_unnamed_workspace_attributes_work_to_the_role_not_a_person() {
+    let database = seeded();
+    let connection = database.connection();
+    connection
+        .execute(
+            "DELETE FROM app_settings WHERE key LIKE 'coordinator_name%'",
+            [],
+        )
+        .unwrap();
+    set_saved_opportunity(connection, "opp-garden", false).expect("a recorded action");
+
+    // The seeded audit names the person who authored the demo. The event this
+    // test just wrote is the fallback case, and it names the role.
+    let actor: String = connection
+        .query_row(
+            "SELECT actor_id FROM audit_events
+             WHERE action = 'opportunity.unsave' ORDER BY rowid DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the new audit event");
+    assert_eq!(actor, "Coordinator");
 }
 
 #[test]

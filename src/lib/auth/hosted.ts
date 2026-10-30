@@ -2,32 +2,23 @@ import { createClient, type AuthError, type Session, type User } from "@supabase
 import { isTauri } from "../platform";
 
 /**
- * The hosted identity backend is one deployment, and this address is part of
- * the desktop contract: `connect-src` in `src-tauri/tauri.conf.json` allows
- * exactly this origin, so a different project URL would be blocked by the
- * webview. Keeping it here rather than in the environment means the two cannot
- * drift apart; point the build at another project only by updating both.
+ * Must match `connect-src` in `src-tauri/tauri.conf.json`; change both or the
+ * webview blocks the request.
  */
 const url = "https://imzdblvljdcbnxtwbmbw.supabase.co";
 const key = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ?? "";
 
-/**
- * Hosted accounts are optional. Without the publishable key the app behaves
- * exactly as it did before: local accounts, no network calls, no hosted emails.
- */
+/** Hosted accounts are optional; without the key the app stays local. */
 export const hostedAuthConfigured = Boolean(key);
 
 const client = hostedAuthConfigured
   ? createClient(url, key, {
       auth: {
-        // Email links must work after the app has been closed and from another
-        // browser, so the fragment carries the session instead of a PKCE code
-        // tied to one browser's storage. The callback code reads it explicitly.
+        // Email links must survive the app closing, so the fragment carries the
+        // session rather than a PKCE code tied to one browser's storage.
         flowType: "implicit",
         detectSessionInUrl: false,
-        // The hosted session only proves who someone is during a hand-off. The
-        // app keeps its own local session instead, so a remote refresh token
-        // does not need to sit in this device's storage after the exchange.
+        // The app keeps its own local session; no remote refresh token on disk.
         persistSession: false,
         autoRefreshToken: true,
       },
@@ -66,13 +57,8 @@ export interface HostedAnswer {
 }
 
 /**
- * Keeps the answer on this page's own storage.
- *
- * The callback page rewrites the address as soon as it reads it, which used to
- * make a reload — a dev-server restart, a stray navigation, a second delivery —
- * look exactly like an expired link. Session storage is per-tab and dies with
- * the window, so the answer outlives the rewrite without outliving the person's
- * intent to sign in.
+ * The callback rewrites the address immediately, so the answer is kept per tab
+ * to survive a reload.
  */
 export function keepHostedAnswer(answer: HostedAnswer): void {
   try {
@@ -138,10 +124,8 @@ function clearHostedAnswer(): void {
 }
 
 /**
- * Records that this device asked the provider for a return link. A desktop
- * `civicflow://` callback is otherwise indistinguishable from one another app
- * (or a launch argument) hands to the process, and accepting it would sign the
- * window into an account nobody here chose.
+ * Marks the hand-off this device asked for; a `civicflow://` link is otherwise
+ * indistinguishable from one another app handed to the process.
  */
 function rememberPendingLink(kind: HostedReturnKind): void {
   try {
@@ -203,10 +187,8 @@ export async function hostedHandoffPending(kind: HostedReturnKind): Promise<bool
 }
 
 /**
- * Ends the hand-off once its answer has actually been used. Spending the mark
- * up front meant a duplicate delivery or a transient exchange error turned a
- * valid link into "this was not requested" and left no way back in short of
- * asking the provider again.
+ * Ends the hand-off only after its answer is used, so a transient exchange
+ * failure does not invalidate the link.
  */
 export async function finishHostedHandoff(): Promise<void> {
   clearLocalPendingLink();
@@ -218,11 +200,8 @@ export async function finishHostedHandoff(): Promise<void> {
 }
 
 /**
- * The scheme address the app received, if this page load did not get it.
- *
- * macOS hands the URL to the process, so the page that opens can be a reload of
- * the bare callback route. The native side kept the address; taking it here
- * spends it, which is what keeps a link usable once.
+ * The scheme address the app received, if this page load did not get it. Taking
+ * it spends it, which keeps a link usable once.
  */
 export async function takeStoredHostedLink(): Promise<string | null> {
   const stored = await invokeHandoff<string | null>("take_hosted_link");
@@ -444,12 +423,8 @@ interface HostedProblem {
 }
 
 /**
- * Reads a failed answer from a callback URL. The browser build lands on
- * /auth/callback with ordinary parameters, while the desktop handler rewrites
- * the window to #/auth/callback?error_description=… — so the query can sit
- * after a route rather than after the bare "#". Parsing the whole fragment as
- * one parameter (the earlier behavior) missed it and reported a missing token
- * instead of the reason the link was refused.
+ * Reads a failed answer from either shape: `?error=…` after the route, or a
+ * query inside the fragment.
  */
 export function readHostedProblem(hash: string, search: string): HostedProblem | null {
   const fragment = hash.replace(/^#/, "");
@@ -473,9 +448,8 @@ function classifyHostedProblem(text: string): HostedProblemKind {
   if (["access_denied", "access denied", "cancel"].some((signal) => text.includes(signal))) {
     return "canceled";
   }
-  // "bad_oauth_state" and "OAuth state parameter has expired" mean the answer
-  // took too long or the page was opened a second time. That is not the email
-  // link expiring, and the two need different advice.
+  // A stale or reopened hand-off, which needs different advice from an expired
+  // email link.
   if (text.includes("state") && ["expire", "invalid", "missing"].some((s) => text.includes(s))) {
     return "state";
   }

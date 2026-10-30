@@ -2717,5 +2717,8 @@
   "What each shift asks for, and what is already covered.": "Ce que demande chaque équipe et ce qui est déjà couvert.",
   "Written to the live roster and the audit log in one transaction.": "Écrit sur la liste en direct et le journal d'audit en une seule transaction.",
   "You": "You",
-  "You are": "Vous êtes"
+  "You are": "Vous êtes",
+  "Installation backups": "Sauvegardes d'installation",
+  "Installation backups contain every CivicFlow workspace stored on this device. Only the installation steward can create, restore, or manage them.": "Les sauvegardes d'installation contiennent chaque espace de travail CivicFlow stocké sur cet appareil. Seul l'intendant de l'installation peut les créer, les restaurer ou les gérer.",
+  "No snapshots yet. Create one to protect every workspace on this device.": "Aucun instantané pour l'instant. Créez-en un pour protéger chaque espace de travail sur cet appareil."
 }

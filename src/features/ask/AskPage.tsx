@@ -9,11 +9,7 @@ import { currentVolunteer } from "../../lib/workspace/selectors";
 import { useWorkspace } from "../../lib/workspace/session";
 import styles from "./Ask.module.css";
 
-/**
- * The visible half of Ask CivicFlow. The answer engine is deterministic and
- * runs in this renderer, so the screen only has to collect a question, show the
- * cited rows, and link to the screen where the work happens.
- */
+/** Collects the question and renders the engine's cited answer. */
 export function AskPage() {
   const { workspace, session } = useWorkspace();
   const { user } = useAuth();

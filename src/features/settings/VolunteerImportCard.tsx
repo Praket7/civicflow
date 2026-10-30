@@ -20,10 +20,8 @@ function message(caught: unknown): string {
 }
 
 /**
- * Onboarding a roster the coordinator already keeps in a spreadsheet. The file is
- * checked row by row before anything is written, because a half-imported roster
- * is worse than a refused one: the problems are named with the line a person sees
- * in their editor, and a file with any problem is refused whole.
+ * Rows are checked before anything is written; a file with any problem is
+ * refused whole, with the line the person sees in their editor.
  */
 export function VolunteerImportCard() {
   const { actions } = useWorkspace();

@@ -8,10 +8,8 @@ import type { Shift } from "../../types/domain";
 import styles from "./OpenSeatsCard.module.css";
 
 /**
- * Who should take the seat that opened. Waitlist order is the fairness rule and
- * eligibility is the qualification rule, so the answer is the first person in
- * line who still meets every requirement — with the people passed over named in
- * the sentence, because "why was I skipped?" deserves an answer.
+ * First waitlisted volunteer who meets every requirement; the people passed
+ * over are named.
  */
 export function OpenSeatsCard({ shift }: { shift: Shift }) {
   const { actions, session } = useWorkspace();
@@ -24,9 +22,7 @@ export function OpenSeatsCard({ shift }: { shift: Shift }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  // A volunteer can hold one seat on a shift, so someone already on this roster
-  // is not a candidate again — the ranking is recomputed by the backend, but a
-  // promotion that just landed should not invite a second one.
+  // One seat per shift, so someone already on this roster is not a candidate.
   function peopleOnShift(): Set<string> {
     const onShift = new Set<string>();
     session.registrations.forEach((registration) => {

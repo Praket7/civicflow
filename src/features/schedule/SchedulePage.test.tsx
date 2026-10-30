@@ -6,23 +6,27 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { DisplayPreferencesProvider } from "../../lib/display";
 import { WorkspaceSessionProvider } from "../../lib/workspace/session";
+import { settleQueries } from "../../test/queries";
 import { SchedulePage } from "./SchedulePage";
 
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <DisplayPreferencesProvider>
-      <QueryClientProvider client={queryClient}>
-        <WorkspaceSessionProvider>
-          <MemoryRouter initialEntries={["/coordinator/schedule"]}>
-            <SchedulePage />
-          </MemoryRouter>
-        </WorkspaceSessionProvider>
-      </QueryClientProvider>
-    </DisplayPreferencesProvider>,
-  );
+  return {
+    ...render(
+      <DisplayPreferencesProvider>
+        <QueryClientProvider client={queryClient}>
+          <WorkspaceSessionProvider>
+            <MemoryRouter initialEntries={["/coordinator/schedule"]}>
+              <SchedulePage />
+            </MemoryRouter>
+          </WorkspaceSessionProvider>
+        </QueryClientProvider>
+      </DisplayPreferencesProvider>,
+    ),
+    queryClient,
+  };
 }
 
 describe("Schedule", () => {
@@ -74,8 +78,9 @@ describe("Schedule", () => {
   });
 
   it("has no serious axe violations", async () => {
-    const { container } = renderPage();
+    const { container, queryClient } = renderPage();
     await screen.findByRole("heading", { name: "Schedule" });
+    await settleQueries(queryClient);
 
     const results = await axe(container);
     const blocking = results.violations.filter(

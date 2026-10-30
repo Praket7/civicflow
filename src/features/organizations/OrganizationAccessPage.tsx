@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Copy, Mail, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { Badge, Button, Card, Page, PageHeader, SearchField } from "../../components/ui";
 import { useAuth } from "../../lib/auth/session";
+import { hydrateOrganizations } from "../../lib/organizations/store";
 import { useOrganizationWorkspace } from "../../lib/organizations/useOrganizationWorkspace";
 import { getWorkspaceRepository } from "../../lib/workspace/repository";
 import type {
@@ -104,7 +105,7 @@ export function OrganizationAccessPage() {
     setNotice("");
     try {
       setMembers(await repository.setOrganizationMemberRole(organizationId, member.userId, next));
-      setNotice(`${member.name} is now a ${next}.`);
+      setNotice(`${displayName(member)} is now a ${next}.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -120,7 +121,7 @@ export function OrganizationAccessPage() {
       setMembers(
         await repository.setOrganizationMemberStatus(organizationId, member.userId, "disabled"),
       );
-      setNotice(`${member.name} can no longer sign in to this organization.`);
+      setNotice(`${displayName(member)} can no longer sign in to this organization.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -136,7 +137,7 @@ export function OrganizationAccessPage() {
       setMembers(
         await repository.setOrganizationMemberStatus(organizationId, member.userId, "active"),
       );
-      setNotice(`${member.name} can sign in again.`);
+      setNotice(`${displayName(member)} can sign in again.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -145,14 +146,21 @@ export function OrganizationAccessPage() {
   }
 
   async function makeOwner(member: OrganizationMember) {
-    if (!window.confirm(`Make ${member.name} an owner? Owners can manage every membership.`))
+    if (
+      !window.confirm(
+        `Make ${displayName(member)} an owner? They gain every membership permission, and you become a coordinator.`,
+      )
+    )
       return;
     setBusy(member.userId);
     setError("");
     setNotice("");
     try {
       setMembers(await repository.transferOrganizationOwnership(organizationId, member.userId));
-      setNotice(`${member.name} is now an owner.`);
+      // The transfer demotes the signed-in owner too, and the badge in the
+      // panel head reads that cached membership rather than this list.
+      hydrateOrganizations(await repository.listOrganizations());
+      setNotice(`${displayName(member)} is now an owner.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {

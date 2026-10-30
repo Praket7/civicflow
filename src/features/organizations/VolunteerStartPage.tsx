@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Compass, KeyRound, MapPin, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Building2,
+  Check,
+  Compass,
+  KeyRound,
+  MapPin,
+  Users,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, SearchField } from "../../components/ui";
 import { accountHome, useAuth } from "../../lib/auth/session";
@@ -18,7 +27,7 @@ import styles from "./onboarding.module.css";
 export function VolunteerStartPage() {
   const repository = getWorkspaceRepository();
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, refresh } = useAuth();
   const { organizations, memberships, current } = useOrganizationWorkspace(user);
   const [publicOrganizations, setPublicOrganizations] = useState<
     Awaited<ReturnType<typeof repository.listPublicOrganizations>>
@@ -72,6 +81,9 @@ export function VolunteerStartPage() {
     try {
       await selectOrganization(user, organizationId);
       completeSetup(user.email);
+      // The workspace role comes from the membership just selected, and the
+      // route guard reads it from the session.
+      await refresh();
       navigate("/volunteer/home", { replace: true });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -88,6 +100,7 @@ export function VolunteerStartPage() {
     try {
       const organization = await joinOrganization(user, organizationId);
       completeSetup(user.email);
+      await refresh();
       setNotice(`You're in. ${organization.name} is now your current workspace.`);
       window.setTimeout(() => navigate("/volunteer/home"), 650);
     } catch (caught) {
@@ -110,6 +123,7 @@ export function VolunteerStartPage() {
     try {
       const organization = await redeemOrganizationInvite(user, token);
       completeSetup(user.email);
+      await refresh();
       const access = currentAccessFor(user);
       setNotice(`You're in. ${organization.name} is now your current workspace.`);
       window.setTimeout(
@@ -306,6 +320,25 @@ export function VolunteerStartPage() {
               </p>
             </div>
           </div>
+
+          {/* A new account starts here, and an empty device has no organization
+              to join. Without this the only ways forward are an invite or a
+              public workspace someone else already created. */}
+          <section
+            className={styles.panel}
+            aria-labelledby="start-organization-title"
+            style={{ marginTop: 18 }}
+          >
+            <h2 className={styles.sectionTitle} id="start-organization-title">
+              <Building2 size={14} aria-hidden="true" /> Create an organization
+            </h2>
+            <p className={styles.sectionHint}>
+              Join or create an organization to start scheduling.
+            </p>
+            <Link className={styles.back} to="/coordinator/start">
+              Continue <ArrowRight size={13} aria-hidden="true" />
+            </Link>
+          </section>
         </div>
       </section>
     </main>

@@ -43,9 +43,10 @@ export const config = {
   mochaOpts: {
     // Every element lookup and click waits out the driver's 5s window-state
     // probe, which never answers in this app. The longest flow — create an
-    // account, answer setup, join an organization, sign out, sign back in —
-    // runs a hundred of those probes, so it needs several minutes of its own.
-    timeout: 480_000,
+    // account, answer setup, sign out, sign back in — runs a hundred of those
+    // probes, and the debug build's Argon2 hashing adds tens of seconds to
+    // each password write, so it needs more than several minutes of its own.
+    timeout: 1_500_000,
   },
   waitforTimeout: 15_000,
   connectionRetryTimeout: 120_000,

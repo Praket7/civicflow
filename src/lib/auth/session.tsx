@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import type { Account, AuthSession } from "../../types/domain";
 import { isSetupPending, markSetupPending, setupRoute } from "../onboarding/store";
-import { organizationsFor, organizationsLoaded } from "../organizations/store";
+import { organizationsFor } from "../organizations/store";
 import { isTauri } from "../platform";
 import { getWorkspaceRepository, setRepositoryToken } from "../workspace/repository";
 import {
@@ -360,25 +360,16 @@ export function useOptionalAuth(): AuthValue | null {
   return useContext(AuthContext);
 }
 
+/**
+ * The screen a session belongs on. The role comes from an active membership, so
+ * a role other than "none" already proves the account has an organization; the
+ * cached organization list is not consulted here. It used to be, and a cache
+ * still holding the signed-out state sent a fresh coordinator sign-in to the
+ * create-or-join screen instead of the workspace it had just opened.
+ */
 export function accountHome(account: Account): string {
-  const signedInHome =
-    account.role === "volunteer" ? "/volunteer/home" : "/coordinator/mission-control";
-  // Setup is keyed by identity in device storage, so it is authoritative even
-  // before the organization cache has loaded.
-  if (isSetupPending(account)) {
-    return setupRoute(account, organizationsLoaded() && organizationsFor(account.email).length > 0);
-  }
-  // A caller that has not hydrated the organization cache (the sign-in screen
-  // finishing a session, for example) must not read "no cache" as "no
-  // organization". The role already came from a membership, so its home is safe.
-  if (!organizationsLoaded()) {
-    return account.role === "none" ? "/coordinator/start" : signedInHome;
-  }
-  const organizations = organizationsFor(account.email);
-  // A fresh account has no organization yet, so send it to the join-or-create
-  // step instead of dropping it into the demo workspace uninvited.
-  if (organizations.length === 0) {
-    return account.role === "volunteer" ? "/volunteer/start" : "/coordinator/start";
-  }
-  return signedInHome;
+  if (account.role === "none") return "/coordinator/start";
+  // Setup is keyed by identity in device storage and runs before the workspace.
+  if (isSetupPending(account)) return setupRoute(account, true);
+  return account.role === "volunteer" ? "/volunteer/home" : "/coordinator/mission-control";
 }

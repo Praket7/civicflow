@@ -1139,7 +1139,8 @@ fn save_volunteer_profile(
 
 /// Opens the bundled demo workspace and signs in as its coordinator. This is
 /// the only path that produces fixture records, so a real installation can
-/// never be mistaken for a demo.
+/// never be mistaken for a demo. The session is short-lived on purpose: the
+/// demo is a look around, not the account someone lives in.
 #[tauri::command]
 fn open_demo_workspace(state: State<'_, AppState>) -> Result<AuthSession, AppError> {
     let mut database = state.database.lock().map_err(|_| lock_error())?;
@@ -1148,7 +1149,7 @@ fn open_demo_workspace(state: State<'_, AppState>) -> Result<AuthSession, AppErr
         database.connection(),
         auth::DEMO_EMAIL,
         auth::DEMO_PASSWORD,
-        true,
+        false,
     )
     .map_err(AppError::from)
 }

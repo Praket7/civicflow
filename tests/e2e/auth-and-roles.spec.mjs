@@ -1,13 +1,6 @@
 import { browser, $, expect } from "@wdio/globals";
 
-async function signIn(email, password, role = "coordinator") {
-  // Selecting a role only re-renders the form. Dispatching it avoids waiting on
-  // a navigation that never happens.
-  await browser.execute((wanted) => {
-    const button = document.querySelector(`button[data-role="${wanted}"]`);
-    if (!(button instanceof HTMLElement)) throw new Error(`role button ${wanted} missing`);
-    button.click();
-  }, role);
+async function signIn(email, password) {
   const emailField = await $('input[name="email"]');
   await emailField.waitForDisplayed();
   await emailField.setValue(email);
@@ -36,16 +29,20 @@ async function clickButton(label, groupLabel) {
   );
 }
 
-/** Press the first unpressed toggle in a group, leaving a worked example alone. */
-async function pressOne(groupLabel) {
-  await browser.execute((group) => {
-    const scope = document.querySelector(`[aria-label="${group}"]`);
-    const buttons = [...(scope?.querySelectorAll("button") ?? [])];
-    if (buttons.length === 0) throw new Error(`toggle group ${group} missing`);
-    if (buttons.some((button) => button.getAttribute("aria-pressed") === "true")) return;
-    if (!(buttons[0] instanceof HTMLElement)) throw new Error(`toggle group ${group} empty`);
-    buttons[0].click();
-  }, groupLabel);
+/**
+ * The shell labels its sign-out control; the setup screens only write the
+ * words. Both are the same action.
+ */
+async function signOut() {
+  await browser.execute(() => {
+    const button =
+      document.querySelector('button[aria-label="Sign out"]') ??
+      [...document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === "Sign out",
+      );
+    if (!(button instanceof HTMLElement)) throw new Error("Sign out button missing");
+    button.click();
+  });
 }
 
 /**
@@ -62,7 +59,9 @@ async function readVerificationCode() {
       });
       return /^\d{6}$/.test(code);
     },
-    { timeout: 15_000, timeoutMsg: "the verification code never appeared" },
+    // The panel appears after the account row is written, and writing it
+    // hashes a password; a debug build spends minutes on that alone.
+    { timeout: 300_000, timeoutMsg: "the verification code never appeared" },
   );
   return code;
 }
@@ -82,31 +81,83 @@ async function freezeEntrance() {
   });
 }
 
-async function waitForHeading(pattern, message) {
+// The debug build hashes passwords and seeds the demo without optimisations,
+// which puts a first sign-in well past the old twenty-second budget.
+async function waitForHeading(pattern, message, timeout = 180_000) {
   await browser.waitUntil(
     async () =>
       (await $("h1"))
         .getText()
         .then((text) => pattern.test(text))
         .catch(() => false),
-    { timeout: 20_000, timeoutMsg: message },
+    { timeout, timeoutMsg: message },
   );
 }
 
+/** Resolves once the workspace shell is on screen, which means a session landed. */
+async function waitForShell(message, timeout = 300_000) {
+  await browser.waitUntil(
+    async () => (await $('button[aria-label="Sign out"]')).isExisting().catch(() => false),
+    { timeout, timeoutMsg: message },
+  );
+}
+
+/** A hash change is how these tests ask for a specific screen. */
+async function openRoute(path) {
+  await browser.execute((target) => {
+    window.location.hash = `#${target}`;
+  }, path);
+}
+
 describe("CivicFlow native window", () => {
-  it("opens on the sign-in screen when no session exists", async () => {
+  it("opens signed out, with a way in", async () => {
+    // The webview keeps its last hash across runs while the database is rebuilt,
+    // so a stale token can land on the sign-in screen instead of the welcome
+    // page. Both are public screens; the workspace must not be reachable.
     await browser.waitUntil(
-      async () => (await $('input[name="email"]')).isDisplayed().catch(() => false),
-      { timeout: 20_000, timeoutMsg: "sign-in form never appeared" },
+      async () => {
+        const heading = await $("h1")
+          .getText()
+          .catch(() => "");
+        const emailVisible = await $('input[name="email"]')
+          .isDisplayed()
+          .catch(() => false);
+        return /Service, organized|Welcome back|volunteer desk/.test(heading) || emailVisible;
+      },
+      { timeout: 30_000, timeoutMsg: "the app did not open on a public screen" },
     );
+    expect(await $('button[aria-label="Sign out"]').isExisting()).toBe(false);
+
+    await browser.execute(() => {
+      window.location.hash = "#/welcome";
+    });
+    await waitForHeading(/Service, organized/, "the welcome screen did not render");
+    await browser.execute(() => {
+      const link = [...document.querySelectorAll("a")].find(
+        (candidate) => candidate.textContent?.trim() === "Sign in",
+      );
+      if (!(link instanceof HTMLElement)) throw new Error("Sign in link missing");
+      link.click();
+    });
+    const emailField = await $('input[name="email"]');
+    await emailField.waitForDisplayed({ timeout: 20_000 });
     await expect(await $("h1")).toHaveText(/Welcome back/);
   });
 
-  it("signs a coordinator in and reaches Mission Control", async () => {
+  it("opens the demo workspace and reaches Mission Control", async () => {
     await freezeEntrance();
-    await signIn("praket@feedmorewny.org", "civicflow-demo");
+    // A fresh database has no accounts to type in, so the demo is the door:
+    // it seeds the workspace and signs the coordinator in at once. Arriving
+    // from a direct sign-in keeps the deep link the router remembered out of
+    // the landing decision.
+    await openRoute("/sign-in");
+    const emailField = await $('input[name="email"]');
+    await emailField.waitForDisplayed({ timeout: 30_000 });
+    await clickButton("Open demo workspace");
+    await waitForShell("the demo workspace never opened");
+    await openRoute("/coordinator/mission-control");
     const greeting = await $("#mc-greeting");
-    await greeting.waitForDisplayed({ timeout: 20_000 });
+    await greeting.waitForDisplayed({ timeout: 60_000 });
     await expect(greeting).toHaveText(/Praket/);
   });
 
@@ -116,25 +167,23 @@ describe("CivicFlow native window", () => {
     });
     await browser.waitUntil(
       async () => (await $("#mc-greeting")).isDisplayed().catch(() => false),
-      { timeout: 15_000, timeoutMsg: "coordinator was not returned to Mission Control" },
+      { timeout: 20_000, timeoutMsg: "coordinator was not returned to Mission Control" },
     );
     await expect(await $("#mc-greeting")).toHaveText(/Praket/);
   });
 
-  it("signs out and lets the volunteer account in", async () => {
+  it("signs out and lets the volunteer demo account in", async () => {
     // A WebDriver click that triggers a route change can wait on the navigation
     // in the embedded server. Dispatching the click keeps the same React
     // handler and returns as soon as the event is delivered.
-    await browser.execute(() => {
-      const button = document.querySelector('button[aria-label="Sign out"]');
-      if (!(button instanceof HTMLElement)) throw new Error("Sign out button missing");
-      button.click();
-    });
+    await signOut();
 
     const emailField = await $('input[name="email"]');
-    await emailField.waitForDisplayed({ timeout: 20_000 });
+    await emailField.waitForDisplayed({ timeout: 30_000 });
 
-    await signIn("maya.chen@gmail.com", "civicflow-demo", "volunteer");
+    await signIn("maya.chen@gmail.com", "civicflow-demo");
+    await waitForShell("the volunteer demo account never signed in");
+    await openRoute("/volunteer/home");
     await waitForHeading(/Maya/, "volunteer home did not render");
   });
 
@@ -146,13 +195,9 @@ describe("CivicFlow native window", () => {
   });
 
   it("creates a volunteer account and signs it in again", async () => {
-    await browser.execute(() => {
-      const button = document.querySelector('button[aria-label="Sign out"]');
-      if (!(button instanceof HTMLElement)) throw new Error("Sign out button missing");
-      button.click();
-    });
+    await signOut();
     const emailField = await $('input[name="email"]');
-    await emailField.waitForDisplayed({ timeout: 20_000 });
+    await emailField.waitForDisplayed({ timeout: 30_000 });
 
     // Setup flags and team membership live in this webview's store, which the
     // suite shares with the installed app: a fixed address can arrive with the
@@ -175,22 +220,48 @@ describe("CivicFlow native window", () => {
     await $('input[name="verification-code"]').setValue(code);
     await $('button[type="submit"]').click();
 
-    // Setup is a one-time gate: a new account answers four short steps before
-    // it can reach a workspace.
-    await waitForHeading(/Tell us how you can help/, "the new volunteer did not reach setup");
-    const phoneField = await $('input[type="tel"]');
-    await phoneField.setValue("716-555-0142");
-    await clickButton("Continue");
-    await pressOne("Your skills");
-    await clickButton("Continue");
-    await pressOne("Weekly availability");
-    await clickButton("Continue");
-    await pressOne("Causes you care about");
-    await clickButton("Finish setup");
+    // A brand-new identity has no membership, so its role is none and the
+    // create-or-join screen is its home until it acquires one.
+    await waitForHeading(
+      /Put your organization on the map/,
+      "the new account did not land on the create-or-join screen",
+      300_000,
+    );
+    const choices = await browser.execute(() =>
+      [...document.querySelectorAll("button[aria-pressed]")].map(
+        (button) => button.textContent?.trim() ?? "",
+      ),
+    );
+    expect(choices.some((text) => text.includes("Join an existing team"))).toBe(true);
+    expect(choices.some((text) => text.includes("Start a new organization"))).toBe(true);
+    await browser.execute(() => {
+      const start = [...document.querySelectorAll("button[aria-pressed]")].find((button) =>
+        button.textContent?.includes("Start a new organization"),
+      );
+      if (!(start instanceof HTMLElement)) throw new Error("create choice missing");
+      start.click();
+    });
+    await clickButton("Create organization");
+    await waitForHeading(
+      /Tell volunteers who you are/,
+      "the new account could not start an organization",
+      30_000,
+    );
 
-    // Setup gives the account a profile but no team, so it joins an
-    // organization before its own home exists.
-    await waitForHeading(/Find a place to serve/, "the new volunteer did not reach discovery");
+    // The same account can also join an existing public workspace. The demo
+    // organization is public in a seeded database, which is what a volunteer
+    // with no invitation would browse.
+    await openRoute("/volunteer/start");
+    await waitForHeading(/Find a place to serve/, "the new account did not reach discovery");
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() =>
+          [...document.querySelectorAll("li button")].some(
+            (button) => button.textContent?.trim() === "Join",
+          ),
+        ),
+      { timeout: 60_000, timeoutMsg: "no public organization was listed" },
+    );
     await browser.execute(() => {
       const join = [...document.querySelectorAll("li button")].find(
         (button) => button.textContent?.trim() === "Join",
@@ -198,17 +269,16 @@ describe("CivicFlow native window", () => {
       if (!(join instanceof HTMLElement)) throw new Error("join button missing");
       join.click();
     });
-    await waitForHeading(/Alicia/, "the new volunteer did not reach their own home");
+    await waitForHeading(/Alicia/, "the new volunteer did not reach their own home", 300_000);
 
-    // The account is a real row: it survives a sign-out and a fresh sign-in.
-    await browser.execute(() => {
-      const button = document.querySelector('button[aria-label="Sign out"]');
-      if (!(button instanceof HTMLElement)) throw new Error("Sign out button missing");
-      button.click();
-    });
+    // The account is a real row: it survives a sign-out and a fresh sign-in,
+    // and a member now lands in the workspace its membership names.
+    await signOut();
     const fields = await $('input[name="email"]');
-    await fields.waitForDisplayed({ timeout: 20_000 });
-    await signIn(email, "second-saturday", "volunteer");
-    await waitForHeading(/Alicia/, "the new account could not sign in again");
+    await fields.waitForDisplayed({ timeout: 30_000 });
+    await signIn(email, "second-saturday");
+    await waitForShell("the new account could not sign in again");
+    await openRoute("/volunteer/home");
+    await waitForHeading(/Alicia/, "the returning volunteer did not land on their home");
   });
 });

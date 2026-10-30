@@ -14,7 +14,7 @@ import styles from "./onboarding.module.css";
 
 export function CoordinatorStartPage() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, refresh } = useAuth();
   const { organizations } = useOrganizationWorkspace(user);
   const [mode, setMode] = useState<"join" | "create">(organizations.length ? "create" : "join");
   const [invite, setInvite] = useState("");
@@ -41,6 +41,8 @@ export function CoordinatorStartPage() {
     try {
       await redeemOrganizationInvite(user, token);
       completeSetup(user.email);
+      // The workspace role comes from the membership just redeemed.
+      await refresh();
       const access = currentAccessFor(user);
       navigate(
         access?.membership.role === "volunteer"
@@ -61,6 +63,7 @@ export function CoordinatorStartPage() {
     try {
       await selectOrganization(user, organizationId);
       completeSetup(user.email);
+      await refresh();
       navigate("/coordinator/mission-control");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));

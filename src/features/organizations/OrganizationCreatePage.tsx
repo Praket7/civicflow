@@ -32,7 +32,7 @@ function isEmail(value: string): boolean {
 
 export function OrganizationCreatePage() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, refresh } = useAuth();
   const [form, setForm] = useState<FormState>({
     name: "",
     description: "",
@@ -117,6 +117,9 @@ export function OrganizationCreatePage() {
         visibility,
       });
       completeSetup(user.email);
+      // Creating the organization makes this account its owner; the route guard
+      // and the shell both read the role from the session.
+      await refresh();
       setCreated(organization);
     } catch (caught) {
       setErrors({ form: caught instanceof Error ? caught.message : String(caught) });

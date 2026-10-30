@@ -1148,6 +1148,7 @@ fn open_demo_workspace(state: State<'_, AppState>) -> Result<AuthSession, AppErr
         database.connection(),
         auth::DEMO_EMAIL,
         auth::DEMO_PASSWORD,
+        true,
     )
     .map_err(AppError::from)
 }
